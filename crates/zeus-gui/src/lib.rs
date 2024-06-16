@@ -212,6 +212,16 @@ impl eframe::App for ZeusApp {
                                 self.data.ws_client = Some(Arc::new(res.unwrap()));
                             }
                         }
+
+                        Response::GetERC20Token(res) => {
+                            if res.is_err() {
+                                self.gui.err_msg = (true, res.unwrap_err());
+                            } else {
+                                let (token, id) = res.unwrap();
+                                self.gui.swap_ui.update_token(&id, token);
+                                self.gui.swap_ui.update_token_list_status(&id, false);
+                            }
+                        }
                     }
                 }
                 Err(_) => {}
@@ -239,7 +249,7 @@ impl eframe::App for ZeusApp {
 
             ui.vertical_centered_justified(|ui| {
                 ui.add_space(100.0);
-                self.gui.swap_ui.swap_panel(ui);
+                self.gui.swap_ui.swap_panel(ui, &mut self.data);
                 self.gui.networks_ui(ui, &mut self.data);
 
             });

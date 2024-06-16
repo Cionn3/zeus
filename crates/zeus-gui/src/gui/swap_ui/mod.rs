@@ -1,20 +1,20 @@
 use eframe::egui;
 use std::str::FromStr;
 use egui::{
-    vec2, Align2, Color32, FontId, Frame, Margin, RichText, Rounding, TextEdit, Ui
+    vec2, Align2, Color32, FontId, RichText, TextEdit, Ui
 };
 
 use crate::fonts::roboto_regular;
-use crate::gui::THEME;
-use super::misc::frame;
+use super::misc::{frame, rich_text};
 use zeus_defi::erc20::{ default_tokens, ERC20Token };
+use zeus_types::app_data::AppData;
 
-use eframe::epaint::Shadow;
 
 use crossbeam::channel::Sender;
 use alloy::primitives::Address;
 
 use zeus_backend::types::Request;
+
 
 /// Manages the state of the swap UI
 pub struct SwapUI {
@@ -44,6 +44,10 @@ pub struct SwapUI {
 
     /// The search query for a token
     pub search_token: String,
+
+    pub input_id: String,
+
+    pub output_id: String,
 }
 
 impl Default for SwapUI {
@@ -58,6 +62,8 @@ impl Default for SwapUI {
             input_amount: "".to_string(),
             output_amount: "".to_string(),
             search_token: "".to_string(),
+            input_id: String::from("input"),
+            output_id: String::from("output"),
         }
     }
 }
@@ -73,7 +79,7 @@ impl SwapUI {
     }
 
     /// Update the input or output token by an id
-    fn update_token(&mut self, id: &str, token: ERC20Token) {
+    pub fn update_token(&mut self, id: &str, token: ERC20Token) {
         match id {
             "input" => {
                 self.input_token = token;
@@ -95,7 +101,7 @@ impl SwapUI {
     }
 
     /// Update the token list status by an id
-    fn update_token_list_status(&mut self, id: &str, status: bool) {
+    pub fn update_token_list_status(&mut self, id: &str, status: bool) {
         match id {
             "input" => {
                 self.input_token_list_on = status;
@@ -108,20 +114,22 @@ impl SwapUI {
     }
 
     /// Send a message to the backend
-    pub fn send_msg(&self, sender: &Option<Sender<Request>>, request: Request) {
-        if let Some(sender) = sender {
+    pub fn send_request(&self, request: Request) {
+        if let Some(sender) = &self.front_sender {
             sender.send(request).unwrap();
         }
     }
 
     /// Renders the swap panel
-    pub fn swap_panel(&mut self, ui: &mut Ui) {
+    pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData) {
         if !self.on {
             return;
         }
 
         // TODO: Load a list of tokens from a local db
         let tokens = default_tokens();
+        let input_id = self.input_id.clone();
+        let output_id = self.output_id.clone();
 
 
         frame().show(ui, |ui| {
@@ -130,29 +138,31 @@ impl SwapUI {
                 ui.set_height(220.0);
 
                 // Input Token Field
-                ui.label(RichText::new("Swap").family(roboto_regular()).size(20.0));
+                let swap = rich_text("Swap", 20.0);
+                ui.label(swap);
 
                 ui.horizontal(|ui| {
                     ui.add_space(115.0);
                     self.input_amount_field(ui);
-                    self.token_select_button(ui, "input", tokens.clone());
+                    self.token_select_button(ui, &input_id, tokens.clone(), data);
                 });
                 ui.add_space(10.0);
 
                 // Output Token Field
-                ui.label(RichText::new("For").family(roboto_regular()).size(20.0));
+                let for_t = rich_text("For", 20.0);
+                ui.label(for_t);
 
                 ui.horizontal(|ui| {
                     ui.add_space(115.0);
                     self.output_amount_field(ui);
-                    self.token_select_button(ui, "output", tokens.clone());
+                    self.token_select_button(ui, &output_id, tokens.clone(), data);
                 });
             });
         });
     }
 
     /// Renders the token selection list
-    fn token_selection(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>) {
+    fn token_selection(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData) {
         
         if !self.get_token_list_status(id) {
             return;
@@ -200,7 +210,16 @@ impl SwapUI {
                     if let Ok(address) = Address::from_str(&self.search_token) {
                         if ui.button("Add Token").clicked() {
                             println!("Adding Token: {:?}", address);
-                            // TODO
+                            let client = if let Some(client) = &data.ws_client {
+                                client.clone()
+                            } else {
+                                return;
+                            };
+                            self.send_request(Request::GetERC20Token {
+                                id: id.to_string(),
+                                address,
+                                client,
+                            });
                         }
                     }
                 });
@@ -208,11 +227,11 @@ impl SwapUI {
     }
 
     /// Renders the token select button
-    fn token_select_button(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>) {
+    fn token_select_button(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData) {
         if ui.button(self.get_token(id).symbol).clicked() {
             self.update_token_list_status(id, true);
         }
-        self.token_selection(ui, id, tokens);
+        self.token_selection(ui, id, tokens, data);
     }
 
     /// Creates the field for the input amount

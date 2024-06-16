@@ -1,22 +1,22 @@
 use alloy::{
-    primitives::U256,
+    primitives::{U256, Address},
     providers::{ Provider, ProviderBuilder },
     transports::ws::WsConnect,
     rpc::types::eth::{ BlockId, BlockNumberOrTag },
 };
 
-
+use std::sync::Arc;
 use tokio::runtime::Runtime;
 use crossbeam::channel::{ Sender, Receiver };
 use revm::{ primitives::{ Bytes, TransactTo }, Evm, db::{ CacheDB, EmptyDB } };
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 
 use zeus_defi::{
     dex::uniswap::pool::{ get_v2_pool, get_v3_pools },
     erc20::ERC20Token,
     zeus_router::{ encode_swap, decode_swap, SwapRouter::Params, SWAP_ROUTER_ADDR },
 };
-use zeus_types::{ forked_db::fork_factory::ForkFactory, Rpc };
+use zeus_types::{ forked_db::fork_factory::ForkFactory, Rpc, WsClient };
 use zeus_types::{ ChainId, profile::Profile, forked_db::{ fork_db::ForkDB, revert_msg } };
 
 use zeus_utils::new_evm;
@@ -84,6 +84,10 @@ impl Backend {
                             Request::GetClient { chain_id, rpcs } => {
                                 self.get_client(chain_id, rpcs).await;
                             }
+
+                            Request::GetERC20Token { id, address, client } => {
+                                self.get_erc20_token(id, address, client).await;
+                            }
                         }
                     }
                     Err(_e) => {}
@@ -91,6 +95,22 @@ impl Backend {
             }
         })
     }
+
+    async fn get_erc20_token(&self, id: String, address: Address, client: Arc<WsClient>) {
+        let time = std::time::Instant::now();
+        let res = ERC20Token::new(address, client.clone()).await;
+        println!("Time to get ERC20Token: {:?}ms", time.elapsed().as_millis());
+    
+        let res_converted = res
+        .map(|token| (token, id))
+        .context("Failed to get ERC20Token");
+    
+        match self.back_sender.send(Response::GetERC20Token(res_converted)) {
+            Ok(_) => {}
+            Err(e) => println!("Error Sending Response: {}", e),
+        }
+    }
+    
 
     fn save_profile(&self, profile: Profile) {
         let res = profile.encrypt_and_save();

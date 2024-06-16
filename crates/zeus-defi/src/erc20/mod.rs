@@ -7,7 +7,7 @@ use alloy::pubsub::PubSubFrontend;
 use alloy::core::sol_types::SolCall;
 use std::sync::Arc;
 use std::str::FromStr;
-
+use tokio::try_join;
 
 sol! {
     #[sol(rpc)]
@@ -45,11 +45,13 @@ impl ERC20Token {
         address: Address,
         client: Arc<RootProvider<PubSubFrontend>>
     ) -> Result<Self, anyhow::Error> {
-        let contract = ERC20::new(address, client);
-        let symbol = contract.symbol().call().await?._0;
-        let name = contract.name().call().await?._0;
-        let decimals = contract.decimals().call().await?._0;
-        let total_supply = contract.totalSupply().call().await?._0;
+        
+        let symbol = Self::symbol(address, client.clone());
+        let name = Self::name(address, client.clone());
+        let decimals = Self::decimals(address, client.clone());
+        let total_supply = Self::total_supply(address, client.clone());
+        let res = try_join!(symbol, name, decimals, total_supply);
+        let (symbol, name, decimals, total_supply) = res?;
         Ok(Self {
             address,
             symbol,
@@ -57,6 +59,30 @@ impl ERC20Token {
             decimals,
             total_supply,
         })
+    }
+
+    async fn symbol(address: Address, client: Arc<RootProvider<PubSubFrontend>>) -> Result<String, anyhow::Error> {
+        let contract = ERC20::new(address, client);
+        let symbol = contract.symbol().call().await?._0;
+        Ok(symbol)
+    }
+
+    async fn name(address: Address, client: Arc<RootProvider<PubSubFrontend>>) -> Result<String, anyhow::Error> {
+        let contract = ERC20::new(address, client);
+        let name = contract.name().call().await?._0;
+        Ok(name)
+    }
+
+    async fn decimals(address: Address, client: Arc<RootProvider<PubSubFrontend>>) -> Result<u8, anyhow::Error> {
+        let contract = ERC20::new(address, client);
+        let decimals = contract.decimals().call().await?._0;
+        Ok(decimals)
+    }
+
+    async fn total_supply(address: Address, client: Arc<RootProvider<PubSubFrontend>>) -> Result<U256, anyhow::Error> {
+        let contract = ERC20::new(address, client);
+        let total_supply = contract.totalSupply().call().await?._0;
+        Ok(total_supply)
     }
 
     pub async fn balance_of(

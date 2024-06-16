@@ -31,3 +31,4 @@ revm = { version = "9.0.0", features = [
 ] }
 anyhow = "1.0.44"
 lazy_static = "1.4.0"
+tokio = { version = "1.35.1", features = ["full"] }

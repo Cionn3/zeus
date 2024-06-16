@@ -21,6 +21,8 @@ pub enum Request {
     SaveProfile { profile: Profile },
 
     GetClient { chain_id: ChainId, rpcs: Vec<Rpc> },
+
+    GetERC20Token { id: String, address: Address, client: Arc<WsClient> },
 }
 
 /// The response from the backend
@@ -33,6 +35,8 @@ pub enum Response {
     SaveProfile(Result<(), anyhow::Error>),
 
     GetClient(Result<WsClient, anyhow::Error>),
+
+    GetERC20Token(Result<(ERC20Token, String), anyhow::Error>),
 }
 
 /// Parameters needed to simulate a swap

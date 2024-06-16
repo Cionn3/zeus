@@ -7011,6 +7011,7 @@ dependencies = [
  "anyhow",
  "lazy_static",
  "revm",
+ "tokio",
  "zeus-types",
 ]
 
