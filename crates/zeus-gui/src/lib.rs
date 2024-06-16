@@ -82,9 +82,14 @@ impl ZeusApp {
     }
 
     /// Send a request to backend
-    fn send_request(&self, request: Request) {
+    fn send_request(&mut self, request: Request) {
         if let Some(sender) = &self.front_sender {
-            sender.send(request).unwrap();
+            match sender.send(request) {
+                Ok(_) => {}
+                Err(e) => {
+                    self.gui.err_msg = (true, anyhow::Error::msg(e));
+                }
+            }
         }
     }
 
@@ -100,11 +105,12 @@ impl ZeusApp {
 
     // TODO: show chain icon
     fn select_chain(&mut self, ui: &mut Ui) {
+        let networks = self.data.networks.clone();
         ui.horizontal(|ui| {
             ComboBox::from_label("")
                 .selected_text(self.data.chain_id.name())
                 .show_ui(ui, |ui| {
-                    for id in self.data.networks.iter().map(|(chain_id, _)| chain_id.clone()) {
+                    for id in networks.iter().map(|(chain_id, _)| chain_id.clone()) {
                        if ui.selectable_value(&mut self.data.chain_id, id.clone(), id.name()).clicked() {
                             println!("Selected Chain: {:?}", id);
                             self.send_request(Request::GetClient { chain_id: id, rpcs: self.data.rpc.clone() });
@@ -286,6 +292,7 @@ impl ZeusApp {
         });
 }
 
+    // TODO: Auto close it after a few seconds
     /// Show an info message if needed
     fn info_msg(&mut self, ui: &mut Ui) {
 
@@ -334,6 +341,8 @@ impl eframe::App for ZeusApp {
                         Response::SaveProfile(res) => {
                             if res.is_err() {
                                 self.gui.err_msg = (true, res.unwrap_err());
+                            } else {
+                                self.gui.info_msg = (true, "Profile Saved".to_string());
                             }
                         }
 
