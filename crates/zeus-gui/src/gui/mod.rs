@@ -3,23 +3,25 @@ use eframe::{
         style::{Selection, WidgetVisuals, Widgets}, Color32, Frame, RichText, Rounding, Stroke, Ui, Visuals,
         Align2, ComboBox
     },
-    epaint::{vec2, Margin, Shadow},
+    epaint::{vec2, Margin},
 };
 use egui::{FontId, TextEdit};
 use misc::{rich_text, frame};
 use crate::{fonts::roboto_regular, AppData};
+
 use zeus_backend::types::Request;
-use crate::gui::{swap_ui::SwapUI, settings::SettingsUi};
+use crate::gui::{swap_ui::SwapUI, state::*};
 use lazy_static::lazy_static;
 use crossbeam::channel::Sender;
 
 pub mod swap_ui;
-pub mod settings;
+pub mod state;
 pub mod misc;
 
 lazy_static! {
     pub static ref THEME: ZeusTheme = ZeusTheme::default();
 }
+
 
 
 /// The Graphical User Interface for [crate::ZeusApp]
@@ -29,17 +31,6 @@ pub struct GUI {
 
     pub swap_ui: SwapUI,
 
-    pub settings: SettingsUi,
-
-    /// Err Message popup
-    /// 
-    /// (on/off, Error)
-    pub err_msg: (bool, anyhow::Error),
-
-    /// Info Message
-    /// 
-    /// (on/off, String)
-    pub info_msg: (bool, String),
 }
 
 impl Default for GUI {
@@ -47,9 +38,6 @@ impl Default for GUI {
         Self {
             sender: None,
             swap_ui: SwapUI::default(),
-            settings: SettingsUi::default(),
-            err_msg: (false, anyhow::Error::msg("")),
-            info_msg: (false, "".to_string()),
         }
     }
 }
@@ -57,19 +45,19 @@ impl Default for GUI {
 impl GUI {
 
     /// Send a request to the backend
-    pub fn send_request(&mut self, request: Request) {
+    pub fn send_request(&mut self, request: Request, shared_state: &mut SharedUiState) {
         if let Some(sender) = &self.sender {
             match sender.send(request) {
                 Ok(_) => {}
                 Err(e) => {
-                    self.err_msg = (true, anyhow::Error::msg(e));
+                   shared_state.err_msg = ErrorMsg::new(true, e);
                 }
             }
         }
     }
 
     /// Render and handle the menu
-    pub fn menu(&mut self, ui: &mut Ui) {
+    pub fn menu(&mut self, ui: &mut Ui, shared_state: &mut SharedUiState) {
        let swap = RichText::new("Swap").family(roboto_regular()).size(20.0);
        let settings = RichText::new("Settings").family(roboto_regular()).size(20.0);
        let networks = RichText::new("Networks").family(roboto_regular()).size(15.0);
@@ -80,15 +68,15 @@ impl GUI {
        ui.vertical(|ui| {
 
         if ui.label(test_err).clicked() {
-            self.err_msg = (true, anyhow::Error::msg("Test Error"));
+           shared_state.err_msg = ErrorMsg::new(true, "Test Error");
         }
 
         if ui.label(test_info).clicked() {
-            self.info_msg = (true, "Test Info".to_string());
+            shared_state.info_msg = InfoMsg::new(true, "Test Info");
         }
 
         if ui.label(swap).clicked() {
-            self.settings.networks_on = false;
+            shared_state.networks_on = false;
             self.swap_ui.on = true;
         }
 
@@ -98,7 +86,7 @@ impl GUI {
             
             if ui.label(networks).clicked() {
                 self.swap_ui.on = false;
-                self.settings.networks_on = true;
+                shared_state.networks_on = true;
             }
         });
         
@@ -106,9 +94,9 @@ impl GUI {
     }
 
     /// Render Network Settings UI
-    pub fn networks_ui(&mut self, ui: &mut Ui, data: &mut AppData) {
+    pub fn networks_ui(&mut self, ui: &mut Ui, data: &mut AppData, shared_state: &mut SharedUiState) {
 
-        if !self.settings.networks_on {
+        if !shared_state.networks_on {
            return;
         }
         
@@ -159,28 +147,28 @@ impl GUI {
     }
 
     /// Render the UI repsonsible for managing the wallets
-    pub fn wallet_ui (&mut self, ui: &mut Ui, data: &mut AppData) {
-        self.wallet_selection(ui, data);
-        self.create_or_import_wallet(ui, data);
-        self.export_key_ui(ui, data);
-        self.show_exported_key(ui);
+    pub fn wallet_ui (&mut self, ui: &mut Ui, data: &mut AppData, shared_state: &mut SharedUiState) {
+        self.wallet_selection(ui, data, shared_state);
+        self.create_or_import_wallet(ui, data, shared_state);
+        self.export_key_ui(ui, data, shared_state);
+        self.show_exported_key(ui, shared_state);
 
     }
 
-    fn create_or_import_wallet(&mut self, ui: &mut Ui, data: &mut AppData) {
+    fn create_or_import_wallet(&mut self, ui: &mut Ui, data: &mut AppData, shared_state: &mut SharedUiState) {
 
-        if !self.settings.wallet_popup.0 {
+        if !shared_state.wallet_popup.0 {
             return;
         }
 
-        egui::Window::new(self.settings.wallet_popup.1)
+        egui::Window::new(shared_state.wallet_popup.1)
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
         .collapsible(false)
         .show(ui.ctx(), |ui| {
             ui.vertical_centered(|ui| {
 
-           if self.settings.wallet_popup.1 == "Import Wallet" {
+           if shared_state.wallet_popup.1 == "Import Wallet" {
 
             let label = rich_text("Private key:", 15.0);
             let name_label = rich_text("Wallet Name (Optional):", 15.0);
@@ -203,18 +191,21 @@ impl GUI {
                     match data.profile.import_wallet(data.wallet_name.clone(), data.private_key.clone()) {
                         Ok(_) => {}
                         Err(e) => {
-                            self.err_msg = (true, e);
+                            shared_state.err_msg = ErrorMsg::new(true, e);
                         }
                     }
 
-                    self.settings.wallet_popup = (false, "Import Wallet");
+                    shared_state.wallet_popup = (false, "Import Wallet");
                     data.private_key = "".to_string();
                     data.wallet_name = "".to_string();
-                    self.send_request(Request::SaveProfile { profile: data.profile.clone() });
+                    self.send_request(Request::SaveProfile { profile: data.profile.clone() }, shared_state);
                     
                 }
+                if ui.button("Close").clicked() {
+                    shared_state.wallet_popup = (false, "Import Wallet");
+                }
                
-            } else if self.settings.wallet_popup.1 == "New" {
+            } else if shared_state.wallet_popup.1 == "New" {
                 let label = rich_text("Wallet Name (Optional):", 15.0);
                 let name_field = TextEdit::singleline(&mut data.wallet_name).desired_width(200.0);
 
@@ -225,9 +216,12 @@ impl GUI {
 
                 if ui.button("Create").clicked() {
                     data.profile.new_wallet(data.wallet_name.clone());
-                    self.settings.wallet_popup = (false, "New");
+                    shared_state.wallet_popup = (false, "New");
                     data.wallet_name = "".to_string();
-                    self.send_request(Request::SaveProfile { profile: data.profile.clone() });
+                    self.send_request(Request::SaveProfile { profile: data.profile.clone() }, shared_state);
+                }
+                if ui.button("Close").clicked() {
+                    shared_state.wallet_popup = (false, "New");
                 }
             }
             });
@@ -235,7 +229,7 @@ impl GUI {
         
     }
 
-    fn wallet_selection(&mut self, ui: &mut Ui, data: &mut AppData) {
+    fn wallet_selection(&mut self, ui: &mut Ui, data: &mut AppData, shared_state: &mut SharedUiState) {
          
         if !data.logged_in || data.new_profile_screen {
             return;
@@ -273,13 +267,13 @@ impl GUI {
             
             ui.vertical(|ui| {
                 if ui.button("New Wallet").clicked() {
-                    self.settings.wallet_popup = (true, "New");
+                    shared_state.wallet_popup = (true, "New");
                 }
 
                 ui.add_space(5.0);
 
                 if ui.button("Import Wallet").clicked() {
-                    self.settings.wallet_popup = (true, "Import Wallet");
+                    shared_state.wallet_popup = (true, "Import Wallet");
                 }
             });
 
@@ -291,7 +285,7 @@ impl GUI {
                     let curr_wallet = match curr_wallet {
                         Some(wallet) => wallet,
                         None => {
-                            self.err_msg = (true, anyhow::Error::msg("No Wallet Selected"));
+                            shared_state.err_msg = ErrorMsg::new(true, "No Wallet Selected");
                             return;
                         }
                     };
@@ -304,7 +298,7 @@ impl GUI {
                 ui.add_space(5.0);
 
                 if ui.button("Export Private Key").clicked() {
-                    self.settings.export_key_ui = true;
+                    shared_state.export_key_ui = true;
                 }
             });
 
@@ -315,8 +309,8 @@ impl GUI {
         });
     }
 
-    pub fn export_key_ui(&mut self, ui: &mut Ui, data: &mut AppData) {
-        if !self.settings.export_key_ui {
+    pub fn export_key_ui(&mut self, ui: &mut Ui, data: &mut AppData, shared_state: &mut SharedUiState) {
+        if !shared_state.export_key_ui {
             return;
         }
 
@@ -352,7 +346,7 @@ impl GUI {
                 let wallet = match data.profile.current_wallet.clone() {
                     Some(wallet) => wallet,
                     None => {
-                        self.err_msg = (true, anyhow::Error::msg("No Wallet Selected"));
+                        shared_state.err_msg = ErrorMsg::new(true, "No Wallet Selected");
                         return;
                     }
                 };
@@ -360,32 +354,36 @@ impl GUI {
                 let key = match data.profile.export_wallet(wallet.name, data.confirm_credentials.clone()) {
                     Ok(key) => key,
                     Err(e) => {
-                        self.err_msg = (true, e);
+                        shared_state.err_msg = ErrorMsg::new(true, e);
                         return;
                     }
                 };
                 data.confirm_credentials = Default::default();
 
-                self.settings.export_key_ui = false;
-                self.settings.exported_key_window = (true, key);
+                shared_state.export_key_ui = false;
+                shared_state.exported_key_window = (true, key);
+            }
+            if ui.button("Close").clicked() {
+                shared_state.export_key_ui = false;
             }
         });
     }
 
-   pub fn show_exported_key(&mut self, ui: &mut Ui) {
-        if !self.settings.exported_key_window.0 {
+   pub fn show_exported_key(&mut self, ui: &mut Ui, shared_state: &mut SharedUiState) {
+        if !shared_state.exported_key_window.0 {
             return;
         }
+
         egui::Window::new("Exported Key")
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
         .collapsible(false)
         .show(ui.ctx(), |ui| {
-        let label = rich_text(&self.settings.exported_key_window.1, 15.0);
+        let label = rich_text(&shared_state.exported_key_window.1, 15.0);
         ui.label(label);
 
         if ui.button("Close").clicked() {
-            self.settings.exported_key_window = (false, "".to_string());
+            shared_state.exported_key_window = (false, "".to_string());
         }
 
         });

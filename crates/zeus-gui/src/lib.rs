@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use eframe::{ egui, CreationContext };
 use egui::{
-    vec2, Align2, ComboBox, Context, Style, TextEdit, Ui
+    vec2, Align2, ComboBox, Context, Style, Ui
 };
 
 use crossbeam::channel::{ bounded, Sender, Receiver };
@@ -10,7 +10,7 @@ use crossbeam::channel::{ bounded, Sender, Receiver };
 
 use crate::{
     fonts::get_fonts,
-    gui::{ ZeusTheme, GUI, misc::{ login_screen, new_profile_screen, rich_text, frame } },
+    gui::{ ZeusTheme, GUI, misc::{ login_screen, new_profile_screen, rich_text, frame }, state::* },
 };
 
 use zeus_backend::{ Backend, types::{ Request, Response } };
@@ -18,6 +18,7 @@ use zeus_types::app_data::AppData;
 
 pub mod gui;
 pub mod fonts;
+
 
 /// The main application struct
 pub struct ZeusApp {
@@ -32,6 +33,9 @@ pub struct ZeusApp {
 
     /// The app data of the application
     pub data: AppData,
+
+    /// Shared Ui State
+    pub shared_state: SharedUiState,
 }
 
 impl Default for ZeusApp {
@@ -41,6 +45,7 @@ impl Default for ZeusApp {
             front_sender: None,
             back_receiver: None,
             data: AppData::default(),
+            shared_state: SharedUiState::default(),
         }
     }
 }
@@ -87,7 +92,7 @@ impl ZeusApp {
             match sender.send(request) {
                 Ok(_) => {}
                 Err(e) => {
-                    self.gui.err_msg = (true, anyhow::Error::msg(e));
+                    self.shared_state.err_msg = ErrorMsg::new(true, e);
                 }
             }
         }
@@ -127,7 +132,7 @@ impl ZeusApp {
     /// Show an error message if needed
     fn err_msg(&mut self, ui: &mut Ui) {
 
-        if !self.gui.err_msg.0 {
+        if !self.shared_state.err_msg.on {
             return;
         }
 
@@ -138,14 +143,14 @@ impl ZeusApp {
         .title_bar(false)
         .show(ui.ctx(), |ui| {
             ui.vertical_centered(|ui| {
-                let msg = self.gui.err_msg.1.to_string();
-                let msg_text = rich_text(&msg, 16.0);
+                
+                let msg_text = rich_text(&self.shared_state.err_msg.msg, 16.0);
                 let close_text = rich_text("Close", 16.0);
 
                 ui.label(msg_text);
                 ui.add_space(5.0);
                 if ui.button(close_text).clicked() {
-                    self.gui.err_msg.0 = false;
+                    self.shared_state.err_msg.on = false;
                 }
             });
         });
@@ -155,7 +160,7 @@ impl ZeusApp {
     /// Show an info message if needed
     fn info_msg(&mut self, ui: &mut Ui) {
 
-        if !self.gui.info_msg.0 {
+        if !self.shared_state.info_msg.on {
             return;
         }
 
@@ -164,14 +169,13 @@ impl ZeusApp {
         .show(ui, |ui| {
             ui.set_max_size(vec2(100.0, 50.0));
            
-                let msg = self.gui.info_msg.1.clone();
-                let msg_text = rich_text(&msg, 16.0);
+                let msg_text = rich_text(&self.shared_state.info_msg.msg, 16.0);
                 let close_text = rich_text("Close", 16.0);
 
                 ui.label(msg_text);
                 ui.add_space(5.0);
                 if ui.button(close_text).clicked() {
-                    self.gui.info_msg.0 = false;
+                    self.shared_state.info_msg.on = false;
                 }  
         });
     });
@@ -199,15 +203,15 @@ impl eframe::App for ZeusApp {
 
                         Response::SaveProfile(res) => {
                             if res.is_err() {
-                                self.gui.err_msg = (true, res.unwrap_err());
+                                self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
                             } else {
-                                self.gui.info_msg = (true, "Profile Saved".to_string());
+                                self.shared_state.info_msg = InfoMsg::new(true, "Profile Saved Successfully");
                             }
                         }
 
                         Response::GetClient(res) => {
                             if res.is_err() {
-                                self.gui.err_msg = (true, res.unwrap_err());
+                                self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
                             } else {
                                 self.data.ws_client = Some(Arc::new(res.unwrap()));
                             }
@@ -215,7 +219,7 @@ impl eframe::App for ZeusApp {
 
                         Response::GetERC20Token(res) => {
                             if res.is_err() {
-                                self.gui.err_msg = (true, res.unwrap_err());
+                                self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
                             } else {
                                 let (token, id) = res.unwrap();
                                 self.gui.swap_ui.update_token(&id, token);
@@ -231,7 +235,7 @@ impl eframe::App for ZeusApp {
         // Draw the UI that belongs to the Top Panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                self.gui.wallet_ui(ui, &mut self.data);
+                self.gui.wallet_ui(ui, &mut self.data, &mut self.shared_state);
                 self.info_msg(ui);
             });
         });
@@ -249,8 +253,8 @@ impl eframe::App for ZeusApp {
 
             ui.vertical_centered_justified(|ui| {
                 ui.add_space(100.0);
-                self.gui.swap_ui.swap_panel(ui, &mut self.data);
-                self.gui.networks_ui(ui, &mut self.data);
+                self.gui.swap_ui.swap_panel(ui, &mut self.data, &mut self.shared_state);
+                self.gui.networks_ui(ui, &mut self.data, &mut self.shared_state);
 
             });
         });
@@ -264,7 +268,7 @@ impl eframe::App for ZeusApp {
 
                 ui.add_space(10.0);
 
-                self.gui.menu(ui);
+                self.gui.menu(ui, &mut self.shared_state);
             });
     }
 }

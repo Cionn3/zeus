@@ -5,7 +5,9 @@ use egui::{
 };
 
 use crate::fonts::roboto_regular;
+use crate::SharedUiState;
 use super::misc::{frame, rich_text};
+use super::ErrorMsg;
 use zeus_defi::erc20::{ default_tokens, ERC20Token };
 use zeus_types::app_data::AppData;
 
@@ -113,7 +115,7 @@ impl SwapUI {
         }
     }
 
-    /// Send a message to the backend
+    /// Send a request to the backend
     pub fn send_request(&self, request: Request) {
         if let Some(sender) = &self.front_sender {
             sender.send(request).unwrap();
@@ -121,7 +123,7 @@ impl SwapUI {
     }
 
     /// Renders the swap panel
-    pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData) {
+    pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, shared_state: &mut SharedUiState) {
         if !self.on {
             return;
         }
@@ -144,7 +146,7 @@ impl SwapUI {
                 ui.horizontal(|ui| {
                     ui.add_space(115.0);
                     self.input_amount_field(ui);
-                    self.token_select_button(ui, &input_id, tokens.clone(), data);
+                    self.token_select_button(ui, &input_id, tokens.clone(), data, shared_state);
                 });
                 ui.add_space(10.0);
 
@@ -155,20 +157,18 @@ impl SwapUI {
                 ui.horizontal(|ui| {
                     ui.add_space(115.0);
                     self.output_amount_field(ui);
-                    self.token_select_button(ui, &output_id, tokens.clone(), data);
+                    self.token_select_button(ui, &output_id, tokens.clone(), data, shared_state);
                 });
             });
         });
     }
 
     /// Renders the token selection list
-    fn token_selection(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData) {
+    fn token_selection(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData, shared_state: &mut SharedUiState) {
         
         if !self.get_token_list_status(id) {
             return;
         }
-
-
 
             egui::Window::new("Token List")
                 .resizable(false)
@@ -213,6 +213,7 @@ impl SwapUI {
                             let client = if let Some(client) = &data.ws_client {
                                 client.clone()
                             } else {
+                                shared_state.err_msg = ErrorMsg::new(true, "You are not connected to a node");
                                 return;
                             };
                             self.send_request(Request::GetERC20Token {
@@ -227,11 +228,11 @@ impl SwapUI {
     }
 
     /// Renders the token select button
-    fn token_select_button(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData) {
+    fn token_select_button(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData, shared_state: &mut SharedUiState) {
         if ui.button(self.get_token(id).symbol).clicked() {
             self.update_token_list_status(id, true);
         }
-        self.token_selection(ui, id, tokens, data);
+        self.token_selection(ui, id, tokens, data, shared_state);
     }
 
     /// Creates the field for the input amount
