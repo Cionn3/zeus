@@ -7,7 +7,7 @@ use alloy::{
 };
 
 
-use crate::{profile::Profile, ChainId, Rpc};
+use crate::{profile::{Credentials, Profile}, ChainId, Rpc};
 
 
 /// Main data and settings loaded by the app
@@ -45,6 +45,9 @@ pub struct AppData {
 
     /// Current input Name of a wallet (Used in New Wallet button)
     pub wallet_name: String,
+
+    /// Confirm credentials for exporting a private key
+    pub confirm_credentials: Credentials,
 
 }
 
@@ -112,6 +115,7 @@ impl Default for AppData {
             profile_exists,
             private_key: "".to_string(),
             wallet_name: "".to_string(),
+            confirm_credentials: Credentials::default(),
         }
     }
 }

@@ -1,12 +1,12 @@
 use eframe::{
     egui::{
-        style::{Selection, WidgetVisuals, Widgets},
-        Color32, Frame, Rounding, Stroke, Visuals,
-        Ui, RichText
+        style::{Selection, WidgetVisuals, Widgets}, Color32, Frame, RichText, Rounding, Stroke, Ui, Visuals,
+        Align2, ComboBox
     },
-    epaint::{Margin, Shadow, vec2},
+    epaint::{vec2, Margin, Shadow},
 };
 use egui::{FontId, TextEdit};
+use misc::{rich_text, frame};
 use crate::{fonts::roboto_regular, AppData};
 use zeus_backend::types::Request;
 use crate::gui::{swap_ui::SwapUI, settings::SettingsUi};
@@ -55,6 +55,19 @@ impl Default for GUI {
 }
 
 impl GUI {
+
+    /// Send a request to the backend
+    pub fn send_request(&mut self, request: Request) {
+        if let Some(sender) = &self.sender {
+            match sender.send(request) {
+                Ok(_) => {}
+                Err(e) => {
+                    self.err_msg = (true, anyhow::Error::msg(e));
+                }
+            }
+        }
+    }
+
     /// Render and handle the menu
     pub fn menu(&mut self, ui: &mut Ui) {
        let swap = RichText::new("Swap").family(roboto_regular()).size(20.0);
@@ -102,21 +115,8 @@ impl GUI {
         let description = RichText::new("RPC Endpoints, Currently only supports Websockets").family(roboto_regular()).size(20.0);
         let font = FontId::new(15.0, roboto_regular());
 
-        let frame = Frame {
-            inner_margin: Margin::same(8.0),
-            outer_margin: Margin::same(8.0),
-            fill: THEME.colors.darker_gray,
-            rounding: Rounding { ne: 8.0, se: 8.0, sw: 8.0, nw: 8.0 },
-            shadow: Shadow {
-                offset: vec2(0.0, 0.0),
-                blur: 4.0,
-                spread: 0.0,
-                color: Color32::from_gray(128),
-            },
-            ..Frame::default()
-        };
 
-        frame.show(ui, |ui| {
+        frame().show(ui, |ui| {
             ui.set_max_size(egui::vec2(400.0, 500.0));
 
             ui.vertical_centered(|ui| {
@@ -156,11 +156,241 @@ impl GUI {
                 });
             });
         });
-
-       
-
-       
     }
+
+    /// Render the UI repsonsible for managing the wallets
+    pub fn wallet_ui (&mut self, ui: &mut Ui, data: &mut AppData) {
+        self.wallet_selection(ui, data);
+        self.create_or_import_wallet(ui, data);
+        self.export_key_ui(ui, data);
+        self.show_exported_key(ui);
+
+    }
+
+    fn create_or_import_wallet(&mut self, ui: &mut Ui, data: &mut AppData) {
+
+        if !self.settings.wallet_popup.0 {
+            return;
+        }
+
+        egui::Window::new(self.settings.wallet_popup.1)
+        .resizable(false)
+        .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+        .collapsible(false)
+        .show(ui.ctx(), |ui| {
+            ui.vertical_centered(|ui| {
+
+           if self.settings.wallet_popup.1 == "Import Wallet" {
+
+            let label = rich_text("Private key:", 15.0);
+            let name_label = rich_text("Wallet Name (Optional):", 15.0);
+
+            let key_field = TextEdit::singleline(&mut data.private_key).desired_width(200.0).password(true);
+            let name_field = TextEdit::singleline(&mut data.wallet_name).desired_width(200.0);
+
+            
+                ui.label(label);
+                ui.add_space(5.0);
+                ui.add(key_field);
+                ui.add_space(5.0);
+                ui.label(name_label);
+                ui.add_space(5.0);
+                ui.add(name_field);
+                ui.add_space(5.0);
+
+               if ui.button("Import").clicked() {
+
+                    match data.profile.import_wallet(data.wallet_name.clone(), data.private_key.clone()) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            self.err_msg = (true, e);
+                        }
+                    }
+
+                    self.settings.wallet_popup = (false, "Import Wallet");
+                    data.private_key = "".to_string();
+                    data.wallet_name = "".to_string();
+                    self.send_request(Request::SaveProfile { profile: data.profile.clone() });
+                    
+                }
+               
+            } else if self.settings.wallet_popup.1 == "New" {
+                let label = rich_text("Wallet Name (Optional):", 15.0);
+                let name_field = TextEdit::singleline(&mut data.wallet_name).desired_width(200.0);
+
+                ui.label(label);
+                ui.add_space(5.0);
+                ui.add(name_field);
+                ui.add_space(5.0);
+
+                if ui.button("Create").clicked() {
+                    data.profile.new_wallet(data.wallet_name.clone());
+                    self.settings.wallet_popup = (false, "New");
+                    data.wallet_name = "".to_string();
+                    self.send_request(Request::SaveProfile { profile: data.profile.clone() });
+                }
+            }
+            });
+        });
+        
+    }
+
+    fn wallet_selection(&mut self, ui: &mut Ui, data: &mut AppData) {
+         
+        if !data.logged_in || data.new_profile_screen {
+            return;
+        }
+
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+
+                frame().show(ui, |ui| {
+                    let current_wallet = data.profile.current_wallet_name();
+
+                    // TODO: an oracle to fetch the balance at specific intervals
+                    let balance = rich_text(&data.native_balance(), 15.0);
+
+                    let coin = rich_text(&data.native_coin(), 15.0);
+
+                    ComboBox::from_label("")
+                        .selected_text(current_wallet)
+                        .show_ui(ui, |ui| {
+                            for wallet in &data.profile.wallets {
+                                ui.selectable_value(
+                                    &mut data.profile.current_wallet,
+                                    Some(wallet.clone()),
+                                    wallet.name.clone()
+                                );
+                            }
+                        });
+                    ui.label(coin);
+                    ui.label(balance);
+                });
+            });
+
+            ui.horizontal(|ui| {
+
+            
+            ui.vertical(|ui| {
+                if ui.button("New Wallet").clicked() {
+                    self.settings.wallet_popup = (true, "New");
+                }
+
+                ui.add_space(5.0);
+
+                if ui.button("Import Wallet").clicked() {
+                    self.settings.wallet_popup = (true, "Import Wallet");
+                }
+            });
+
+            ui.vertical(|ui| {
+                if ui.button("Copy Address").clicked() {
+
+                    let curr_wallet = data.profile.current_wallet.clone();
+
+                    let curr_wallet = match curr_wallet {
+                        Some(wallet) => wallet,
+                        None => {
+                            self.err_msg = (true, anyhow::Error::msg("No Wallet Selected"));
+                            return;
+                        }
+                    };
+                    
+                    ui.ctx().output_mut(|output| {
+                        output.copied_text = curr_wallet.key.address().to_string();
+                    });
+                }
+
+                ui.add_space(5.0);
+
+                if ui.button("Export Private Key").clicked() {
+                    self.settings.export_key_ui = true;
+                }
+            });
+
+
+        });
+            ui.add_space(10.0);
+
+        });
+    }
+
+    pub fn export_key_ui(&mut self, ui: &mut Ui, data: &mut AppData) {
+        if !self.settings.export_key_ui {
+            return;
+        }
+
+        let heading = rich_text("Confirm Your Credentials", 20.0);
+        let username = rich_text("Username", 15.0);
+        let password = rich_text("Password", 15.0);
+        let confirm_password = rich_text("Confirm Password", 15.0);
+
+        egui::Window::new("Export Key")
+        .resizable(false)
+        .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+        .collapsible(false)
+        .show(ui.ctx(), |ui| {
+            ui.label(heading);
+            ui.add_space(10.0);
+
+            ui.label(username);
+            let username_field = TextEdit::singleline(&mut data.confirm_credentials.username).text_color(THEME.colors.dark_gray);
+            ui.add(username_field);
+            ui.add_space(10.0);
+
+            ui.label(password);
+            let password_field = TextEdit::singleline(&mut data.confirm_credentials.password).password(true);
+            ui.add(password_field);
+            ui.add_space(10.0);
+
+            ui.label(confirm_password);
+            let confirm_password_field = TextEdit::singleline(&mut data.confirm_credentials.confrim_password).password(true);
+            ui.add(confirm_password_field);
+            ui.add_space(10.0);
+
+            if ui.button("Export Key").clicked() {
+                let wallet = match data.profile.current_wallet.clone() {
+                    Some(wallet) => wallet,
+                    None => {
+                        self.err_msg = (true, anyhow::Error::msg("No Wallet Selected"));
+                        return;
+                    }
+                };
+
+                let key = match data.profile.export_wallet(wallet.name, data.confirm_credentials.clone()) {
+                    Ok(key) => key,
+                    Err(e) => {
+                        self.err_msg = (true, e);
+                        return;
+                    }
+                };
+                data.confirm_credentials = Default::default();
+
+                self.settings.export_key_ui = false;
+                self.settings.exported_key_window = (true, key);
+            }
+        });
+    }
+
+   pub fn show_exported_key(&mut self, ui: &mut Ui) {
+        if !self.settings.exported_key_window.0 {
+            return;
+        }
+        egui::Window::new("Exported Key")
+        .resizable(false)
+        .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+        .collapsible(false)
+        .show(ui.ctx(), |ui| {
+        let label = rich_text(&self.settings.exported_key_window.1, 15.0);
+        ui.label(label);
+
+        if ui.button("Close").clicked() {
+            self.settings.exported_key_window = (false, "".to_string());
+        }
+
+        });
+    }
+
 }
 
 // credits: https://github.com/4JX/mCubed/blob/master/main/src/ui/app_theme.rs

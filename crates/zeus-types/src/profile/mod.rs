@@ -178,6 +178,16 @@ impl Profile {
         Ok(())
     }
 
+    /// Confirm again the credentials and export the givens wallet key
+    pub fn export_wallet(&self, wallet_name: String, credentials: Credentials) -> Result<String, anyhow::Error> {
+        if let Err(e) = encryption::decrypt_data(FILENAME, credentials.clone()) {
+            return Err(anyhow!("Invalid credentials: {}", e));
+        }
+
+        let wallet = self.wallets.iter().find(|w| w.name == wallet_name).ok_or_else(|| anyhow!("Wallet not found"))?;
+        Ok(wallet.get_key())
+    }
+
     /// Create a new random wallet and add it to the profile
     pub fn new_wallet(&mut self, name: String) {
         let wallet = Wallet::new_rng(name);
