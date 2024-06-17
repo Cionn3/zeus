@@ -1,10 +1,11 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use eframe::{ egui, CreationContext };
 use egui::{
     vec2, Align2, ComboBox, Context, Style, Ui
 };
 
 use crossbeam::channel::{ bounded, Sender, Receiver };
+use zeus_defi::erc20::ERC20Token;
 
 
 use crate::{
@@ -12,7 +13,7 @@ use crate::{
     gui::{ ZeusTheme, GUI, misc::{ login_screen, new_profile_screen, rich_text, frame }, state::* },
 };
 
-use zeus_backend::{ Backend, types::{ Request, Response } };
+use zeus_backend::{ Backend, types::{ Request, Response }, db::ZeusDB };
 use zeus_types::app_data::AppData;
 
 
@@ -61,6 +62,21 @@ impl ZeusApp {
                 println!("Error Loading rpc.json: {}", e);
             }
         }
+
+        let tokens: HashMap<u64, Vec<ERC20Token>>;
+
+        {
+            let zeus_db = ZeusDB::new().unwrap();
+
+            tokens = match zeus_db.load_tokens(vec![1, 56, 8453, 42161]) {
+                Ok(tokens) => tokens,
+                Err(e) => {
+                    println!("Error Loading Tokens: {}", e);
+                    HashMap::new()
+                }
+            };
+        }
+        app.gui.swap_ui.tokens = tokens;
 
         let (front_sender, front_receiver) = bounded(1);
         let (back_sender, back_receiver) = bounded(1);

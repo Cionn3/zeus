@@ -1,4 +1,5 @@
 use eframe::egui;
+use std::collections::HashMap;
 use std::str::FromStr;
 use egui::{
     vec2, Align2, Color32, FontId, RichText, TextEdit, Ui
@@ -8,7 +9,7 @@ use crate::fonts::roboto_regular;
 use crate::SharedUiState;
 use super::misc::{frame, rich_text};
 use super::ErrorMsg;
-use zeus_defi::erc20::{ default_tokens, ERC20Token };
+use zeus_defi::erc20::ERC20Token;
 use zeus_types::app_data::AppData;
 
 
@@ -50,6 +51,9 @@ pub struct SwapUI {
     pub input_id: String,
 
     pub output_id: String,
+
+    /// A Vec of [ERC20Token] with their corresponding chain id
+    pub tokens: HashMap<u64, Vec<ERC20Token>>
 }
 
 impl Default for SwapUI {
@@ -66,6 +70,7 @@ impl Default for SwapUI {
             search_token: "".to_string(),
             input_id: String::from("input"),
             output_id: String::from("output"),
+            tokens: HashMap::new()
         }
     }
 }
@@ -150,8 +155,8 @@ impl SwapUI {
             return;
         }
 
-        // TODO: Load a list of tokens from a local db
-        let tokens = vec![self.input_token.clone(), self.output_token.clone()];
+        
+        let tokens = self.tokens.get(&data.chain_id.id()).unwrap_or(&vec![]).clone();
         let input_id = self.input_id.clone();
         let output_id = self.output_id.clone();
 

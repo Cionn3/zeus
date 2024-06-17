@@ -1,7 +1,8 @@
+use revm::primitives::bitvec::vec;
 use rusqlite::{Connection as DbConnection, params};
 use alloy::primitives::Address;
 use zeus_defi::{erc20::ERC20Token, dex::uniswap::pool::{Pool, PoolVariant}};
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 
 pub struct ZeusDB {
@@ -25,7 +26,8 @@ impl ZeusDB {
                       symbol             TEXT NOT NULL,
                       name         TEXT NOT NULL,
                       decimals         INTEGER NOT NULL,
-                      total_supply         TEXT NOT NULL
+                      total_supply         TEXT NOT NULL,
+                      UNIQUE(chain_id, address)
                       )",
             [],
         )?;
@@ -40,7 +42,8 @@ impl ZeusDB {
                       token0             TEXT NOT NULL,
                       token1             TEXT NOT NULL,
                       variant            TEXT NOT NULL,
-                      fee                INTEGER NOT NULL
+                      fee                INTEGER NOT NULL,
+                      UNIQUE(chain_id, address)
                       )",
             [],
         )?;
@@ -87,7 +90,7 @@ impl ZeusDB {
         Ok(())
     }
 
-    /// Get the [ERC20Token] from the database
+    /// Get the [ERC20Token] from the given address and chain_id
     pub fn get_erc20(&self, address: Address, chain_id: u64) -> Result<Option<ERC20Token>, anyhow::Error> {
         let mut stmt = self.erc20_tokens.prepare("SELECT * FROM ERC20Token WHERE address = ?1, ?2")?;
         let mut rows = stmt.query(params![address.to_string(), chain_id])?;
@@ -116,12 +119,12 @@ impl ZeusDB {
         
     }
 
-    /// Get the [Pool] from the database
-    pub fn get_pool(&self, token0: ERC20Token, token1: ERC20Token, chain_id: u64) -> Result<Option<Pool>, anyhow::Error> {
+    /// Get the [Pool] from the given token0, token1, pool variant and chain_id
+    pub fn get_pool(&self, token0: ERC20Token, token1: ERC20Token, chain_id: u64, variant: String) -> Result<Option<Pool>, anyhow::Error> {
         let token0_addr = token0.address.to_string();
         let token1_addr = token1.address.to_string();
-        let mut stmt = self.pools.prepare("SELECT * FROM Pool WHERE chain_id, token0_addr, token1_addr = ?1, ?3, ?4")?;
-        let mut rows = stmt.query(params![chain_id, token0_addr, token1_addr])?;
+        let mut stmt = self.pools.prepare("SELECT * FROM Pool WHERE chain_id, token0_addr, token1_addr = ?1, ?3, ?4, ?5")?;
+        let mut rows = stmt.query(params![chain_id, token0_addr, token1_addr, variant])?;
     
         if let Some(row) = rows.next()? {
             let address: String = row.get(2)?;
@@ -141,6 +144,45 @@ impl ZeusDB {
         } else {
             Ok(None)
         }
+    }
+
+    /// Get all [ERC20Token] from the given chain_id
+    pub fn get_all_erc20(&self, chain_id: u64) -> Result<Vec<ERC20Token>, anyhow::Error> {
+        let mut stmt = self.erc20_tokens.prepare("SELECT * FROM ERC20Token WHERE chain_id = ?1")?;
+        let mut rows = stmt.query(params![chain_id])?;
+        let mut tokens = Vec::new();
+    
+        while let Some(row) = rows.next()? {
+            let chain_id: i32 = row.get(1)?;
+            let address: String = row.get(2)?;
+            let symbol: String = row.get(3)?;
+            let name: String = row.get(4)?;
+            let decimals: i32 = row.get(5)?;
+            let total_supply: String = row.get(6)?;
+
+            let token = ERC20Token {
+                chain_id: chain_id as u64,
+                address: address.parse().unwrap(),
+                symbol,
+                name,
+                decimals: decimals as u8,
+                total_supply: total_supply.parse().unwrap(),
+            };
+            
+            tokens.push(token);
+        }
+        
+        Ok(tokens)
+    }
+    
+    /// Load all tokens to a hashmap
+    pub fn load_tokens(&self, id: Vec<u64>) -> Result<HashMap<u64, Vec<ERC20Token>>, anyhow::Error>{
+        let mut tokens = HashMap::new();
+        for chain_id in id {
+            let chain_tokens = self.get_all_erc20(chain_id)?;
+            tokens.insert(chain_id, chain_tokens);
+        }
+        Ok(tokens)
     }
     
     

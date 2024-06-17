@@ -250,28 +250,3 @@ impl Default for ERC20Token {
         }
     }
 }
-
-
-
-pub fn default_tokens() -> Vec<ERC20Token> {
-    let mut tokens = Vec::new();
-    tokens.push(ERC20Token {
-        chain_id: 1,
-        name: "USD Coin".to_string(),
-        address: Address::from_str("0x2791bca1f2de4661ed88a30c99a7a9449aa84174").unwrap(),
-        decimals: 6,
-        symbol: "USDC".to_string(),
-        total_supply: U256::ZERO,
-    });
-    tokens.push(ERC20Token {
-        chain_id: 1,
-        name: "Wrapped Ether".to_string(),
-        address: Address::from_str("0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619").unwrap(),
-        decimals: 18,
-        symbol: "WETH".to_string(),
-        total_supply: U256::ZERO,
-    });
-    
-    tokens
-
-}
