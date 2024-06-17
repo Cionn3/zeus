@@ -59,8 +59,8 @@ impl Default for SwapUI {
             on: true,
             output_token_list_on: false,
             input_token_list_on: false,
-            input_token: ERC20Token::default_input(),
-            output_token: ERC20Token::default_output(),
+            input_token: ERC20Token::eth_default_input(),
+            output_token: ERC20Token::eth_default_output(),
             input_amount: "".to_string(),
             output_amount: "".to_string(),
             search_token: "".to_string(),
@@ -71,12 +71,34 @@ impl Default for SwapUI {
 }
 
 impl SwapUI {
+    /// Update input_token based on the selected chain id
+    pub fn default_input(&mut self, id: u64) {
+        match id {
+            1 => self.input_token = ERC20Token::eth_default_input(),
+            56 => self.input_token = ERC20Token::bsc_default_input(),
+            8453 => self.input_token = ERC20Token::base_default_input(),
+            42161 => self.input_token = ERC20Token::arbitrum_default_input(),
+            _ => {}
+        }
+    }
+
+    /// Update output_token based on the selected chain id
+    pub fn default_output(&mut self, id: u64) {
+        match id {
+            1 => self.output_token = ERC20Token::eth_default_output(),
+            56 => self.output_token = ERC20Token::bsc_default_output(),
+            8453 => self.output_token = ERC20Token::base_default_output(),
+            42161 => self.output_token = ERC20Token::arbitrum_default_output(),
+            _ => {}
+        }
+    }
+
     /// Get the input or output token by an id
     fn get_token(&self, id: &str) -> ERC20Token {
         match id {
             "input" => self.input_token.clone(),
             "output" => self.output_token.clone(),
-            _ => ERC20Token::default_input(),
+            _ => ERC20Token::eth_default_input(),
         }
     }
 
@@ -129,7 +151,7 @@ impl SwapUI {
         }
 
         // TODO: Load a list of tokens from a local db
-        let tokens = default_tokens();
+        let tokens = vec![self.input_token.clone(), self.output_token.clone()];
         let input_id = self.input_id.clone();
         let output_id = self.output_id.clone();
 

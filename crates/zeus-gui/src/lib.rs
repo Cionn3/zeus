@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::path::{Path, PathBuf};
 use eframe::{ egui, CreationContext };
 use egui::{
     vec2, Align2, ComboBox, Context, Style, Ui
@@ -13,9 +12,9 @@ use crate::{
     gui::{ ZeusTheme, GUI, misc::{ login_screen, new_profile_screen, rich_text, frame }, state::* },
 };
 
-use zeus_backend::{ Backend, types::{ Request, Response }, db::ZeusDB };
+use zeus_backend::{ Backend, types::{ Request, Response } };
 use zeus_types::app_data::AppData;
-use rusqlite::{params, Connection, Result as DbResult};
+
 
 pub mod gui;
 pub mod fonts;
@@ -119,7 +118,9 @@ impl ZeusApp {
                     for id in networks.iter().map(|(chain_id, _)| chain_id.clone()) {
                        if ui.selectable_value(&mut self.data.chain_id, id.clone(), id.name()).clicked() {
                             println!("Selected Chain: {:?}", id);
-                            self.send_request(Request::GetClient { chain_id: id, rpcs: self.data.rpc.clone() });
+                            self.send_request(Request::GetClient { chain_id: id.clone(), rpcs: self.data.rpc.clone() });
+                            self.gui.swap_ui.default_input(id.id());
+                            self.gui.swap_ui.default_output(id.id());
                         }
                     }   
                 });

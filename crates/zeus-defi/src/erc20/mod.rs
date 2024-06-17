@@ -147,7 +147,7 @@ impl ERC20Token {
         Ok(balance.balance)
     }
 
-   pub fn default_input() -> Self {
+   pub fn eth_default_input() -> Self {
         Self {
             chain_id: 1,
             name: "Wrapped Ether".to_string(),
@@ -158,18 +158,85 @@ impl ERC20Token {
         }
     }
 
-    pub fn default_output() -> Self {
+    pub fn eth_default_output() -> Self {
         Self {
             chain_id: 1,
             name: "USC Coin".to_string(),
             address: Address::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap(),
+            decimals: 6,
+            symbol: "USDC".to_string(),
+            total_supply: U256::ZERO,
+        }
+    }
+
+    pub fn bsc_default_input() -> Self {
+        Self {
+            chain_id: 56,
+            name: "Wrapped BNB".to_string(),
+            address: Address::from_str("0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c").unwrap(),
+            decimals: 18,
+            symbol: "WBNB".to_string(),
+            total_supply: U256::ZERO,
+        }
+    }
+
+    pub fn bsc_default_output() -> Self {
+        Self {
+            chain_id: 56,
+            name: "USC Coin".to_string(),
+            address: Address::from_str("0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d").unwrap(),
             decimals: 18,
             symbol: "USDC".to_string(),
             total_supply: U256::ZERO,
         }
     }
 
+    pub fn base_default_input() -> Self {
+        Self {
+            chain_id: 8453,
+            name: "Wrapped Ether".to_string(),
+            address: Address::from_str("0x4200000000000000000000000000000000000006").unwrap(),
+            decimals: 18,
+            symbol: "WETH".to_string(),
+            total_supply: U256::ZERO,
+        }
+    }
+
+    pub fn base_default_output() -> Self {
+        Self {
+            chain_id: 8453,
+            name: "USC Coin".to_string(),
+            address: Address::from_str("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913").unwrap(),
+            decimals: 6,
+            symbol: "USDC".to_string(),
+            total_supply: U256::ZERO,
+        }
+    }
+
+        pub fn arbitrum_default_input() -> Self {
+            Self {
+                chain_id: 42161,
+                name: "Wrapped Ether".to_string(),
+                address: Address::from_str("0x82af49447d8a07e3bd95bd0d56f35241523fbab1").unwrap(),
+                decimals: 18,
+                symbol: "WETH".to_string(),
+                total_supply: U256::ZERO,
+            }
+        }
+
+        pub fn arbitrum_default_output() -> Self {
+            Self {
+                chain_id: 42161,
+                name: "USC Coin".to_string(),
+                address: Address::from_str("0xaf88d065e77c8cc2239327c5edb3a432268e5831").unwrap(),
+                decimals: 6,
+                symbol: "USDC".to_string(),
+                total_supply: U256::ZERO,
+            }
+        }
+
 }
+
 
 impl Default for ERC20Token {
     fn default() -> Self {
