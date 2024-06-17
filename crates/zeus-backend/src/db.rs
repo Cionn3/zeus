@@ -184,6 +184,28 @@ impl ZeusDB {
         }
         Ok(tokens)
     }
+
+    /// insert some default tokens
+    pub fn insert_default(&self) -> Result<(), anyhow::Error> {
+                // load some default tokens
+                let eth_token1 = ERC20Token::eth_default_input();
+                let eth_token2 = ERC20Token::eth_default_output();
+                let bsc_token1 = ERC20Token::bsc_default_input();
+                let bsc_token2 = ERC20Token::bsc_default_output();
+                let base_token1 = ERC20Token::base_default_input();
+                let base_token2 = ERC20Token::base_default_output();
+                let arbitrum_token1 = ERC20Token::arbitrum_default_input();
+                let arbitrum_token2 = ERC20Token::arbitrum_default_output();
+        
+                let tokens = vec![
+                    eth_token1, eth_token2, bsc_token1, bsc_token2, base_token1, base_token2, arbitrum_token1, arbitrum_token2
+                ];
+        
+                for token in &tokens {
+                    self.insert_erc20(token.clone(), token.chain_id.clone())?;
+                }
+                Ok(())
+    }
     
     
 

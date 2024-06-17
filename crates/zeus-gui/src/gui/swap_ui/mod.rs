@@ -2,9 +2,9 @@ use eframe::egui;
 use std::collections::HashMap;
 use std::str::FromStr;
 use egui::{
-    vec2, Align2, Color32, FontId, RichText, TextEdit, Ui
+    vec2, Align2, Color32, FontId, RichText, TextEdit, Ui, include_image, Image
 };
-
+use std::path::PathBuf;
 use crate::fonts::roboto_regular;
 use crate::SharedUiState;
 use super::misc::{frame, rich_text};

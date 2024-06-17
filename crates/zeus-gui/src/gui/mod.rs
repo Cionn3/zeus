@@ -15,6 +15,7 @@ use lazy_static::lazy_static;
 use crossbeam::channel::Sender;
 
 pub mod swap_ui;
+pub mod icons;
 pub mod state;
 pub mod misc;
 

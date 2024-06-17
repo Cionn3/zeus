@@ -10,7 +10,7 @@ use zeus_defi::erc20::ERC20Token;
 
 use crate::{
     fonts::get_fonts,
-    gui::{ ZeusTheme, GUI, misc::{ login_screen, new_profile_screen, rich_text, frame }, state::* },
+    gui::{ ZeusTheme, GUI, misc::{ login_screen, new_profile_screen, rich_text, frame }, state::*, icons::get_chain_icon },
 };
 
 use zeus_backend::{ Backend, types::{ Request, Response }, db::ZeusDB };
@@ -68,6 +68,13 @@ impl ZeusApp {
         {
             let zeus_db = ZeusDB::new().unwrap();
 
+            match zeus_db.insert_default() {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Error Inserting Default Tokens: {}", e);
+                }
+            }
+
             tokens = match zeus_db.load_tokens(vec![1, 56, 8453, 42161]) {
                 Ok(tokens) => tokens,
                 Err(e) => {
@@ -76,6 +83,7 @@ impl ZeusApp {
                 }
             };
         }
+        
         app.gui.swap_ui.tokens = tokens;
 
         let (front_sender, front_receiver) = bounded(1);
@@ -128,6 +136,8 @@ impl ZeusApp {
     fn select_chain(&mut self, ui: &mut Ui) {
         let networks = self.data.networks.clone();
         ui.horizontal(|ui| {
+            ui.add(get_chain_icon(self.data.chain_id.id()));
+
             ComboBox::from_label("")
                 .selected_text(self.data.chain_id.name())
                 .show_ui(ui, |ui| {
