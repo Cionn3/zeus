@@ -32,6 +32,7 @@ sol! {
 /// Struct that holds ERC20 token information
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ERC20Token {
+    pub chain_id: u64,
     pub address: Address,
     pub symbol: String,
     pub name: String,
@@ -43,7 +44,8 @@ pub struct ERC20Token {
 impl ERC20Token {
     pub async fn new(
         address: Address,
-        client: Arc<RootProvider<PubSubFrontend>>
+        client: Arc<RootProvider<PubSubFrontend>>,
+        chain_id: u64,
     ) -> Result<Self, anyhow::Error> {
         
         let symbol = Self::symbol(address, client.clone());
@@ -53,6 +55,7 @@ impl ERC20Token {
         let res = try_join!(symbol, name, decimals, total_supply);
         let (symbol, name, decimals, total_supply) = res?;
         Ok(Self {
+            chain_id,
             address,
             symbol,
             name,
@@ -146,6 +149,7 @@ impl ERC20Token {
 
    pub fn default_input() -> Self {
         Self {
+            chain_id: 1,
             name: "Wrapped Ether".to_string(),
             address: Address::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap(),
             decimals: 18,
@@ -156,6 +160,7 @@ impl ERC20Token {
 
     pub fn default_output() -> Self {
         Self {
+            chain_id: 1,
             name: "USC Coin".to_string(),
             address: Address::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap(),
             decimals: 18,
@@ -169,6 +174,7 @@ impl ERC20Token {
 impl Default for ERC20Token {
     fn default() -> Self {
         Self {
+            chain_id: 1,
             name: "Wrapped Ether".to_string(),
             address: Address::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap(),
             decimals: 18,
@@ -183,6 +189,7 @@ impl Default for ERC20Token {
 pub fn default_tokens() -> Vec<ERC20Token> {
     let mut tokens = Vec::new();
     tokens.push(ERC20Token {
+        chain_id: 1,
         name: "USD Coin".to_string(),
         address: Address::from_str("0x2791bca1f2de4661ed88a30c99a7a9449aa84174").unwrap(),
         decimals: 6,
@@ -190,6 +197,7 @@ pub fn default_tokens() -> Vec<ERC20Token> {
         total_supply: U256::ZERO,
     });
     tokens.push(ERC20Token {
+        chain_id: 1,
         name: "Wrapped Ether".to_string(),
         address: Address::from_str("0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619").unwrap(),
         decimals: 18,

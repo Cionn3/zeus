@@ -93,7 +93,7 @@ impl ZeusDB {
         let mut rows = stmt.query(params![address.to_string(), chain_id])?;
     
         if let Some(row) = rows.next()? {
-           // let chain_id: i32 = row.get(1)?;
+            let chain_id: i32 = row.get(1)?;
             let address: String = row.get(2)?;
             let symbol: String = row.get(3)?;
             let name: String = row.get(4)?;
@@ -101,6 +101,7 @@ impl ZeusDB {
             let total_supply: String = row.get(6)?;
 
             let token = ERC20Token {
+                chain_id: chain_id as u64,
                 address: address.parse().unwrap(),
                 symbol,
                 name,
@@ -128,6 +129,7 @@ impl ZeusDB {
             let fee: u32 = row.get(6)?;
 
             let pool = Pool {
+                chain_id,
                 address: address.parse().unwrap(),
                 token0,
                 token1,

@@ -220,6 +220,7 @@ impl SwapUI {
                                 id: id.to_string(),
                                 address,
                                 client,
+                                chain_id: data.chain_id.id()
                             });
                         }
                     }

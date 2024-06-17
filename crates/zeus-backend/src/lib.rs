@@ -90,8 +90,8 @@ impl Backend {
                                 self.get_client(chain_id, rpcs).await;
                             }
 
-                            Request::GetERC20Token { id, address, client } => {
-                                self.get_erc20_token(id, address, client).await;
+                            Request::GetERC20Token { id, address, client, chain_id } => {
+                                self.get_erc20_token(id, address, client, chain_id).await;
                             }
                         }
                     }
@@ -104,11 +104,11 @@ impl Backend {
     /// Get the [ERC20Token] from the given address
     /// 
     /// If the token is not found in the database, we fetch it from the rpc
-    async fn get_erc20_token(&self, id: String, address: Address, client: Arc<WsClient>) {
-        let res = if let Ok(Some(token)) = self.db.get_erc20(address, id.parse().unwrap()) {
+    async fn get_erc20_token(&self, id: String, address: Address, client: Arc<WsClient>, chain_id: u64) {
+        let res = if let Ok(Some(token)) = self.db.get_erc20(address, chain_id) {
             Ok(token)
         } else {
-            let token = ERC20Token::new(address, client).await;
+            let token = ERC20Token::new(address, client, chain_id).await;
             token
         };
     
@@ -186,9 +186,9 @@ async fn swap(
     let client = params.client;
     let slippage: u32 = params.slippage.parse().unwrap_or(1);
 
-    let token_in = ERC20Token::new(params.token_in, client.clone()).await?;
+    let token_in = ERC20Token::new(params.token_in, client.clone(), chain_id.id()).await?;
 
-    let token_out = ERC20Token::new(params.token_out, client.clone()).await?;
+    let token_out = ERC20Token::new(params.token_out, client.clone(), chain_id.id()).await?;
 
     let v2_pool = get_v2_pool(
         token_in.clone(),

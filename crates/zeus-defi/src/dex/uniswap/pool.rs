@@ -53,6 +53,7 @@ sol! {
 
 #[derive(Debug, Clone)]
 pub struct Pool {
+    pub chain_id: u64,
     pub address: Address,
     pub token0: ERC20Token,
     pub token1: ERC20Token,
@@ -62,8 +63,9 @@ pub struct Pool {
 
 impl Pool {
 
-    pub fn new(address: Address, token0: ERC20Token, token1: ERC20Token, variant: PoolVariant, fee:u32) -> Self {
+    pub fn new(address: Address, token0: ERC20Token, token1: ERC20Token, variant: PoolVariant, fee:u32, chain_id: u64) -> Self {
         Self {
+            chain_id,
             address,
             token0,
             token1,
@@ -102,7 +104,7 @@ pub async fn get_v2_pool(
     chain_id: ChainId,
     client: Arc<RootProvider<PubSubFrontend>>
 ) -> Result<Option<Pool>, anyhow::Error> {
-    let fact_addr = get_v2_pool_factory(chain_id);
+    let fact_addr = get_v2_pool_factory(chain_id.clone());
     let factory = UniswapV2Factory::new(fact_addr, client.clone());
     let pair = factory.getPair(token0.address, token1.address).call().await?.pair;
     if pair == Address::ZERO {
@@ -111,6 +113,7 @@ pub async fn get_v2_pool(
 
     Ok(
         Some(Pool {
+            chain_id: chain_id.id(),
             address: pair,
             token0,
             token1,
@@ -128,12 +131,13 @@ pub async fn get_v3_pools(
     client: Arc<RootProvider<PubSubFrontend>>
 ) -> Result<Vec<Pool>, anyhow::Error> {
     let mut pools = Vec::new();
-    let fact_addr = get_v3_pool_factory(chain_id);
+    let fact_addr = get_v3_pool_factory(chain_id.clone());
     let factory = UniswapV3Factory::new(fact_addr, client.clone());
     for fee in &[100, 500, 3000, 10000] {
         let pool = factory.getPool(token0.address, token1.address, *fee).call().await?.pool;
         if pool != Address::ZERO {
             pools.push(Pool {
+                chain_id: chain_id.id(),
                 address: pool,
                 token0: token0.clone(),
                 token1: token1.clone(),

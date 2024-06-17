@@ -22,7 +22,7 @@ pub enum Request {
 
     GetClient { chain_id: ChainId, rpcs: Vec<Rpc> },
 
-    GetERC20Token { id: String, address: Address, client: Arc<WsClient> },
+    GetERC20Token { id: String, address: Address, client: Arc<WsClient>, chain_id: u64 },
 }
 
 /// The response from the backend
