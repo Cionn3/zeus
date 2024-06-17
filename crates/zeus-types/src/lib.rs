@@ -46,6 +46,16 @@ impl ChainId {
         
     }
 }
+
+    pub fn id(&self) -> u64 {
+        match self {
+            Self::Ethereum(id) => *id,
+            Self::BinanceSmartChain(id) => *id,
+            Self::Base(id) => *id,
+            Self::Arbitrum(id) => *id,
+        
+    }
+}
 }
 
 

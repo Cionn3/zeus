@@ -1,5 +1,5 @@
 use std::sync::Arc;
-
+use std::path::{Path, PathBuf};
 use eframe::{ egui, CreationContext };
 use egui::{
     vec2, Align2, ComboBox, Context, Style, Ui
@@ -13,8 +13,9 @@ use crate::{
     gui::{ ZeusTheme, GUI, misc::{ login_screen, new_profile_screen, rich_text, frame }, state::* },
 };
 
-use zeus_backend::{ Backend, types::{ Request, Response } };
+use zeus_backend::{ Backend, types::{ Request, Response }, db::ZeusDB };
 use zeus_types::app_data::AppData;
+use rusqlite::{params, Connection, Result as DbResult};
 
 pub mod gui;
 pub mod fonts;

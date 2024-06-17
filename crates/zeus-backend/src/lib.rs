@@ -21,21 +21,25 @@ use zeus_types::{ ChainId, profile::Profile, forked_db::{ fork_db::ForkDB, rever
 
 use zeus_utils::new_evm;
 
-use crate::types::{ Request, Response, SwapParams, SwapResult };
+use crate::{types::{ Request, Response, SwapParams, SwapResult }, db::ZeusDB};
 
 pub mod types;
+pub mod db;
 
 /// A simple backend to handle async/expensive tasks without blocking the gui
 ///
 /// All the API calls that the UI can make to the backend are defined here
 ///
 /// Still in WIP
-#[derive(Debug)]
 pub struct Backend {
+
     /// Send Data back to the frontend
     pub back_sender: Sender<Response>,
+
     /// Receive Data from the frontend
     pub front_receiver: Receiver<Request>,
+
+    pub db: ZeusDB,
 }
 
 impl Backend {
@@ -43,6 +47,7 @@ impl Backend {
         Self {
             back_sender,
             front_receiver,
+            db: ZeusDB::new().unwrap(),
         }
     }
 
@@ -96,10 +101,16 @@ impl Backend {
         })
     }
 
+    /// Get the [ERC20Token] from the given address
+    /// 
+    /// If the token is not found in the database, we fetch it from the rpc
     async fn get_erc20_token(&self, id: String, address: Address, client: Arc<WsClient>) {
-        let time = std::time::Instant::now();
-        let res = ERC20Token::new(address, client.clone()).await;
-        println!("Time to get ERC20Token: {:?}ms", time.elapsed().as_millis());
+        let res = if let Ok(Some(token)) = self.db.get_erc20(address, id.parse().unwrap()) {
+            Ok(token)
+        } else {
+            let token = ERC20Token::new(address, client).await;
+            token
+        };
     
         let res_converted = res
         .map(|token| (token, id))

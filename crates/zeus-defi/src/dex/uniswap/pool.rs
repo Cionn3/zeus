@@ -57,9 +57,21 @@ pub struct Pool {
     pub token0: ERC20Token,
     pub token1: ERC20Token,
     pub variant: PoolVariant,
+    pub fee: u32,
 }
 
 impl Pool {
+
+    pub fn new(address: Address, token0: ERC20Token, token1: ERC20Token, variant: PoolVariant, fee:u32) -> Self {
+        Self {
+            address,
+            token0,
+            token1,
+            variant,
+            fee
+        }
+    }
+
     pub fn variant(&self) -> U256 {
         match self.variant {
             PoolVariant::UniswapV2 => U256::ZERO,
@@ -72,6 +84,15 @@ impl Pool {
 pub enum PoolVariant {
     UniswapV2,
     UniswapV3,
+}
+
+impl PoolVariant {
+    pub fn from_u256(value: U256) -> Self {
+        match value {
+            U256::ZERO => PoolVariant::UniswapV2,
+            _ => PoolVariant::UniswapV3,
+        }
+    }
 }
 
 /// Gets a Uniswap V2 pool based on token0 and token1
@@ -94,6 +115,7 @@ pub async fn get_v2_pool(
             token0,
             token1,
             variant: PoolVariant::UniswapV2,
+            fee: 3000
         })
     )
 }
@@ -116,6 +138,7 @@ pub async fn get_v3_pools(
                 token0: token0.clone(),
                 token1: token1.clone(),
                 variant: PoolVariant::UniswapV3,
+                fee: fee.clone()
             });
         }
     }
