@@ -250,8 +250,15 @@ impl eframe::App for ZeusApp {
                                 self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
                             } else {
                                 let (token, id) = res.unwrap();
-                                self.gui.swap_ui.update_token(&id, token);
+                                self.gui.swap_ui.update_token(&id, token.clone());
                                 self.gui.swap_ui.update_token_list_status(&id, false);
+
+                                // update the token list map
+                                if let Some(vec_tokens) = self.gui.swap_ui.tokens.get_mut(&token.chain_id) {
+                                    vec_tokens.push(token.clone());
+                                } else {
+                                    self.gui.swap_ui.tokens.insert(token.chain_id, vec![token.clone()]);
+                                }
                             }
                         }
                     }
