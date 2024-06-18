@@ -75,7 +75,7 @@ impl ZeusApp {
                 }
             }
 
-            tokens = match zeus_db.load_tokens(vec![1, 56, 8453, 42161]) {
+            tokens = match zeus_db.load_tokens(app.data.supported_networks()) {
                 Ok(tokens) => tokens,
                 Err(e) => {
                     println!("Error Loading Tokens: {}", e);
@@ -132,7 +132,7 @@ impl ZeusApp {
         }
     }
 
-    // TODO: show chain icon
+    
     fn select_chain(&mut self, ui: &mut Ui) {
         let networks = self.data.networks.clone();
         ui.horizontal(|ui| {
@@ -141,7 +141,7 @@ impl ZeusApp {
             ComboBox::from_label("")
                 .selected_text(self.data.chain_id.name())
                 .show_ui(ui, |ui| {
-                    for id in networks.iter().map(|(chain_id, _)| chain_id.clone()) {
+                    for id in networks.iter().map(|chain_id| chain_id.clone()) {
                        if ui.selectable_value(&mut self.data.chain_id, id.clone(), id.name()).clicked() {
                             println!("Selected Chain: {:?}", id);
                             self.send_request(Request::GetClient { chain_id: id.clone(), rpcs: self.data.rpc.clone() });
@@ -215,7 +215,6 @@ impl ZeusApp {
 // This is where we draw the UI
 impl eframe::App for ZeusApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-
         //TODO: avoid unwrap
         if let Some(receive) = &self.back_receiver {
             match receive.try_recv() {

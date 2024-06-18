@@ -11,11 +11,11 @@ use alloy::{
 use crate::{profile::{Credentials, Profile}, ChainId, Rpc};
 
 /// Supported networks
-pub const NETWORKS: [(ChainId, & 'static str); 4] = [
-    (ChainId::Ethereum(1), "Ethereum"),
-    (ChainId::BinanceSmartChain(56), "Binance Smart Chain"),
-    (ChainId::Base(8453), "Base"),
-    (ChainId::Arbitrum(42161), "Arbitrum"),
+pub const NETWORKS: [ChainId; 4] = [
+    ChainId::Ethereum(1),
+    ChainId::BinanceSmartChain(56),
+    ChainId::Base(8453),
+    ChainId::Arbitrum(42161),
 ];
 
 /// Transaction settings
@@ -61,7 +61,7 @@ pub struct AppData {
     pub chain_id: ChainId,
 
     /// All supported networks
-    pub networks: Vec<(ChainId, & 'static str)>,
+    pub networks: Vec<ChainId>,
 
     /// The current saved RPC endpoints
     pub rpc: Vec<Rpc>,
@@ -95,6 +95,11 @@ pub struct AppData {
 }
 
 impl AppData {
+
+    pub fn supported_networks(&self) -> Vec<u64> {
+        self.networks.iter().cloned().map(|chain_id| chain_id.id()).collect()
+    }
+
     pub fn add_rpc(&mut self, rpc: Rpc) {
         self.rpc.push(rpc);
     }
@@ -140,7 +145,7 @@ impl Default for AppData {
         // Just to init AppData, we load the actual saved data later when we start ZeusApp
         let mut rpc = vec![];
 
-        for chain_id in NETWORKS.iter().map(|(chain_id, _)| chain_id.clone()){
+        for chain_id in NETWORKS {
             rpc.push(Rpc::new("".to_string(), chain_id));
         }
 

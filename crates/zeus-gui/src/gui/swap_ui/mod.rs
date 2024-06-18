@@ -19,6 +19,34 @@ use alloy::primitives::Address;
 
 use zeus_backend::types::Request;
 
+pub struct QuoteResult {
+
+    /// Token price against its paired token
+    pub token_price: String,
+
+    /// The price impact of the swap
+    pub price_impact: String,
+
+    /// Selected slippage
+    pub slippage: String,
+
+    /// The real amount of tokens we will receive, after considering the pool fee and token tax if any
+    pub real_amount: String,
+
+    /// Minimum amount we may receive depending on the slippage
+    pub minimum_received: String,
+
+    /// Token Tax (If any)
+    pub token_tax: String,
+
+    /// Pool Fee
+    pub pool_fee: String,
+
+    /// Gas Cost of the swap
+    pub gas_cost: String,
+
+}
+
 
 /// Manages the state of the swap UI
 pub struct SwapUI {
