@@ -158,7 +158,7 @@ impl Backend {
             .expect("Could not find rpc url for the selected ChainId")
             .url.clone();
         let res = ProviderBuilder::new().on_ws(WsConnect::new(url)).await;
-        let res = res.map_err(|e| anyhow::Error::new(e));
+        let res = res.map(|client| (client, id.id())).context("Failed to get client");
         match self.back_sender.send(Response::GetClient(res)) {
             Ok(_) => {}
             Err(e) => println!("Error Sending Response: {}", e),

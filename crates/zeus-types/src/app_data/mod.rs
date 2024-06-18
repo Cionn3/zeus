@@ -1,6 +1,7 @@
 use std::{path::Path, str::FromStr};
 use std::sync::Arc;
-
+use std::collections::HashMap;
+use crate::WsClient;
 use alloy::{
     providers::RootProvider,
     pubsub::PubSubFrontend,
@@ -54,8 +55,8 @@ impl Default for TxSettings {
 #[derive(Clone)]
 pub struct AppData {
 
-    /// The current ws client connected to
-    pub ws_client: Option<Arc<RootProvider<PubSubFrontend>>>,
+    /// A map of all connected websocket clients
+    pub ws_client: HashMap<u64, Arc<WsClient>>,
 
     /// The current selected chain id
     pub chain_id: ChainId,
@@ -98,6 +99,10 @@ impl AppData {
 
     pub fn supported_networks(&self) -> Vec<u64> {
         self.networks.iter().cloned().map(|chain_id| chain_id.id()).collect()
+    }
+
+    pub fn connected(&self, chain_id: u64) -> bool {
+        self.ws_client.contains_key(&chain_id)
     }
 
     pub fn add_rpc(&mut self, rpc: Rpc) {
@@ -152,7 +157,7 @@ impl Default for AppData {
         
 
         Self {
-            ws_client: None,
+            ws_client: HashMap::new(),
             chain_id: ChainId::default(),
             networks: NETWORKS.to_vec(),
             rpc,

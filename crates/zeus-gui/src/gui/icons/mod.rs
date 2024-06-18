@@ -18,3 +18,23 @@ pub fn tx_settings_icon() -> Image<'static> {
         .sense(Sense::click())
         .bg_fill(egui::Color32::WHITE)
 }
+
+pub fn green_circle() -> Image<'static> {
+    Image::new(include_image!("green-circle.png"))
+        .max_width(24.0)
+        .rounding(20.0)
+}
+
+pub fn red_circle() -> Image<'static> {
+    Image::new(include_image!("red-circle.png"))
+        .max_width(24.0)
+        .rounding(20.0)
+}
+
+/// Return a green or red circle icon based on if we are connected or not to a node
+pub fn connected_icon(connected: bool) -> Image<'static> {
+    match connected {
+        true => green_circle(),
+        false => red_circle(),
+    }
+}

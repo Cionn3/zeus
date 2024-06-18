@@ -34,7 +34,7 @@ pub enum Response {
 
     SaveProfile(Result<(), anyhow::Error>),
 
-    GetClient(Result<WsClient, anyhow::Error>),
+    GetClient(Result<(WsClient, u64), anyhow::Error>),
 
     GetERC20Token(Result<(ERC20Token, String), anyhow::Error>),
 }

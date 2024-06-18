@@ -332,7 +332,7 @@ impl SwapUI {
                     if let Ok(address) = Address::from_str(&self.search_token) {
                         if ui.button("Add Token").clicked() {
                             println!("Adding Token: {:?}", address);
-                            let client = if let Some(client) = &data.ws_client {
+                            let client = if let Some(client) = data.ws_client.get(&data.chain_id.id()) {
                                 client.clone()
                             } else {
                                 shared_state.err_msg = ErrorMsg::new(true, "You are not connected to a node");

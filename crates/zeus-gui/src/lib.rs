@@ -10,7 +10,7 @@ use zeus_defi::erc20::ERC20Token;
 
 use crate::{
     fonts::get_fonts,
-    gui::{ ZeusTheme, GUI, misc::{ login_screen, new_profile_screen, rich_text, frame }, state::*, icons::get_chain_icon },
+    gui::{ ZeusTheme, GUI, misc::{ login_screen, new_profile_screen, rich_text, frame }, state::*, icons::* },
 };
 
 use zeus_backend::{ Backend, types::{ Request, Response }, db::ZeusDB };
@@ -150,6 +150,7 @@ impl ZeusApp {
                         }
                     }   
                 });
+                ui.add(connected_icon(self.data.connected(self.data.chain_id.id())));
         });
     }
 
@@ -240,7 +241,8 @@ impl eframe::App for ZeusApp {
                             if res.is_err() {
                                 self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
                             } else {
-                                self.data.ws_client = Some(Arc::new(res.unwrap()));
+                                let (client, chain_id) = res.unwrap();
+                                self.data.ws_client.insert(chain_id, Arc::new(client));
                             }
                         }
 
