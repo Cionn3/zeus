@@ -1,17 +1,49 @@
-use std::path::Path;
+use std::{path::Path, str::FromStr};
 use std::sync::Arc;
 
 use alloy::{
     providers::RootProvider,
     pubsub::PubSubFrontend,
+    primitives::U256
 };
 
 
 use crate::{profile::{Credentials, Profile}, ChainId, Rpc};
 
+/// Transaction settings
+#[derive(Clone)]
+pub struct TxSettings {
+    pub priority_fee: String,
+    pub slippage: String,
+    pub mev_protect: bool,
+}
+
+impl TxSettings {
+
+    /// Parse a string to gwei
+    pub fn parse_gwei(&self) -> U256 {
+        let amount = U256::from_str(&self.priority_fee).unwrap_or(U256::from(3));
+        amount * U256::from(10).pow(U256::from(9))
+    }
+
+    /// Parse a string to f32
+    pub fn parse_slippage(&self) -> f32 {
+        self.slippage.parse().unwrap_or(0.5)
+    }
+}
+
+impl Default for TxSettings {
+    fn default() -> Self {
+        Self {
+            priority_fee: String::from("3"),
+            slippage: String::from("0.5"),
+            mev_protect: true,
+        }
+    }
+}
 
 /// Main data and settings loaded by the app
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AppData {
 
     /// The current ws client connected to
@@ -28,6 +60,9 @@ pub struct AppData {
 
     /// The current profile
     pub profile: Profile,
+
+    /// Tx settings
+    pub tx_settings: TxSettings,
 
     /// Are we logged in?
     pub logged_in: bool,
@@ -110,6 +145,7 @@ impl Default for AppData {
             networks,
             rpc,
             profile: Profile::default(),
+            tx_settings: TxSettings::default(),
             logged_in: false,
             new_profile_screen,
             profile_exists,

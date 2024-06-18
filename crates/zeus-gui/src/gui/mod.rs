@@ -62,19 +62,9 @@ impl GUI {
        let swap = RichText::new("Swap").family(roboto_regular()).size(20.0);
        let settings = RichText::new("Settings").family(roboto_regular()).size(20.0);
        let networks = RichText::new("Networks").family(roboto_regular()).size(15.0);
-       let test_err = RichText::new("Test Error").family(roboto_regular()).size(15.0);
-       let test_info = RichText::new("Test Info").family(roboto_regular()).size(15.0);
 
 
        ui.vertical(|ui| {
-
-        if ui.label(test_err).clicked() {
-           shared_state.err_msg = ErrorMsg::new(true, "Test Error");
-        }
-
-        if ui.label(test_info).clicked() {
-            shared_state.info_msg = InfoMsg::new(true, "Test Info");
-        }
 
         if ui.label(swap).clicked() {
             shared_state.networks_on = false;
@@ -128,19 +118,17 @@ impl GUI {
                 });
                 ui.horizontal_centered(|ui| {
 
-                    // !DEBUG
-                    let print_rpc = RichText::new("Print Rpc").family(roboto_regular()).size(15.0).color(THEME.colors.white);
-                    let current_chainid = RichText::new("Current ChainId").family(roboto_regular()).size(15.0).color(THEME.colors.white);
+                    let save = RichText::new("Save").family(roboto_regular()).size(15.0).color(THEME.colors.white);
                     
                     ui.add_space(50.0);
 
-                    if ui.button(print_rpc).clicked() {
-                        println!("RPC: {:?}", data.rpc);
-                    }
-
-
-                    if ui.button(current_chainid).clicked() {
-                        println!("Current ChainId: {:?}", data.chain_id.name());
+                    if ui.button(save).clicked() {
+                        match data.save_rpc() {
+                            Ok(_) => {}
+                            Err(e) => {
+                                shared_state.err_msg = ErrorMsg::new(true, e);
+                            }
+                        }
                     }
                 });
             });

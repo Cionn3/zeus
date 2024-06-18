@@ -1,0 +1,1 @@
+### tx_settings_icon.svg https://www.iconfinder.com/webalys

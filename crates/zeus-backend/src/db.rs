@@ -187,7 +187,7 @@ impl ZeusDB {
 
     /// insert some default tokens
     pub fn insert_default(&self) -> Result<(), anyhow::Error> {
-                // load some default tokens
+
                 let eth_token1 = ERC20Token::eth_default_input();
                 let eth_token2 = ERC20Token::eth_default_output();
                 let bsc_token1 = ERC20Token::bsc_default_input();

@@ -83,7 +83,7 @@ impl ZeusApp {
                 }
             };
         }
-        
+
         app.gui.swap_ui.tokens = tokens;
 
         let (front_sender, front_receiver) = bounded(1);
@@ -275,6 +275,7 @@ impl eframe::App for ZeusApp {
                 self.draw_login(ui);
             });
 
+             
             if !self.data.logged_in || self.data.new_profile_screen {
                 return;
             }
@@ -283,6 +284,7 @@ impl eframe::App for ZeusApp {
                 ui.add_space(100.0);
                 self.gui.swap_ui.swap_panel(ui, &mut self.data, &mut self.shared_state);
                 self.gui.networks_ui(ui, &mut self.data, &mut self.shared_state);
+                self.gui.swap_ui.tx_settings_window(ui, &mut self.data, &mut self.shared_state);
 
             });
         });

@@ -75,6 +75,9 @@ pub struct SharedUiState {
     /// Exported key window on/off
     pub exported_key_window: (bool, String),
 
+    /// TxSettings popup on/off
+    pub tx_settings_on: bool,
+
     /// Error message to show in the UI
     pub err_msg: ErrorMsg,
 
@@ -89,6 +92,7 @@ impl Default for SharedUiState {
             wallet_popup: (false, "New"),
             export_key_ui: false,
             exported_key_window: (false, "".to_string()),
+            tx_settings_on: false,
             err_msg: ErrorMsg::default(),
             info_msg: InfoMsg::default(),
         }

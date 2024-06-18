@@ -2,11 +2,12 @@ use eframe::egui;
 use std::collections::HashMap;
 use std::str::FromStr;
 use egui::{
-    vec2, Align2, Color32, FontId, RichText, TextEdit, Ui, include_image, Image
+    vec2, Align2, Checkbox, Color32, FontId, RichText, Layout, Align, TextEdit, Ui
 };
-use std::path::PathBuf;
+
 use crate::fonts::roboto_regular;
 use crate::SharedUiState;
+use super::icons::tx_settings_icon;
 use super::misc::{frame, rich_text};
 use super::ErrorMsg;
 use zeus_defi::erc20::ERC20Token;
@@ -149,6 +150,62 @@ impl SwapUI {
         }
     }
 
+    /// TxSettings popup
+    pub fn tx_settings_window(&mut self, ui: &mut Ui, data: &mut AppData, shared_state: &mut SharedUiState) {
+        if !shared_state.tx_settings_on {
+            return;
+        }
+
+        egui::Window::new("Transaction Settings")
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+            .collapsible(false)
+            .show(ui.ctx(), |ui| {
+                ui.set_max_size(vec2(200.0, 100.0));
+
+                ui.vertical_centered(|ui| {
+                    let priority_fee = rich_text("Priority Fee (Gwei)", 15.0);
+                    let slippage_text = rich_text("Slippage", 15.0);
+                    let mev_protect = rich_text("MEV Protect", 15.0);
+
+                    let fee_field = TextEdit::singleline(&mut data.tx_settings.priority_fee)
+                        .desired_width(15.0);
+
+                    let slippage_field = TextEdit::singleline(&mut data.tx_settings.slippage)
+                        .desired_width(15.0);
+
+                    let mev_protect_check = Checkbox::new(&mut data.tx_settings.mev_protect, "");
+
+                    ui.horizontal(|ui| {
+                        ui.label(priority_fee);
+                        ui.add_space(5.0);
+                        ui.add(fee_field);
+                       
+                    });
+                    ui.add_space(10.0);
+
+                    ui.horizontal(|ui| {
+                        ui.label(slippage_text);
+                        ui.add_space(5.0);
+                        ui.add(slippage_field);
+                    });
+                    ui.add_space(10.0);
+
+                    ui.horizontal(|ui| {
+                        ui.label(mev_protect);
+                        ui.add_space(5.0);
+                        ui.add(mev_protect_check);
+                    });
+                    ui.add_space(10.0);
+
+                    if ui.button("Save").clicked() {
+                        shared_state.tx_settings_on = false;
+                    }
+                });
+            });
+                
+    }
+
     /// Renders the swap panel
     pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, shared_state: &mut SharedUiState) {
         if !self.on {
@@ -165,6 +222,15 @@ impl SwapUI {
             ui.vertical_centered(|ui| {
                 ui.set_width(500.0);
                 ui.set_height(220.0);
+
+                // TODO Align it to the right
+                ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
+                    let response = ui.add(tx_settings_icon());
+        
+                    if response.clicked() {
+                        shared_state.tx_settings_on = true;
+                    }
+                });
 
                 // Input Token Field
                 let swap = rich_text("Swap", 20.0);
