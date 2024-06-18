@@ -10,6 +10,14 @@ use alloy::{
 
 use crate::{profile::{Credentials, Profile}, ChainId, Rpc};
 
+/// Supported networks
+pub const NETWORKS: [(ChainId, & 'static str); 4] = [
+    (ChainId::Ethereum(1), "Ethereum"),
+    (ChainId::BinanceSmartChain(56), "Binance Smart Chain"),
+    (ChainId::Base(8453), "Base"),
+    (ChainId::Arbitrum(42161), "Arbitrum"),
+];
+
 /// Transaction settings
 #[derive(Clone)]
 pub struct TxSettings {
@@ -130,10 +138,9 @@ impl Default for AppData {
         let new_profile_screen = !profile_exists;
 
         // Just to init AppData, we load the actual saved data later when we start ZeusApp
-        let networks = vec![(ChainId::Ethereum(1), "Ethereum"), (ChainId::BinanceSmartChain(56), "Binance Smart Chain"), (ChainId::Base(8453), "Base"), (ChainId::Arbitrum(42161), "Arbitrum")];
         let mut rpc = vec![];
 
-        for chain_id in networks.iter().map(|(chain_id, _)| chain_id.clone()){
+        for chain_id in NETWORKS.iter().map(|(chain_id, _)| chain_id.clone()){
             rpc.push(Rpc::new("".to_string(), chain_id));
         }
 
@@ -142,7 +149,7 @@ impl Default for AppData {
         Self {
             ws_client: None,
             chain_id: ChainId::default(),
-            networks,
+            networks: NETWORKS.to_vec(),
             rpc,
             profile: Profile::default(),
             tx_settings: TxSettings::default(),
