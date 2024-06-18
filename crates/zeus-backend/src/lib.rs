@@ -104,18 +104,37 @@ impl Backend {
     /// Get the [ERC20Token] from the given address
     /// 
     /// If the token is not found in the database, we fetch it from the rpc
+    /// 
+    /// ### Arguments:
+    /// 
+    /// `id:` Which token to update in the UI ("token_in" or "token_out")
+    /// 
+    /// `address:` The address of the token
+    /// 
+    /// `client:` The websocket client
+    /// 
+    /// `chain_id:` The chain id
     async fn get_erc20_token(&self, id: String, address: Address, client: Arc<WsClient>, chain_id: u64) {
         let res = if let Ok(Some(token)) = self.db.get_erc20(address, chain_id) {
             Ok(token)
         } else {
-            let token = ERC20Token::new(address, client, chain_id).await;
-            token
+            let token_result = ERC20Token::new(address, client, chain_id).await;
+            match &token_result {
+                Ok(token) => {
+                    let token_to_insert = token.clone();
+                    if let Err(e) = self.db.insert_erc20(token_to_insert, chain_id) {
+                        println!("Error Inserting ERC20Token: {}", e);
+                    }
+                }
+                Err(e) => println!("Error fetching ERC20Token from RPC: {}", e),
+            }
+            token_result
         };
-    
+
         let res_converted = res
-        .map(|token| (token, id))
-        .context("Failed to get ERC20Token");
-    
+            .map(|token| (token, id))
+            .context("Failed to get ERC20Token");
+
         match self.back_sender.send(Response::GetERC20Token(res_converted)) {
             Ok(_) => {}
             Err(e) => println!("Error Sending Response: {}", e),

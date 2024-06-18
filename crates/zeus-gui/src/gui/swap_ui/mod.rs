@@ -199,6 +199,7 @@ impl SwapUI {
                     ui.add_space(10.0);
 
                     if ui.button("Save").clicked() {
+                        // TODO save the settings
                         shared_state.tx_settings_on = false;
                     }
                 });
