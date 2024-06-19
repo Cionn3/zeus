@@ -8,12 +8,23 @@ use zeus_types::{ChainId, profile::Profile, WsClient, Rpc};
 
 pub type ClientRes = Result<(WsClient, u64), anyhow::Error>;
 
+/// The result of a client request
+#[derive(Debug)]
+pub struct ClientResult {
+    pub client: Arc<WsClient>,
+    pub chain_id: ChainId,
+}
+
 /// Request received from the frontend
 pub enum Request {
 
     /// Thing to do on the startup of the application
-    // For now we just connect on the default chain
+    /// 
+    /// For now we just connect on the default chain and initialize the oracles
     OnStartup { chain_id: ChainId, rpcs: Vec<Rpc> },
+
+    /// Initialize the Oracles
+    InitOracles { client: Arc<WsClient>, chain_id: ChainId},
 
     /// Simulate a swap
     SimSwap {
@@ -35,13 +46,15 @@ pub enum Request {
 /// The response from the backend
 pub enum Response {
 
+    InitOracles(Result<(), anyhow::Error>),
+
     SimSwap {result: SwapResult},
 
     Balance(U256),
 
     SaveProfile(Result<(), anyhow::Error>),
 
-    GetClient(ClientRes),
+    GetClient(Result<ClientResult, anyhow::Error>),
 
     GetERC20Token(Result<(ERC20Token, String), anyhow::Error>),
 }

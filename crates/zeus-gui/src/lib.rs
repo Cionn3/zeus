@@ -1,16 +1,20 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{ collections::HashMap, sync::Arc };
 use eframe::{ egui, CreationContext };
-use egui::{
-    vec2, Align2, ComboBox, Context, Style, Ui
-};
+use egui::{ vec2, Align2, ComboBox, Context, Style, Ui };
 
 use crossbeam::channel::{ bounded, Sender, Receiver };
 use zeus_defi::erc20::ERC20Token;
-
+use tokio::sync::RwLock;
 
 use crate::{
     fonts::get_fonts,
-    gui::{ ZeusTheme, GUI, misc::{ login_screen, new_profile_screen, rich_text, frame }, state::*, icons::* },
+    gui::{
+        ZeusTheme,
+        GUI,
+        misc::{ login_screen, new_profile_screen, rich_text, frame },
+        state::*,
+        icons::*,
+    },
 };
 
 use zeus_backend::{ Backend, types::{ Request, Response }, db::ZeusDB };
@@ -19,7 +23,6 @@ use zeus_utils::oracles::OracleManager;
 
 pub mod gui;
 pub mod fonts;
-
 
 /// The main application struct
 pub struct ZeusApp {
@@ -100,7 +103,10 @@ impl ZeusApp {
         app.back_receiver = Some(back_receiver);
 
         if app.data.profile_exists {
-        app.send_request(Request::OnStartup { chain_id: app.data.chain_id.clone(), rpcs: app.data.rpc.clone()});
+            app.send_request(Request::OnStartup {
+                chain_id: app.data.chain_id.clone(),
+                rpcs: app.data.rpc.clone(),
+            });
         }
 
         app
@@ -137,7 +143,6 @@ impl ZeusApp {
         }
     }
 
-    
     fn select_chain(&mut self, ui: &mut Ui) {
         let networks = self.data.networks.clone();
         ui.horizontal(|ui| {
@@ -147,59 +152,62 @@ impl ZeusApp {
                 .selected_text(self.data.chain_id.name())
                 .show_ui(ui, |ui| {
                     for id in networks.iter().map(|chain_id| chain_id.clone()) {
-                       if ui.selectable_value(&mut self.data.chain_id, id.clone(), id.name()).clicked() {
+                        if
+                            ui
+                                .selectable_value(&mut self.data.chain_id, id.clone(), id.name())
+                                .clicked()
+                        {
                             println!("Selected Chain: {:?}", id);
-                            self.send_request(Request::GetClient { chain_id: id.clone(), rpcs: self.data.rpc.clone() });
+                            self.send_request(Request::GetClient {
+                                chain_id: id.clone(),
+                                rpcs: self.data.rpc.clone(),
+                            });
                             self.gui.swap_ui.default_input(id.id());
                             self.gui.swap_ui.default_output(id.id());
                         }
-                    }   
+                    }
                 });
-                ui.add(connected_icon(self.data.connected(self.data.chain_id.id())));
+            ui.add(connected_icon(self.data.connected(self.data.chain_id.id())));
         });
     }
 
-    
     /// Show an error message if needed
     fn err_msg(&mut self, ui: &mut Ui) {
-
         if !self.shared_state.err_msg.on {
             return;
         }
 
-        egui::Window::new("Error")
-        .resizable(false)
-        .anchor(Align2::CENTER_TOP, vec2(0.0, 0.0))
-        .collapsible(false)
-        .title_bar(false)
-        .show(ui.ctx(), |ui| {
-            ui.vertical_centered(|ui| {
-                
-                let msg_text = rich_text(&self.shared_state.err_msg.msg, 16.0);
-                let close_text = rich_text("Close", 16.0);
+        egui::Window
+            ::new("Error")
+            .resizable(false)
+            .anchor(Align2::CENTER_TOP, vec2(0.0, 0.0))
+            .collapsible(false)
+            .title_bar(false)
+            .show(ui.ctx(), |ui| {
+                ui.vertical_centered(|ui| {
+                    let msg_text = rich_text(&self.shared_state.err_msg.msg, 16.0);
+                    let close_text = rich_text("Close", 16.0);
 
-                ui.label(msg_text);
-                ui.add_space(5.0);
-                if ui.button(close_text).clicked() {
-                    self.shared_state.err_msg.on = false;
-                }
+                    ui.label(msg_text);
+                    ui.add_space(5.0);
+                    if ui.button(close_text).clicked() {
+                        self.shared_state.err_msg.on = false;
+                    }
+                });
             });
-        });
-}
+    }
 
     // TODO: Auto close it after a few seconds
     /// Show an info message if needed
     fn info_msg(&mut self, ui: &mut Ui) {
-
         if !self.shared_state.info_msg.on {
             return;
         }
 
         ui.vertical_centered_justified(|ui| {
-        frame()
-        .show(ui, |ui| {
-            ui.set_max_size(vec2(100.0, 50.0));
-           
+            frame().show(ui, |ui| {
+                ui.set_max_size(vec2(100.0, 50.0));
+
                 let msg_text = rich_text(&self.shared_state.info_msg.msg, 16.0);
                 let close_text = rich_text("Close", 16.0);
 
@@ -207,11 +215,10 @@ impl ZeusApp {
                 ui.add_space(5.0);
                 if ui.button(close_text).clicked() {
                     self.shared_state.info_msg.on = false;
-                }  
+                }
+            });
         });
-    });
-}
-
+    }
 }
 
 // Main Event Loop Of The Window
@@ -223,9 +230,14 @@ impl eframe::App for ZeusApp {
             match receive.try_recv() {
                 Ok(response) => {
                     match response {
-
                         Response::SimSwap { result } => {
                             println!("Swap Response: {:?}", result);
+                        }
+
+                        Response::InitOracles(res) => {
+                            if res.is_err() {
+                                self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
+                            }
                         }
 
                         Response::Balance(balance) => {
@@ -236,7 +248,10 @@ impl eframe::App for ZeusApp {
                             if res.is_err() {
                                 self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
                             } else {
-                                self.shared_state.info_msg = InfoMsg::new(true, "Profile Saved Successfully");
+                                self.shared_state.info_msg = InfoMsg::new(
+                                    true,
+                                    "Profile Saved Successfully"
+                                );
                             }
                         }
 
@@ -244,8 +259,18 @@ impl eframe::App for ZeusApp {
                             if res.is_err() {
                                 self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
                             } else {
-                                let (client, chain_id) = res.unwrap();
-                                self.data.ws_client.insert(chain_id, Arc::new(client));
+                                let res = res.unwrap();
+                                self.data.ws_client.insert(
+                                    res.chain_id.id().clone(),
+                                    res.client.clone()
+                                );
+                                // setup oracles
+                                println!("Changed Chain: {:?}", res.chain_id.name().clone());
+                                println!("Sending request to init oracles");
+                                self.send_request(Request::InitOracles {
+                                    client: res.client,
+                                    chain_id: res.chain_id.clone(),
+                                });
                             }
                         }
 
@@ -258,10 +283,17 @@ impl eframe::App for ZeusApp {
                                 self.gui.swap_ui.update_token_list_status(&id, false);
 
                                 // update the token list map
-                                if let Some(vec_tokens) = self.gui.swap_ui.tokens.get_mut(&token.chain_id) {
+                                if
+                                    let Some(vec_tokens) = self.gui.swap_ui.tokens.get_mut(
+                                        &token.chain_id
+                                    )
+                                {
                                     vec_tokens.push(token.clone());
                                 } else {
-                                    self.gui.swap_ui.tokens.insert(token.chain_id, vec![token.clone()]);
+                                    self.gui.swap_ui.tokens.insert(
+                                        token.chain_id,
+                                        vec![token.clone()]
+                                    );
                                 }
                             }
                         }
@@ -283,20 +315,19 @@ impl eframe::App for ZeusApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered_justified(|ui| {
                 self.err_msg(ui);
-                self.draw_login(ui);
+                // self.draw_login(ui);
             });
 
-             
+            /* 
             if !self.data.logged_in || self.data.new_profile_screen {
                 return;
-            }
+            }*/
 
             ui.vertical_centered_justified(|ui| {
                 ui.add_space(100.0);
                 self.gui.swap_ui.swap_panel(ui, &mut self.data, &mut self.shared_state);
                 self.gui.networks_ui(ui, &mut self.data, &mut self.shared_state);
                 self.gui.swap_ui.tx_settings_window(ui, &mut self.data, &mut self.shared_state);
-
             });
         });
 

@@ -2,7 +2,8 @@ use eframe::egui;
 use std::collections::HashMap;
 use std::str::FromStr;
 use egui::{
-    vec2, Align2, Checkbox, Color32, FontId, RichText, Layout, Align, TextEdit, Ui
+    vec2, Align, Align2, Button, Checkbox, Color32, FontId, Layout, RichText, TextEdit, Ui,
+    Response
 };
 
 use crate::fonts::roboto_regular;
@@ -246,13 +247,14 @@ impl SwapUI {
         let input_id = self.input_id.clone();
         let output_id = self.output_id.clone();
 
+        let swap = rich_text("Swap", 20.0);
+        let for_t = rich_text("For", 20.0);
 
         frame().show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.set_width(500.0);
+                ui.set_width(550.0);
                 ui.set_height(220.0);
 
-                // TODO Align it to the right
                 ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
                     let response = ui.add(tx_settings_icon());
         
@@ -261,8 +263,8 @@ impl SwapUI {
                     }
                 });
 
+                
                 // Input Token Field
-                let swap = rich_text("Swap", 20.0);
                 ui.label(swap);
 
                 ui.horizontal(|ui| {
@@ -273,7 +275,6 @@ impl SwapUI {
                 ui.add_space(10.0);
 
                 // Output Token Field
-                let for_t = rich_text("For", 20.0);
                 ui.label(for_t);
 
                 ui.horizontal(|ui| {
@@ -281,12 +282,15 @@ impl SwapUI {
                     self.output_amount_field(ui);
                     self.token_select_button(ui, &output_id, tokens.clone(), data, shared_state);
                 });
-            });
+
+          
+        });
+        
         });
     }
 
     /// Renders the token selection list
-    fn token_selection(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData, shared_state: &mut SharedUiState) {
+    fn token_list(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData, shared_state: &mut SharedUiState) {
         
         if !self.get_token_list_status(id) {
             return;
@@ -352,10 +356,20 @@ impl SwapUI {
 
     /// Renders the token select button
     fn token_select_button(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData, shared_state: &mut SharedUiState) {
-        if ui.button(self.get_token(id).symbol).clicked() {
+        if self.token_button(id, ui).clicked() {
             self.update_token_list_status(id, true);
         }
-        self.token_selection(ui, id, tokens, data, shared_state);
+        self.token_list(ui, id, tokens, data, shared_state);
+    }
+
+    /// Render the balance of the token
+    fn token_balance(&mut self, ui: &mut Ui) {
+        let balance = RichText::new("Balance:")
+            .size(15.0)
+            .family(roboto_regular())
+            .color(Color32::WHITE);
+
+        ui.label(balance);
     }
 
     /// Creates the field for the input amount
@@ -390,5 +404,17 @@ impl SwapUI {
             );
 
         ui.add(field);
+    }
+
+    /// Create the token button
+    fn token_button(&mut self, id: &str, ui: &mut Ui) -> Response {
+        let token_symbol = RichText::new(self.get_token(id).symbol.clone())
+            .size(15.0)
+            .family(roboto_regular())
+            .color(Color32::WHITE);
+
+       let button = Button::new(token_symbol).min_size(vec2(30.0, 15.0));
+       let res = ui.add(button);
+       res
     }
 }

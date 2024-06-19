@@ -6,7 +6,7 @@ use alloy::{
 };
 
 use std::sync::Arc;
-use tokio::runtime::Runtime;
+use tokio::{runtime::Runtime, sync::RwLock};
 use crossbeam::channel::{ Sender, Receiver };
 use revm::{ primitives::{ Bytes, TransactTo }, Evm, db::{ CacheDB, EmptyDB } };
 use anyhow::{anyhow, Context};
@@ -19,9 +19,9 @@ use zeus_defi::{
 use zeus_types::{ forked_db::fork_factory::ForkFactory, Rpc, WsClient };
 use zeus_types::{ ChainId, profile::Profile, forked_db::{ fork_db::ForkDB, revert_msg } };
 
-use zeus_utils::new_evm;
+use zeus_utils::{get_client, new_evm, oracles::{OracleManager, OracleAction}};
 
-use crate::{types::{ Request, Response, SwapParams, SwapResult }, db::ZeusDB};
+use crate::{types::{ Request, Response, ClientResult, SwapParams, SwapResult }, db::ZeusDB};
 
 pub mod types;
 pub mod db;
@@ -40,6 +40,11 @@ pub struct Backend {
     pub front_receiver: Receiver<Request>,
 
     pub db: ZeusDB,
+
+    /// The oracle manager
+    pub oracle_manager: Option<Arc<RwLock<OracleManager>>>,
+
+    pub client: Option<Arc<WsClient>>,
 }
 
 impl Backend {
@@ -48,6 +53,8 @@ impl Backend {
             back_sender,
             front_receiver,
             db: ZeusDB::new().unwrap(),
+            oracle_manager: None,
+            client: None,
         }
     }
 
@@ -63,7 +70,12 @@ impl Backend {
                         match request {
 
                             Request::OnStartup { chain_id, rpcs } => {
-                                self.get_client(chain_id, rpcs).await;
+                                println!("On Startup");
+                                self.get_client(chain_id.clone(), rpcs.clone()).await;
+                            }
+
+                            Request::InitOracles { client, chain_id } => {
+                                self.init_oracle_manager(client, chain_id).await;
                             }
 
                             Request::SimSwap { params } => {
@@ -72,11 +84,6 @@ impl Backend {
 
                             Request::Balance { address } => {
                                 // TODO
-                                let balance = U256::ZERO;
-                                match self.back_sender.send(Response::Balance(balance)) {
-                                    Ok(_) => {}
-                                    Err(e) => println!("Error Sending Response: {}", e),
-                                }
                             }
 
                             Request::SaveProfile { profile } => {
@@ -97,6 +104,48 @@ impl Backend {
             }
         })
     }
+
+    async fn init_oracle_manager(&mut self, client: Arc<WsClient>, id: ChainId) {
+        println!("Initializing Oracle Manager for Chain: {}", id.name());
+        let ok_err: Result<(), anyhow::Error>;
+
+        let oracle_manager = OracleManager::new(client, id.clone()).await;
+        match oracle_manager {
+            Ok(oracle_manager) => {
+                self.handle_oracle().await;
+                self.oracle_manager = Some(Arc::new(RwLock::new(oracle_manager)));
+                self.start_oracles().await;
+                ok_err = Ok(());
+            }
+            Err(e) => {
+                println!("Error Initializing Oracle Manager: {}", e);
+                ok_err = Err(e);
+            }
+        }
+        
+        match self.back_sender.send(Response::InitOracles(ok_err)) {
+            Ok(_) => {}
+            Err(e) => println!("Error Sending Response: {}", e),
+        }
+    }
+
+    /// If we already run an oracle stop it so we can start a new one
+    async fn handle_oracle(&mut self) {
+        if let Some(oracle_manager) = &self.oracle_manager {
+            let oracle_manager = oracle_manager.write().await;
+            oracle_manager.action_sender.send(OracleAction::STOP).unwrap();
+        }
+    }
+
+        async fn start_oracles(&mut self) {
+            if let Some(oracle_manager) = &self.oracle_manager {
+                let oracle_manager = oracle_manager.write().await;
+                oracle_manager.start_oracles().await;
+                println!("Oracles Started");
+            }
+        }
+       
+
 
     /// Get the [ERC20Token] from the given address
     /// 
@@ -148,15 +197,13 @@ impl Backend {
         }
     }
 
-    async fn get_client(&self, id: ChainId, rpcs: Vec<Rpc>) {
-        let url = rpcs
-            .iter()
-            .find(|rpc| rpc.chain_id == id)
-            .expect("Could not find rpc url for the selected ChainId")
-            .url.clone();
-        let res = ProviderBuilder::new().on_ws(WsConnect::new(url)).await;
-        let res = res.map(|client| (client, id.id())).context("Failed to get client");
-        match self.back_sender.send(Response::GetClient(res)) {
+    async fn get_client(&mut self, id: ChainId, rpcs: Vec<Rpc>)  {
+        let url = rpcs.iter().find(|rpc| rpc.chain_id == id).unwrap().url.clone();
+
+        let client_res = ProviderBuilder::new().on_ws(WsConnect::new(url)).await;
+        let client_res = client_res.map(|client| ClientResult { client: client.into(), chain_id: id }).context("Failed to get client");
+
+        match self.back_sender.send(Response::GetClient(client_res)) {
             Ok(_) => {}
             Err(e) => println!("Error Sending Response: {}", e),
         }

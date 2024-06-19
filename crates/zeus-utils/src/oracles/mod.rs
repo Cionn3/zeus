@@ -13,6 +13,7 @@ pub enum OracleAction {
 }
 
 /// Manage any oracles based on the provided chain_id
+#[derive(Debug, Clone)]
 pub struct OracleManager {
 
     pub chain_id: ChainId,
@@ -23,17 +24,13 @@ pub struct OracleManager {
 
     pub action_receiver: Receiver<OracleAction>,
 
-    pub block_sender: Sender<BlockInfo>,
-
-    pub block_receiver: Receiver<BlockInfo>,
-
     pub block_oracle: Arc<RwLock<BlockOracle>>,
 }
 
 impl OracleManager {
     pub async fn new(client: Arc<WsClient>, chain_id: ChainId) -> Result<Self, anyhow::Error> {
         let (action_sender, action_receiver) = bounded(10);
-        let (block_sender, block_receiver) = bounded(10);
+
         let block_oracle = Arc::new(RwLock::new(BlockOracle::new(client.clone(), chain_id.clone()).await?));
 
         Ok(Self {
@@ -41,19 +38,17 @@ impl OracleManager {
             client,
             action_sender,
             action_receiver,
-            block_sender,
-            block_receiver,
             block_oracle
         })
     }
 
-    pub fn start_block_oracle(&mut self) {
+    pub async fn start_oracles(&self) {
         let client = self.client.clone();
-        let mut block_oracle = self.block_oracle.clone();
-        let block_sender = self.block_sender.clone();
+        let block_oracle = self.block_oracle.clone();
         let action_receiver = self.action_receiver.clone();
-        std::thread::spawn(move || {
-            start_block_oracle(client, &mut block_oracle, block_sender, action_receiver);
+
+        tokio::spawn(async move {
+            start_block_oracle(client, block_oracle, action_receiver).await;
         });
     }
 

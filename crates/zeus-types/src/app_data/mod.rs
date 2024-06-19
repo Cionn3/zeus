@@ -2,11 +2,7 @@ use std::{path::Path, str::FromStr};
 use std::sync::Arc;
 use std::collections::HashMap;
 use crate::WsClient;
-use alloy::{
-    providers::RootProvider,
-    pubsub::PubSubFrontend,
-    primitives::U256
-};
+use alloy::primitives::U256;
 
 
 use crate::{profile::{Credentials, Profile}, ChainId, Rpc};
