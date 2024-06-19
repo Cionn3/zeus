@@ -44,7 +44,6 @@ pub struct Backend {
     /// The oracle manager
     pub oracle_manager: Option<Arc<RwLock<OracleManager>>>,
 
-    pub client: Option<Arc<WsClient>>,
 }
 
 impl Backend {
@@ -54,7 +53,6 @@ impl Backend {
             front_receiver,
             db: ZeusDB::new().unwrap(),
             oracle_manager: None,
-            client: None,
         }
     }
 
@@ -76,6 +74,14 @@ impl Backend {
 
                             Request::InitOracles { client, chain_id } => {
                                 self.init_oracle_manager(client, chain_id).await;
+                            }
+
+                            Request::GetBlockInfo { } => {
+                                self.get_block_info().await;
+                            }
+
+                            Request::GetERC20Balance { address, token, client } => {
+                                // TODO
                             }
 
                             Request::SimSwap { params } => {
@@ -120,6 +126,7 @@ impl Backend {
         let oracle_manager = OracleManager::new(client, id.clone()).await;
         match oracle_manager {
             Ok(oracle_manager) => {
+                // ! TODO: find out why there is delay stopping the previous oracle
                 self.handle_oracle().await;
                 self.oracle_manager = Some(Arc::new(RwLock::new(oracle_manager)));
                 self.start_oracles().await;
@@ -150,6 +157,17 @@ impl Backend {
                 let oracle_manager = oracle_manager.write().await;
                 oracle_manager.start_oracles().await;
                 println!("Oracles Started");
+            }
+        }
+
+        async fn get_block_info(&self) {
+            if let Some(oracle_manager) = &self.oracle_manager {
+                let oracle = oracle_manager.read().await;
+                let (latest_block, next_block) = oracle.get_block_info().await;
+                match self.back_sender.send(Response::GetBlockInfo((latest_block, next_block))) {
+                    Ok(_) => {}
+                    Err(e) => println!("Error Sending Response: {}", e),
+                }
             }
         }
        

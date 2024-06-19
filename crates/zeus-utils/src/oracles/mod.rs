@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use zeus_types::{ChainId, WsClient};
+use zeus_types::{ChainId, WsClient, BlockInfo};
 
 use crossbeam::channel::{ Sender, Receiver, bounded };
-use crate::oracles::block::{start_block_oracle, BlockOracle, BlockInfo};
+use crate::oracles::block::{start_block_oracle, BlockOracle};
 
 pub mod block;
 pub mod fork;
@@ -40,6 +40,11 @@ impl OracleManager {
             action_receiver,
             block_oracle
         })
+    }
+
+    pub async fn get_block_info(&self) -> (BlockInfo, BlockInfo) {
+        let block_oracle = self.block_oracle.read().await;
+        (block_oracle.latest_block.clone(), block_oracle.next_block.clone())
     }
 
     pub async fn start_oracles(&self) {

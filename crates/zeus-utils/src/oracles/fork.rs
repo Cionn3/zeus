@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use alloy::{providers::{ Provider, RootProvider }, pubsub::PubSubFrontend, rpc::types::eth::{BlockId, BlockNumberOrTag }};
 use revm::db::{ CacheDB, EmptyDB };
-use zeus_types::forked_db::{ fork_db::ForkDB, fork_factory::ForkFactory };
+use zeus_types::{forked_db::{ fork_db::ForkDB, fork_factory::ForkFactory }, BlockInfo};
 use crate::new_fork_factory;
 
-use super::block::BlockInfo;
+
 
 #[derive(Debug, Clone)]
 pub struct ForkOracle {

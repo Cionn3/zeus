@@ -9,32 +9,14 @@ use alloy::rpc::types::eth::{Block, BlockId, BlockNumberOrTag};
 use alloy::primitives::U256;
 use crate::ChainId;
 use super::OracleAction;
-use zeus_types::WsClient;
+use zeus_types::{WsClient, BlockInfo};
 
 
 // OP 2 sec block time
 // Arbitrum is not stable
 // BSC 3 sec block time
 
-/// Holds Block basic information
-#[derive(Debug, Clone, Default)]
-pub struct BlockInfo {
-    pub number: u64,
-    pub timestamp: u64,
-    pub base_fee: U256
-}
 
-impl BlockInfo {
-    fn new(number: u64, timestamp: u64, base_fee: U256) -> Self {
-        Self {
-            number,
-            timestamp,
-            base_fee
-        }
-    }
-
-
-}
 
 #[derive(Debug, Clone)]
 pub struct BlockOracle {

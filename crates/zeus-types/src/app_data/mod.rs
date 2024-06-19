@@ -1,8 +1,8 @@
 use std::{path::Path, str::FromStr};
 use std::sync::Arc;
 use std::collections::HashMap;
-use crate::WsClient;
-use alloy::primitives::U256;
+use crate::{WsClient, BlockInfo};
+use alloy::primitives::{U256, Address};
 
 
 use crate::{profile::{Credentials, Profile}, ChainId, Rpc};
@@ -14,6 +14,37 @@ pub const NETWORKS: [ChainId; 4] = [
     ChainId::Base(8453),
     ChainId::Arbitrum(42161),
 ];
+
+/// Hold ERC20 token balances for a given block
+pub struct ERC20Balances {
+    pub balances: HashMap<u64, HashMap<Address, U256>>,
+}
+
+impl Default for ERC20Balances {
+    fn default() -> Self {
+        Self {
+            balances: HashMap::new(),
+        }
+    }
+}
+
+impl ERC20Balances {
+    pub fn update_balance(&mut self, block_number: u64, token: Address, balance: U256) {
+        self.balances
+            .entry(block_number)
+            .or_insert_with(HashMap::new)
+            .insert(token, balance);
+        
+        // Remove all blocks older than the current block number
+        self.balances.retain(|&k, _| k == block_number);
+    }
+
+    pub fn get_balance(&self, block_number: u64, token: &Address) -> Option<&U256> {
+        self.balances
+            .get(&block_number)
+            .and_then(|token_balances| token_balances.get(token))
+    }
+}
 
 /// Transaction settings
 #[derive(Clone)]
@@ -48,8 +79,13 @@ impl Default for TxSettings {
 }
 
 /// Main data and settings loaded by the app
-#[derive(Clone)]
+
 pub struct AppData {
+
+    /// Cache ERC20 balances for a given block
+    pub erc20_balances: ERC20Balances,
+
+    pub block_info: (BlockInfo, BlockInfo),
 
     /// A map of all connected websocket clients
     pub ws_client: HashMap<u64, Arc<WsClient>>,
@@ -157,6 +193,8 @@ impl Default for AppData {
         
 
         Self {
+            block_info: (BlockInfo::default(), BlockInfo::default()),
+            erc20_balances: ERC20Balances::default(),
             ws_client: HashMap::new(),
             chain_id: ChainId::default(),
             networks: NETWORKS.to_vec(),

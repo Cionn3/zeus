@@ -1,13 +1,15 @@
 use alloy::primitives::{ Address, U256, Bytes };
 use alloy::{ providers::RootProvider, pubsub::PubSubFrontend };
 use zeus_defi::erc20::ERC20Token;
+use zeus_types::BlockInfo;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use zeus_types::{ChainId, profile::Profile, WsClient, Rpc};
 
-pub type ClientRes = Result<(WsClient, u64), anyhow::Error>;
+
+
 
 /// The result of a client request
 #[derive(Debug)]
@@ -36,12 +38,21 @@ pub enum Request {
     /// Get the balance of an address
     Balance { address: Address},
 
+    /// Get ERC20 Balance
+    GetERC20Balance { address: Address, token: Address, client: Arc<WsClient> },
+
     /// Encrypt and save the profile
     SaveProfile { profile: Profile },
 
     GetClient { chain_id: ChainId, rpcs: Vec<Rpc>, clients: HashMap<u64, Arc<WsClient>> },
 
     GetERC20Token { id: String, address: Address, client: Arc<WsClient>, chain_id: u64 },
+
+    /// Get the `latest_block` & `next_block` Info from the [crate::OracleManager]
+    /// 
+    /// No need to specify chain_id, since we update it every time we change a chain
+    GetBlockInfo,
+
 }
 
 /// The response from the backend
@@ -58,6 +69,8 @@ pub enum Response {
     GetClient(Result<ClientResult, anyhow::Error>),
 
     GetERC20Token(Result<(ERC20Token, String), anyhow::Error>),
+
+    GetBlockInfo((BlockInfo, BlockInfo)),
 }
 
 /// Parameters needed to simulate a swap

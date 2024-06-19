@@ -59,13 +59,18 @@ impl GUI {
     }
 
     /// Render and handle the menu
-    pub fn menu(&mut self, ui: &mut Ui, shared_state: &mut SharedUiState) {
+    pub fn menu(&mut self, ui: &mut Ui, shared_state: &mut SharedUiState, data: &mut AppData) {
        let swap = RichText::new("Swap").family(roboto_regular()).size(20.0);
        let settings = RichText::new("Settings").family(roboto_regular()).size(20.0);
        let networks = RichText::new("Networks").family(roboto_regular()).size(15.0);
+       let base_fee = RichText::new("Base Fee").family(roboto_regular()).size(15.0);
 
 
        ui.vertical(|ui| {
+
+        ui.label(base_fee);
+        ui.label(RichText::new(&data.block_info.1.readable()).family(roboto_regular()).size(15.0));
+        ui.add_space(10.0);
 
         if ui.label(swap).clicked() {
             shared_state.networks_on = false;
@@ -81,8 +86,8 @@ impl GUI {
                 shared_state.networks_on = true;
             }
         });
-        
     });
+
     }
 
     /// Render Network Settings UI

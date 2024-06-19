@@ -1,5 +1,6 @@
-use alloy::{providers::{RootProvider, Provider}, pubsub::PubSubFrontend};
+use alloy::{providers::{RootProvider, Provider}, pubsub::PubSubFrontend, primitives::U256};
 use std::sync::Arc;
+use std::str::FromStr;
 use serde::{Serialize, Deserialize};
 
 pub mod forked_db;
@@ -8,6 +9,45 @@ pub mod profile;
 
 /// Websocket client
 pub type WsClient = RootProvider<PubSubFrontend>;
+
+
+/// Holds Block basic information
+#[derive(Debug, Clone)]
+pub struct BlockInfo {
+    pub number: u64,
+    pub timestamp: u64,
+    pub base_fee: U256
+}
+
+impl Default for BlockInfo {
+    fn default() -> Self {
+        Self {
+            number: 0,
+            timestamp: 0,
+            base_fee: U256::default()
+        }
+    }
+}
+
+impl BlockInfo {
+    pub fn new(number: u64, timestamp: u64, base_fee: U256) -> Self {
+        Self {
+            number,
+            timestamp,
+            base_fee
+        }
+    }
+
+    /// Wei to Gwei conversion
+    pub fn gwei(&self) -> U256 {
+        self.base_fee * U256::from(10).pow(U256::from(9))
+    }
+
+    /// Convert to human readable format
+    pub fn readable(&self) -> String {
+        format!("{:.2} Gwei", self.gwei() / U256::from(10).pow(U256::from(18)))
+    }
+}
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

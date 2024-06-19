@@ -133,6 +133,17 @@ impl ZeusApp {
         }
     }
 
+    fn state_update(&mut self) {
+        if let Some(sender) = &self.front_sender {
+            match sender.send(Request::GetBlockInfo) {
+                Ok(_) => {}
+                Err(e) => {
+                    self.shared_state.err_msg = ErrorMsg::new(true, e);
+                }
+            }
+        }
+    }
+
     fn draw_login(&mut self, ui: &mut Ui) {
         if self.data.profile_exists && !self.data.logged_in {
             login_screen(ui, self);
@@ -226,11 +237,16 @@ impl ZeusApp {
 // This is where we draw the UI
 impl eframe::App for ZeusApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        //TODO: avoid unwrap
+        
         if let Some(receive) = &self.back_receiver {
             match receive.try_recv() {
                 Ok(response) => {
                     match response {
+
+                        Response::GetBlockInfo(block_info) => {
+                            self.data.block_info = block_info;
+                        }
+
                         Response::SimSwap { result } => {
                             println!("Swap Response: {:?}", result);
                         }
@@ -304,6 +320,8 @@ impl eframe::App for ZeusApp {
             }
         }
 
+        self.state_update();
+
         // Draw the UI that belongs to the Top Panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
@@ -341,7 +359,7 @@ impl eframe::App for ZeusApp {
 
                 ui.add_space(10.0);
 
-                self.gui.menu(ui, &mut self.shared_state);
+                self.gui.menu(ui, &mut self.shared_state, &mut self.data);
             });
     }
 }
