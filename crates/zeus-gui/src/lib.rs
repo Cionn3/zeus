@@ -274,7 +274,7 @@ impl eframe::App for ZeusApp {
         // Draw the UI that belongs to the Top Panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                self.gui.wallet_ui(ui, &mut self.data, &mut self.shared_state);
+                self.gui.render_wallet_ui(ui, &mut self.data, &mut self.shared_state);
                 self.info_msg(ui);
             });
         });
