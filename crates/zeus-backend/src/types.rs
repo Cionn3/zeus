@@ -35,8 +35,6 @@ pub enum Request {
 /// The response from the backend
 pub enum Response {
 
-    OnStartup(ClientRes),
-
     SimSwap {result: SwapResult},
 
     Balance(U256),

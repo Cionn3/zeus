@@ -224,15 +224,6 @@ impl eframe::App for ZeusApp {
                 Ok(response) => {
                     match response {
 
-                        Response::OnStartup(res) => {
-                            if res.is_err() {
-                                self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
-                            } else {
-                                let (client, chain_id) = res.unwrap();
-                                self.data.ws_client.insert(chain_id, Arc::new(client));
-                            }
-                        }
-
                         Response::SimSwap { result } => {
                             println!("Swap Response: {:?}", result);
                         }
