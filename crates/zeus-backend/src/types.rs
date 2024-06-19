@@ -2,6 +2,7 @@ use alloy::primitives::{ Address, U256, Bytes };
 use alloy::{ providers::RootProvider, pubsub::PubSubFrontend };
 use zeus_defi::erc20::ERC20Token;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use zeus_types::{ChainId, profile::Profile, WsClient, Rpc};
@@ -38,7 +39,7 @@ pub enum Request {
     /// Encrypt and save the profile
     SaveProfile { profile: Profile },
 
-    GetClient { chain_id: ChainId, rpcs: Vec<Rpc> },
+    GetClient { chain_id: ChainId, rpcs: Vec<Rpc>, clients: HashMap<u64, Arc<WsClient>> },
 
     GetERC20Token { id: String, address: Address, client: Arc<WsClient>, chain_id: u64 },
 }

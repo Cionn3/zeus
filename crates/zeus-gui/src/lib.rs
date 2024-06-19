@@ -161,6 +161,7 @@ impl ZeusApp {
                             self.send_request(Request::GetClient {
                                 chain_id: id.clone(),
                                 rpcs: self.data.rpc.clone(),
+                                clients: self.data.ws_client.clone()
                             });
                             self.gui.swap_ui.default_input(id.id());
                             self.gui.swap_ui.default_output(id.id());

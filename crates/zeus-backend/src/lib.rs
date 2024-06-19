@@ -90,9 +90,17 @@ impl Backend {
                                 self.save_profile(profile);
                             }
 
-                            Request::GetClient { chain_id, rpcs } => {
+                            Request::GetClient { chain_id, rpcs, clients } => {
+                                if !clients.contains_key(&chain_id.id()) {
                                 self.get_client(chain_id, rpcs).await;
+                            } else {
+                                let client = clients.get(&chain_id.id()).unwrap().clone();
+                                let res = Ok(ClientResult {client, chain_id});
+                                if let Err(e) = self.back_sender.send(Response::GetClient(res)) {
+                                    println!("Error Sending Response: {}", e);
+                                }
                             }
+                        }
 
                             Request::GetERC20Token { id, address, client, chain_id } => {
                                 self.get_erc20_token(id, address, client, chain_id).await;
