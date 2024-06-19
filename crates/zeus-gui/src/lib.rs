@@ -98,6 +98,11 @@ impl ZeusApp {
 
         app.front_sender = Some(front_sender);
         app.back_receiver = Some(back_receiver);
+
+        if app.data.profile_exists {
+        app.send_request(Request::OnStartup { chain_id: app.data.chain_id.clone(), rpcs: app.data.rpc.clone()});
+        }
+
         app
     }
 
@@ -218,6 +223,16 @@ impl eframe::App for ZeusApp {
             match receive.try_recv() {
                 Ok(response) => {
                     match response {
+
+                        Response::OnStartup(res) => {
+                            if res.is_err() {
+                                self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
+                            } else {
+                                let (client, chain_id) = res.unwrap();
+                                self.data.ws_client.insert(chain_id, Arc::new(client));
+                            }
+                        }
+
                         Response::SimSwap { result } => {
                             println!("Swap Response: {:?}", result);
                         }

@@ -61,16 +61,13 @@ impl Backend {
                 match self.front_receiver.recv() {
                     Ok(request) => {
                         match request {
-                            Request::SimSwap { params } => {
-                                let result = match get_swap_result(params).await {
-                                    Ok(result) => result,
-                                    Err(e) => SwapResult::from_err(e.to_string()),
-                                };
 
-                                match self.back_sender.send(Response::SimSwap { result }) {
-                                    Ok(_) => {}
-                                    Err(e) => println!("Error Sending Response: {}", e),
-                                }
+                            Request::OnStartup { chain_id, rpcs } => {
+                                self.get_client(chain_id, rpcs).await;
+                            }
+
+                            Request::SimSwap { params } => {
+                                // TODO
                             }
 
                             Request::Balance { address } => {

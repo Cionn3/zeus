@@ -101,6 +101,10 @@ impl AppData {
         self.networks.iter().cloned().map(|chain_id| chain_id.id()).collect()
     }
 
+    /// Are we connected to the provided chain id?
+    /// 
+    /// We check if a ws_client exists for the provided chain id
+    // ! Not 100% reliable as we may lose connection to the client
     pub fn connected(&self, chain_id: u64) -> bool {
         self.ws_client.contains_key(&chain_id)
     }

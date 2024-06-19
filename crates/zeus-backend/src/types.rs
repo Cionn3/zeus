@@ -6,8 +6,15 @@ use std::sync::Arc;
 
 use zeus_types::{ChainId, profile::Profile, WsClient, Rpc};
 
+pub type ClientRes = Result<(WsClient, u64), anyhow::Error>;
+
 /// Request received from the frontend
 pub enum Request {
+
+    /// Thing to do on the startup of the application
+    // For now we just connect on the default chain
+    OnStartup { chain_id: ChainId, rpcs: Vec<Rpc> },
+
     /// Simulate a swap
     SimSwap {
         /// Parameters needed to simulate a swap
@@ -28,13 +35,15 @@ pub enum Request {
 /// The response from the backend
 pub enum Response {
 
+    OnStartup(ClientRes),
+
     SimSwap {result: SwapResult},
 
     Balance(U256),
 
     SaveProfile(Result<(), anyhow::Error>),
 
-    GetClient(Result<(WsClient, u64), anyhow::Error>),
+    GetClient(ClientRes),
 
     GetERC20Token(Result<(ERC20Token, String), anyhow::Error>),
 }
