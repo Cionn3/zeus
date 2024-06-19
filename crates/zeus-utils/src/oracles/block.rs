@@ -1,12 +1,15 @@
-use tokio::sync::{RwLock, broadcast::Sender};
+use tokio::sync::RwLock;
+use tokio::time::{sleep, Duration};
 use std::sync::Arc;
 use futures_util::StreamExt;
+use crossbeam::channel::{ Sender, Receiver };
+use alloy::providers::Provider;
 
-use alloy::providers::{ Provider, RootProvider };
-use alloy::pubsub::PubSubFrontend;
 use alloy::rpc::types::eth::{Block, BlockId, BlockNumberOrTag};
 use alloy::primitives::U256;
 use crate::ChainId;
+use super::OracleAction;
+use zeus_types::WsClient;
 
 
 // OP 2 sec block time
@@ -33,6 +36,7 @@ impl BlockInfo {
 
 }
 
+#[derive(Clone)]
 pub struct BlockOracle {
     pub latest_block: BlockInfo,
     pub next_block: BlockInfo,
@@ -40,7 +44,7 @@ pub struct BlockOracle {
 }
 
 impl BlockOracle {
-    pub async fn new(client: Arc<RootProvider<PubSubFrontend>>, chain_id: ChainId) -> Result<Self, anyhow::Error> {
+    pub async fn new(client: Arc<WsClient>, chain_id: ChainId) -> Result<Self, anyhow::Error> {
         let block = client.get_block(BlockId::Number(BlockNumberOrTag::Latest), true).await?.expect("Block is missing");
 
         let next_block = next_block(chain_id.clone(), block.clone())?;
@@ -73,9 +77,10 @@ impl BlockOracle {
 
 
 pub fn start_block_oracle(
-    client: Arc<RootProvider<PubSubFrontend>>,
+    client: Arc<WsClient>,
     oracle: &mut Arc<RwLock<BlockOracle>>,
     sender: Sender<BlockInfo>,
+    receiver: Receiver<OracleAction>
 ) {
     let oracle = oracle.clone();
     tokio::spawn(async move {
@@ -85,17 +90,28 @@ pub fn start_block_oracle(
                 Ok(s) => s.into_stream(),
                 Err(e) => {
                     println!("Error subscribing to blocks: {}", e);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    sleep(Duration::from_secs(5)).await;
                     continue;
                 }
             };
 
             while let Some(block) = stream.next().await {
+
+                match receiver.try_recv() {
+                    Ok(OracleAction::STOP) => {
+                        println!("Received stop signal, stopping block oracle");
+                        return;
+                    },
+                    _ => {}
+                }
+
                 {
                     let mut guard = oracle.write().await;
                     match guard.update_block(block.clone()) {
                         Ok(_) => {
-                            let _ = sender.send(guard.latest_block.clone());
+                            if let Err(e) = sender.send(guard.latest_block.clone()) {
+                                println!("Error sending block: {}", e);
+                            }
                         },
                         Err(e) => {
                             println!("Error updating block: {}", e);

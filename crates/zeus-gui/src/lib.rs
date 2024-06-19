@@ -15,7 +15,7 @@ use crate::{
 
 use zeus_backend::{ Backend, types::{ Request, Response }, db::ZeusDB };
 use zeus_types::app_data::AppData;
-
+use zeus_utils::oracles::OracleManager;
 
 pub mod gui;
 pub mod fonts;
@@ -86,8 +86,8 @@ impl ZeusApp {
 
         app.gui.swap_ui.tokens = tokens;
 
-        let (front_sender, front_receiver) = bounded(1);
-        let (back_sender, back_receiver) = bounded(1);
+        let (front_sender, front_receiver) = bounded(5);
+        let (back_sender, back_receiver) = bounded(5);
 
         app.gui.swap_ui.front_sender = Some(front_sender.clone());
         app.gui.sender = Some(front_sender.clone());
@@ -155,9 +155,6 @@ impl ZeusApp {
     }
 
     
-
-    
-
     /// Show an error message if needed
     fn err_msg(&mut self, ui: &mut Ui) {
 
