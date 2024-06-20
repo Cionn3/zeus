@@ -146,8 +146,8 @@ impl ZeusApp {
 
     fn request_eth_balance(&mut self) {
         if !self.data.wallet_address().is_zero() {
-            let should_update = self.data.should_update_balance();
-            if should_update {
+            
+            if self.data.should_update_balance() {
                 if let Some(client) = self.data.client() {
                     let now = Instant::now();
                     if now.duration_since(self.last_request) > Duration::from_secs(TIME_OUT) {

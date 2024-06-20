@@ -15,21 +15,15 @@ pub const NETWORKS: [ChainId; 4] = [
 ];
 
 /// Hold ERC20 token balances for a given block
+#[derive(Default)]
 pub struct ERC20Balances {
     pub balances: HashMap<u64, HashMap<Address, U256>>,
 }
 
-impl Default for ERC20Balances {
-    fn default() -> Self {
-        Self {
-            balances: HashMap::new(),
-        }
-    }
-}
 
 impl ERC20Balances {
     pub fn update_balance(&mut self, block_number: u64, token: Address, balance: U256) {
-        self.balances.entry(block_number).or_insert_with(HashMap::new).insert(token, balance);
+        self.balances.entry(block_number).or_default().insert(token, balance);
 
         // Remove all blocks older than the current block number
         self.balances.retain(|&k, _| k == block_number);
@@ -167,7 +161,7 @@ impl AppData {
             U256::ZERO
         };
         // convert to human readable format
-        let divisor_str = format!("1{:0>width$}", "", width = 18 as usize);
+        let divisor_str = format!("1{:0>width$}", "", width = 18_usize);
         let divisor = BigDecimal::from_str(&divisor_str).unwrap();
         let amount_as_decimal = BigDecimal::from_str(&balance.to_string()).unwrap();
         let amount = amount_as_decimal / divisor;
@@ -178,13 +172,13 @@ impl AppData {
     /// Get the current wallet address
     pub fn wallet_address(&self) -> Address {
         if let Some(wallet) = &self.profile.current_wallet {
-            wallet.key.address().clone()
+            wallet.key.address()
         } else {
             Address::ZERO
         }
     }
 
-    /// Should we update the wallet's eth balance?
+    /// Check if the wallet's balance its outdated
     pub fn should_update_balance(&self) -> bool {
         if let Some(wallet) = &self.profile.current_wallet {
             wallet.should_update(self.chain_id.id(), self.block_info.0.number)

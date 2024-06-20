@@ -12,38 +12,24 @@ use anyhow::anyhow;
 
 pub mod encryption;
 
-pub const FILENAME: &'static str = "profile.data";
+pub const FILENAME: &str = "profile.data";
 
 
 /// The credentials needed to encrypt and decrypt a `profile.data` file
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct Credentials {
     pub username: String,
     pub password: String,
     pub confrim_password: String,
 }
 
-impl Default for Credentials {
-    fn default() -> Self {
-        Self {
-            username: Default::default(),
-            password: Default::default(),
-            confrim_password: Default::default(),
-        }
-    }
-}
 
 impl Credentials {
     /// Salt for Argon2
     fn generate_saltstring(&self) -> SaltString {
         let salt_array = Sha256::digest(self.username.as_bytes());
         let salt = salt_array.to_vec();
-        let salt = String::from(
-            salt
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        );
+        let salt = salt.iter().map(|b| format!("{:02x}", b)).collect::<String>();
         SaltString::from_b64(&salt).unwrap()
     }
 
@@ -103,14 +89,10 @@ impl Wallet {
         self.balance.get(&id).map_or(U256::ZERO, |b| b.balance)
     }
 
-    /// Should we update the wallet's eth balance?
+    /// Check if the wallets's balance its outdated
     pub fn should_update(&self, chain_id: u64, latest_block: u64) -> bool {
         if let Some(wallet_balance) = self.balance.get(&chain_id) {
-           if wallet_balance.block < latest_block {
-            true
-           } else {
-            false
-           }
+            wallet_balance.block < latest_block 
         } else {
             true
         }
@@ -127,7 +109,7 @@ impl Wallet {
     /// Get wallet's key in string format
     pub fn get_key(&self) -> String {
         let key_vec = self.key.signer().to_bytes().to_vec();
-        encode(&key_vec)
+        encode(key_vec)
     }
 
     /// Create a new wallet with a random private key
@@ -173,7 +155,7 @@ impl Wallet {
 /// Only `wallets` remain and encrypted locally
 /// 
 /// If the user forgots the username or password, the contents of this file are lost forever
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Profile {
 
     /// Credentials of the profile
@@ -186,16 +168,6 @@ pub struct Profile {
     pub current_wallet: Option<Wallet>,
 }
 
-impl Default for Profile {
-    fn default() -> Self {
-        Self {
-            credentials: Credentials::default(),
-            wallets: Vec::new(),
-            current_wallet: None,
-        }
-    }
-
-}
 
 impl Profile {
 
@@ -272,7 +244,7 @@ impl Profile {
             };
             wallet_data.push(data);
         }
-        serde_json::to_string(&wallet_data).map_err(|e| anyhow::Error::new(e))
+        Ok(serde_json::to_string(&wallet_data)?)
     }
     
     /// Restore the wallets

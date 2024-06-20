@@ -1,6 +1,5 @@
 use alloy::{providers::{RootProvider, Provider}, pubsub::PubSubFrontend, primitives::U256};
 use std::sync::Arc;
-use std::str::FromStr;
 use serde::{Serialize, Deserialize};
 
 pub mod forked_db;
