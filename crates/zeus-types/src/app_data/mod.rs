@@ -1,11 +1,10 @@
-use std::{path::Path, str::FromStr};
+use std::{ path::Path, str::FromStr };
 use std::sync::Arc;
 use std::collections::HashMap;
-use crate::{WsClient, BlockInfo};
-use alloy::primitives::{U256, Address};
-
-
-use crate::{profile::{Credentials, Profile}, ChainId, Rpc};
+use crate::{ WsClient, BlockInfo };
+use alloy::primitives::{ U256, Address };
+use bigdecimal::BigDecimal;
+use crate::{ profile::{ Credentials, Profile }, ChainId, Rpc };
 
 /// Supported networks
 pub const NETWORKS: [ChainId; 4] = [
@@ -30,19 +29,14 @@ impl Default for ERC20Balances {
 
 impl ERC20Balances {
     pub fn update_balance(&mut self, block_number: u64, token: Address, balance: U256) {
-        self.balances
-            .entry(block_number)
-            .or_insert_with(HashMap::new)
-            .insert(token, balance);
-        
+        self.balances.entry(block_number).or_insert_with(HashMap::new).insert(token, balance);
+
         // Remove all blocks older than the current block number
         self.balances.retain(|&k, _| k == block_number);
     }
 
     pub fn get_balance(&self, block_number: u64, token: &Address) -> Option<&U256> {
-        self.balances
-            .get(&block_number)
-            .and_then(|token_balances| token_balances.get(token))
+        self.balances.get(&block_number).and_then(|token_balances| token_balances.get(token))
     }
 }
 
@@ -55,7 +49,6 @@ pub struct TxSettings {
 }
 
 impl TxSettings {
-
     /// Parse a string to gwei
     pub fn parse_gwei(&self) -> U256 {
         let amount = U256::from_str(&self.priority_fee).unwrap_or(U256::from(3));
@@ -81,10 +74,10 @@ impl Default for TxSettings {
 /// Main data and settings loaded by the app
 
 pub struct AppData {
-
     /// Cache ERC20 balances for a given block
     pub erc20_balances: ERC20Balances,
 
+    /// Cache the `lastest` & `next` block info
     pub block_info: (BlockInfo, BlockInfo),
 
     /// A map of all connected websocket clients
@@ -112,7 +105,7 @@ pub struct AppData {
     pub new_profile_screen: bool,
 
     /// Does a profile already exists?
-    /// 
+    ///
     /// We lookup for a `profile.data` file in the current directory of the executable
     pub profile_exists: bool,
 
@@ -124,17 +117,24 @@ pub struct AppData {
 
     /// Confirm credentials for exporting a private key
     pub confirm_credentials: Credentials,
-
 }
 
 impl AppData {
+    /// Get current client
+    pub fn client(&self) -> Option<Arc<WsClient>> {
+        self.ws_client.get(&self.chain_id.id()).cloned()
+    }
 
     pub fn supported_networks(&self) -> Vec<u64> {
-        self.networks.iter().cloned().map(|chain_id| chain_id.id()).collect()
+        self.networks
+            .iter()
+            .cloned()
+            .map(|chain_id| chain_id.id())
+            .collect()
     }
 
     /// Are we connected to the provided chain id?
-    /// 
+    ///
     /// We check if a ws_client exists for the provided chain id
     // ! Not 100% reliable as we may lose connection to the client
     pub fn connected(&self, chain_id: u64) -> bool {
@@ -159,10 +159,38 @@ impl AppData {
         Ok(())
     }
 
-    /// Get native balance of a wallet address on the current chain
-    pub fn native_balance(&mut self) -> String {
-        // TODO get balance
-        "0".to_string()
+    /// Get eth balance of the current wallet for a specific chain
+    pub fn eth_balance(&self, chain_id: u64) -> String {
+        let balance = if let Some(wallet) = &self.profile.current_wallet {
+            wallet.get_balance(chain_id)
+        } else {
+            U256::ZERO
+        };
+        // convert to human readable format
+        let divisor_str = format!("1{:0>width$}", "", width = 18 as usize);
+        let divisor = BigDecimal::from_str(&divisor_str).unwrap();
+        let amount_as_decimal = BigDecimal::from_str(&balance.to_string()).unwrap();
+        let amount = amount_as_decimal / divisor;
+        format!("{} {:.4}", self.native_coin(), amount)
+    }
+
+
+    /// Get the current wallet address
+    pub fn wallet_address(&self) -> Address {
+        if let Some(wallet) = &self.profile.current_wallet {
+            wallet.key.address().clone()
+        } else {
+            Address::ZERO
+        }
+    }
+
+    /// Should we update the wallet's eth balance?
+    pub fn should_update_balance(&self) -> bool {
+        if let Some(wallet) = &self.profile.current_wallet {
+            wallet.should_update(self.chain_id.id(), self.block_info.0.number)
+        } else {
+            false
+        }
     }
 
     /// Get native coin on current chain
@@ -174,9 +202,7 @@ impl AppData {
             ChainId::Arbitrum(_) => "ETH".to_string(),
         }
     }
-
 }
-
 
 impl Default for AppData {
     fn default() -> Self {
@@ -189,8 +215,6 @@ impl Default for AppData {
         for chain_id in NETWORKS {
             rpc.push(Rpc::new("".to_string(), chain_id));
         }
-
-        
 
         Self {
             block_info: (BlockInfo::default(), BlockInfo::default()),

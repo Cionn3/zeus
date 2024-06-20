@@ -1,4 +1,5 @@
 use std::str::FromStr;
+use std::collections::HashMap;
 use alloy::primitives::U256;
 use alloy::signers::wallet::{LocalWallet, Wallet as AlloyWallet};
 use alloy::signers::k256::ecdsa::SigningKey;
@@ -59,11 +60,27 @@ impl Credentials {
     }
 }
 
+/// Eth balance at a specific block
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WalletBalance {
+    pub balance: U256,
+    pub block: u64
+}
+
+impl Default for WalletBalance {
+    fn default() -> Self {
+        Self {
+            balance: U256::ZERO,
+            block: 0,
+        }
+    }
+}
 
 /// Helper struct to store wallets are about to be saved in a `profile.data` file
 #[derive(Clone, Serialize, Deserialize)]
 pub struct WalletData {
     pub name: String,
+    pub balance: HashMap<u64, WalletBalance>,
     pub key: String,
 }
 
@@ -72,14 +89,40 @@ pub struct Wallet {
     /// The given name of the wallet
     pub name: String,
 
-    /// The Balance of the wallet
-    pub balance: U256,
+    /// The Balance of the wallet for a specific chain
+    pub balance: HashMap<u64, WalletBalance>,
     
     /// The key of the wallet
     pub key: AlloyWallet<SigningKey>,
 }
 
 impl Wallet {
+
+    /// Get the wallets eth balance for a specific chain
+    pub fn get_balance(&self, id: u64) -> U256 {
+        self.balance.get(&id).map_or(U256::ZERO, |b| b.balance)
+    }
+
+    /// Should we update the wallet's eth balance?
+    pub fn should_update(&self, chain_id: u64, latest_block: u64) -> bool {
+        if let Some(wallet_balance) = self.balance.get(&chain_id) {
+           if wallet_balance.block < latest_block {
+            true
+           } else {
+            false
+           }
+        } else {
+            true
+        }
+    }
+
+    /// Update eth balance for a specific chain and block
+    pub fn update_balance(&mut self, id: u64, balance: U256, block: u64) {
+        let balance = WalletBalance { balance, block };
+        self.balance.insert(id, balance);
+        // remove old balances for the same chain
+        self.balance.retain(|&id, b| id != id || b.block == block);
+    }
 
     /// Get wallet's key in string format
     pub fn get_key(&self) -> String {
@@ -99,7 +142,7 @@ impl Wallet {
 
         Self {
             name,
-            balance: U256::ZERO,
+            balance: HashMap::new(),
             key,
         }
     }
@@ -117,7 +160,7 @@ impl Wallet {
         Ok(
         Self {
             name,
-            balance: U256::ZERO,
+            balance: HashMap::new(),
             key,
         })
     }
@@ -215,6 +258,7 @@ impl Profile {
         }
     }
 
+
     /// Convert all the wallets keys with their names to Json string format
     pub fn serialize_to_json(&self) -> Result<String, anyhow::Error> {
         let mut wallet_data = Vec::new();
@@ -223,6 +267,7 @@ impl Profile {
             let key = encode(&key_vec);
             let data = WalletData {
                 name: wallet.name.clone(),
+                balance: wallet.balance.clone(),
                 key,
             };
             wallet_data.push(data);

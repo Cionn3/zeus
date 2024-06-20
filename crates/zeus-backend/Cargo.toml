@@ -38,3 +38,4 @@ rusqlite = { version = "0.31.0", features = ["bundled"] }
 tokio = { version = "1.35.1", features = ["full"] }
 crossbeam = "0.8.4"
 anyhow = "1.0.44"
+lazy_static = "1.4.0"

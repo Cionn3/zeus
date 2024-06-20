@@ -1,5 +1,5 @@
 use alloy::primitives::{ Address, U256, Bytes };
-use alloy::{ providers::RootProvider, pubsub::PubSubFrontend };
+use alloy::{ providers::RootProvider, pubsub::PubSubFrontend, transports::{TransportErrorKind, RpcError} };
 use zeus_defi::erc20::ERC20Token;
 use zeus_types::BlockInfo;
 
@@ -35,8 +35,8 @@ pub enum Request {
         params: SwapParams,
     },
 
-    /// Get the balance of an address
-    Balance { address: Address},
+    /// Get the eth balance of an address
+    EthBalance { address: Address, client: Arc<WsClient>},
 
     /// Get ERC20 Balance
     GetERC20Balance { address: Address, token: Address, client: Arc<WsClient> },
@@ -62,7 +62,7 @@ pub enum Response {
 
     SimSwap {result: SwapResult},
 
-    Balance(U256),
+    EthBalance(Result<U256, RpcError<TransportErrorKind>>),
 
     SaveProfile(Result<(), anyhow::Error>),
 

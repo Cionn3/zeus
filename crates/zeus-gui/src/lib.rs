@@ -1,10 +1,10 @@
-use std::{ collections::HashMap, sync::Arc };
+use std::{ collections::HashMap, time::{ Instant, Duration } };
 use eframe::{ egui, CreationContext };
 use egui::{ vec2, Align2, ComboBox, Context, Style, Ui };
 
-use crossbeam::channel::{ bounded, Sender, Receiver };
+use crossbeam::channel::{ unbounded, Receiver, Sender };
 use zeus_defi::erc20::ERC20Token;
-use tokio::sync::RwLock;
+use alloy::primitives::U256;
 
 use crate::{
     fonts::get_fonts,
@@ -19,10 +19,13 @@ use crate::{
 
 use zeus_backend::{ Backend, types::{ Request, Response }, db::ZeusDB };
 use zeus_types::app_data::AppData;
-use zeus_utils::oracles::OracleManager;
+
 
 pub mod gui;
 pub mod fonts;
+
+/// Rate Limit
+const TIME_OUT: u64 = 2;
 
 /// The main application struct
 pub struct ZeusApp {
@@ -40,6 +43,8 @@ pub struct ZeusApp {
 
     /// Shared Ui State
     pub shared_state: SharedUiState,
+
+    pub last_request: Instant,
 }
 
 impl Default for ZeusApp {
@@ -50,6 +55,7 @@ impl Default for ZeusApp {
             back_receiver: None,
             data: AppData::default(),
             shared_state: SharedUiState::default(),
+            last_request: Instant::now(),
         }
     }
 }
@@ -89,8 +95,8 @@ impl ZeusApp {
 
         app.gui.swap_ui.tokens = tokens;
 
-        let (front_sender, front_receiver) = bounded(5);
-        let (back_sender, back_receiver) = bounded(5);
+        let (front_sender, front_receiver) = unbounded();
+        let (back_sender, back_receiver) = unbounded();
 
         app.gui.swap_ui.front_sender = Some(front_sender.clone());
         app.gui.sender = Some(front_sender.clone());
@@ -133,16 +139,40 @@ impl ZeusApp {
         }
     }
 
-    fn state_update(&mut self) {
-        if let Some(sender) = &self.front_sender {
-            match sender.send(Request::GetBlockInfo) {
-                Ok(_) => {}
-                Err(e) => {
-                    self.shared_state.err_msg = ErrorMsg::new(true, e);
+    fn update_block(&mut self) {
+        self.send_request(Request::GetBlockInfo);
+
+    }
+
+    fn request_eth_balance(&mut self) {
+        if !self.data.wallet_address().is_zero() {
+            let should_update = self.data.should_update_balance();
+            if should_update {
+                if let Some(client) = self.data.client() {
+                    let now = Instant::now();
+                    if now.duration_since(self.last_request) > Duration::from_secs(TIME_OUT) {
+                        let req = Request::EthBalance {
+                            address: self.data.wallet_address(),
+                            client,
+                        };
+                        println!("Requesting Eth Balance");
+                        self.send_request(req);
+                        self.last_request = now;
+                    }
                 }
             }
         }
     }
+
+    fn update_eth_balance(&mut self, balance: U256) {
+        if let Some(wallet) = &mut self.data.profile.current_wallet {
+            let block = self.data.block_info.0.number;
+            let chain_id = self.data.chain_id.id();
+            wallet.update_balance(chain_id, balance, block);
+        }
+    }
+
+
 
     fn draw_login(&mut self, ui: &mut Ui) {
         if self.data.profile_exists && !self.data.logged_in {
@@ -257,8 +287,12 @@ impl eframe::App for ZeusApp {
                             }
                         }
 
-                        Response::Balance(balance) => {
-                            println!("Balance: {}", balance);
+                        Response::EthBalance(res) => {
+                            if res.is_err() {
+                                self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
+                            } else {
+                                self.update_eth_balance(res.unwrap());
+                            }
                         }
 
                         Response::SaveProfile(res) => {
@@ -320,7 +354,8 @@ impl eframe::App for ZeusApp {
             }
         }
 
-        self.state_update();
+        self.update_block();
+        self.request_eth_balance();
 
         // Draw the UI that belongs to the Top Panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -334,13 +369,13 @@ impl eframe::App for ZeusApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered_justified(|ui| {
                 self.err_msg(ui);
-                // self.draw_login(ui);
+                 self.draw_login(ui);
             });
 
-            /* 
+             
             if !self.data.logged_in || self.data.new_profile_screen {
                 return;
-            }*/
+            }
 
             ui.vertical_centered_justified(|ui| {
                 ui.add_space(100.0);

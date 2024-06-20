@@ -1,8 +1,8 @@
 use tokio::sync::RwLock;
-use tokio::time::{sleep, Duration};
+use tokio::time::Duration;
 use std::sync::Arc;
 use futures_util::StreamExt;
-use crossbeam::channel::{ Sender, Receiver };
+use crossbeam::channel::Receiver;
 use alloy::providers::Provider;
 
 use alloy::rpc::types::eth::{Block, BlockId, BlockNumberOrTag};

@@ -34,12 +34,9 @@ use crate::gui::{state::*, THEME};
             ui.horizontal(|ui| {
 
                 frame().show(ui, |ui| {
-                    let current_wallet = data.profile.current_wallet_name();
+                    let current_wallet = data.profile.current_wallet_name();             
+                    let balance = rich_text(&data.eth_balance(data.chain_id.id()), 15.0);
 
-                    // TODO: an oracle to fetch the balance at specific intervals
-                    let balance = rich_text(&data.native_balance(), 15.0);
-
-                    let coin = rich_text(&data.native_coin(), 15.0);
 
                     ComboBox::from_label("")
                         .selected_text(current_wallet)
@@ -52,7 +49,6 @@ use crate::gui::{state::*, THEME};
                                 );
                             }
                         });
-                    ui.label(coin);
                     ui.label(balance);
                 });
             });

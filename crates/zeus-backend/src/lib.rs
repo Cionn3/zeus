@@ -19,9 +19,14 @@ use zeus_defi::{
 use zeus_types::{ forked_db::fork_factory::ForkFactory, Rpc, WsClient };
 use zeus_types::{ ChainId, profile::Profile, forked_db::{ fork_db::ForkDB, revert_msg } };
 
-use zeus_utils::{get_client, new_evm, oracles::{OracleManager, OracleAction}};
+use zeus_utils::{new_evm, oracles::{OracleManager, OracleAction}};
 
 use crate::{types::{ Request, Response, ClientResult, SwapParams, SwapResult }, db::ZeusDB};
+use lazy_static::lazy_static;
+
+lazy_static!(
+    pub static ref REQUESTING_ETH_BALANCE: bool = true;
+);
 
 pub mod types;
 pub mod db;
@@ -88,8 +93,10 @@ impl Backend {
                                 // TODO
                             }
 
-                            Request::Balance { address } => {
-                                // TODO
+                            Request::EthBalance { address, client } => {
+                               // if !self.requesting_eth_balance {
+                                    self.get_eth_balance(address, client).await;
+                                //}
                             }
 
                             Request::SaveProfile { profile } => {
@@ -126,7 +133,6 @@ impl Backend {
         let oracle_manager = OracleManager::new(client, id.clone()).await;
         match oracle_manager {
             Ok(oracle_manager) => {
-                // ! TODO: find out why there is delay stopping the previous oracle
                 self.handle_oracle().await;
                 self.oracle_manager = Some(Arc::new(RwLock::new(oracle_manager)));
                 self.start_oracles().await;
@@ -169,6 +175,15 @@ impl Backend {
                     Err(e) => println!("Error Sending Response: {}", e),
                 }
             }
+        }
+
+        async fn get_eth_balance(&mut self, address: Address, client: Arc<WsClient>) {
+            let res = client.get_balance(address).await;
+            match self.back_sender.send(Response::EthBalance(res)) {
+                Ok(_) => {}
+                Err(e) => println!("Error Sending Response: {}", e),
+            }
+
         }
        
 
