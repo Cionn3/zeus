@@ -1,4 +1,4 @@
-use alloy::{providers::{RootProvider, Provider}, pubsub::PubSubFrontend, primitives::U256};
+use alloy::{providers::{RootProvider, Provider}, pubsub::PubSubFrontend, primitives::U256, rpc::types::eth::Block};
 use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 
@@ -14,6 +14,7 @@ pub type WsClient = RootProvider<PubSubFrontend>;
 /// Holds Block basic information
 #[derive(Debug, Clone)]
 pub struct BlockInfo {
+    pub full_block: Option<Block>,
     pub number: u64,
     pub timestamp: u64,
     pub base_fee: U256
@@ -22,6 +23,7 @@ pub struct BlockInfo {
 impl Default for BlockInfo {
     fn default() -> Self {
         Self {
+            full_block: None,
             number: 0,
             timestamp: 0,
             base_fee: U256::default()
@@ -30,8 +32,9 @@ impl Default for BlockInfo {
 }
 
 impl BlockInfo {
-    pub fn new(number: u64, timestamp: u64, base_fee: U256) -> Self {
+    pub fn new(full_block: Option<Block>, number: u64, timestamp: u64, base_fee: U256) -> Self {
         Self {
+            full_block,
             number,
             timestamp,
             base_fee

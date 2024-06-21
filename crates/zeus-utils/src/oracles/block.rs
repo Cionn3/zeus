@@ -32,6 +32,7 @@ impl BlockOracle {
         let next_block = next_block(chain_id.clone(), block.clone())?;
 
         let latest_block = BlockInfo::new(
+            Some(block.clone()),
             block.header.number.expect("Block number is missing"),
             block.header.timestamp,
             U256::from(block.header.base_fee_per_gas.unwrap_or_default())
@@ -46,6 +47,7 @@ impl BlockOracle {
 
     fn update_block(&mut self, block: Block) -> Result<(), anyhow::Error> {
         self.latest_block = BlockInfo::new(
+            Some(block.clone()),
             block.header.number.expect("Block number is missing"),
             block.header.timestamp,
             U256::from(block.header.base_fee_per_gas.unwrap_or_default())
@@ -117,7 +119,7 @@ fn next_block(chain_id: ChainId, block: Block) -> Result<BlockInfo, anyhow::Erro
         _=> U256::from(0) // TODO
     };
     let number = block.header.number.expect("Block number is missing");
-    Ok(BlockInfo::new(number + 1, timestamp, base_fee))
+    Ok(BlockInfo::new(None, number + 1, timestamp, base_fee))
 }
 
 /// Calculate the next block base fee

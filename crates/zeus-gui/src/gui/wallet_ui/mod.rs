@@ -17,9 +17,11 @@ pub fn wallet_ui(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
 }
 
 fn wallet_selection(ui: &mut Ui, data: &mut AppData) {
-    if !data.logged_in || data.new_profile_screen {
-        return;
-    }
+    
+        if !data.logged_in || data.new_profile_screen {
+            return;
+        }
+    
 
     ui.vertical(|ui| {
         ui.horizontal(|ui| {

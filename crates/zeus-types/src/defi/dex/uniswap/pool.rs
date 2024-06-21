@@ -6,6 +6,8 @@ use lazy_static::lazy_static;
 use crate::defi::erc20::ERC20Token;
 use crate::ChainId;
 
+pub const V3_FEES: [u32; 4] = [100, 500, 3000, 10000];
+
 lazy_static! {
     // Ethereum Mainnet Uniswap Factories
     static ref ETH_UNISWAP_V2_FACTORY: Address = Address::from_str(
@@ -133,7 +135,7 @@ pub async fn get_v3_pools(
     let mut pools = Vec::new();
     let fact_addr = get_v3_pool_factory(chain_id.clone());
     let factory = UniswapV3Factory::new(fact_addr, client.clone());
-    for fee in &[100, 500, 3000, 10000] {
+    for fee in &V3_FEES {
         let pool = factory.getPool(token0.address, token1.address, *fee).call().await?.pool;
         if pool != Address::ZERO {
             pools.push(Pool {

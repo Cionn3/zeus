@@ -233,7 +233,7 @@ impl Backend {
         client: Arc<WsClient>,
         chain_id: u64
     ) -> Result<(), anyhow::Error> {
-        let token = if let Ok(Some(token)) = self.db.get_erc20(address, chain_id) {
+        let token = if let Ok(token) = self.db.get_erc20(address, chain_id) {
             token
         } else {
             let token = ERC20Token::new(address, client, chain_id).await?;
@@ -274,8 +274,8 @@ impl Backend {
             balance
         } else {
             let balance = token.balance_of(owner, client.clone()).await?;
-            if let Err(_) = self.db.insert_erc20_balance(token.address, balance, chain_id, block) {  
-            } 
+            if let Err(_) = self.db.insert_erc20_balance(token.address, balance, chain_id, block) {}
+            if let Err(_) = self.db.remove_erc20_balance(block, chain_id) {}
             balance
         };
         // update the balance
@@ -302,12 +302,11 @@ impl Backend {
         self.back_sender.send(Response::GetClient(client, id))?;
         Ok(())
     }
-}
+
 
 /// Dummy implementation
-async fn get_swap_result(params: SwapParams) -> Result<SwapResult, anyhow::Error> {
-    let block_num = params.client.get_block_number().await?;
-    let block_id = BlockId::Number(BlockNumberOrTag::Number(block_num));
+async fn get_swap_result(&self, params: SwapParams) -> Result<SwapResult, anyhow::Error> {
+    let block_id = BlockId::Number(BlockNumberOrTag::Number(params.block.header.number.unwrap()));
     let cache_db = CacheDB::new(EmptyDB::default());
 
     let fork_factory = ForkFactory::new_sandbox_factory(
@@ -317,18 +316,8 @@ async fn get_swap_result(params: SwapParams) -> Result<SwapResult, anyhow::Error
     );
     let fork_db = fork_factory.new_sandbox_fork();
 
-    let block = params.client.get_block_by_number(BlockNumberOrTag::Number(block_num), true).await?;
-
-    let block = if let Some(block) = block {
-        block
-    } else {
-        return Err(anyhow!("Block not found"));
-    };
-
-    let chain_id = ChainId::new(params.client.clone()).await?;
-
-    let mut evm = new_evm(fork_db, block, chain_id.clone());
-    let result = swap(chain_id, params, &mut evm).await?;
+    let mut evm = new_evm(fork_db, params.block.clone(), params.chain_id.clone());
+    let result = self.swap(params, &mut evm).await?;
     Ok(result)
 }
 
@@ -336,28 +325,24 @@ async fn get_swap_result(params: SwapParams) -> Result<SwapResult, anyhow::Error
 ///
 /// The pool with the highest output is selected
 async fn swap(
-    chain_id: ChainId,
+    &self,
     params: SwapParams,
     evm: &mut Evm<'static, (), ForkDB>
 ) -> Result<SwapResult, anyhow::Error> {
     let client = params.client;
     let slippage: u32 = params.slippage.parse().unwrap_or(1);
 
-    let token_in = ERC20Token::new(params.token_in, client.clone(), chain_id.id()).await?;
-
-    let token_out = ERC20Token::new(params.token_out, client.clone(), chain_id.id()).await?;
-
     let v2_pool = get_v2_pool(
-        token_in.clone(),
-        token_out.clone(),
-        chain_id.clone(),
+        params.token_in.clone(),
+        params.token_out.clone(),
+        params.chain_id.clone(),
         client.clone()
     ).await?;
 
     let mut pools = get_v3_pools(
-        token_in.clone(),
-        token_out.clone(),
-        chain_id,
+        params.token_in.clone(),
+        params.token_out.clone(),
+        params.chain_id.clone(),
         client.clone()
     ).await?;
 
@@ -377,9 +362,9 @@ async fn swap(
 
     // approve the contract to spend token_in
     evm.tx_mut().caller = params.caller;
-    evm.tx_mut().transact_to = TransactTo::Call(token_in.address);
+    evm.tx_mut().transact_to = TransactTo::Call(params.token_in.address);
     evm.tx_mut().value = U256::ZERO;
-    evm.tx_mut().data = token_in.encode_approve(*SWAP_ROUTER_ADDR, params.amount_in).into();
+    evm.tx_mut().data = params.token_in.encode_approve(*SWAP_ROUTER_ADDR, params.amount_in).into();
 
     let res = evm.transact_commit()?;
 
@@ -392,8 +377,8 @@ async fn swap(
 
     for pool in pools {
         let mut router_params = Params {
-            input_token: token_in.address,
-            output_token: token_out.address,
+            input_token: params.token_in.address,
+            output_token: params.token_out.address,
             amount_in: params.amount_in,
             pool: pool.address,
             pool_variant: pool.variant(),
@@ -429,8 +414,8 @@ async fn swap(
     // no swaps were successful
     if highest_amount_out == U256::ZERO {
         return Ok(SwapResult {
-            token_in,
-            token_out,
+            token_in: params.token_in,
+            token_out: params.token_out,
             amount_in: params.amount_in,
             amount_out: U256::ZERO,
             minimum_received: U256::ZERO,
@@ -447,8 +432,8 @@ async fn swap(
         highest_amount_out - (highest_amount_out * U256::from(slippage)) / U256::from(100);
 
     return Ok(SwapResult {
-        token_in,
-        token_out,
+        token_in: params.token_in,
+        token_out: params.token_out,
         amount_in: params.amount_in,
         amount_out: highest_amount_out,
         minimum_received,
@@ -458,4 +443,6 @@ async fn swap(
         gas_used,
         data: call_data,
     });
+}
+
 }

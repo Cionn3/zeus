@@ -147,10 +147,16 @@ impl ZeusApp {
     }
 
     fn request_eth_balance(&mut self) {
-        if !self.data.wallet_address().is_zero() {
-            if self.data.should_update_balance() {
-                if let Some(client) = self.data.client() {
-                    let now = Instant::now();
+        if self.data.wallet_address().is_zero() {
+            return;
+        }
+        
+        if !self.data.should_update_balance() {
+            return;
+        }
+
+        if let Some(client) = self.data.client() {
+            let now = Instant::now();
                     if now.duration_since(self.last_eth_request) > Duration::from_secs(TIME_OUT) {
                         let req = Request::EthBalance {
                             address: self.data.wallet_address(),
@@ -160,8 +166,8 @@ impl ZeusApp {
                         self.last_eth_request = now;
                     }
                 }   
-            }
-        }
+            
+        
     }
 
     fn request_erc20_balance(&mut self) {

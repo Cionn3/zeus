@@ -2,7 +2,7 @@ use rusqlite::{Connection as DbConnection, params};
 use alloy::primitives::{Address, U256};
 use zeus_types::defi::{erc20::ERC20Token, dex::uniswap::pool::{Pool, PoolVariant}};
 use std::{collections::HashMap, path::PathBuf};
-
+use anyhow::anyhow;
 
 pub struct ZeusDB {
     pub erc20_tokens: DbConnection,
@@ -103,7 +103,7 @@ impl ZeusDB {
     }
 
     /// Get the [ERC20Token] from the given address and chain_id
-    pub fn get_erc20(&self, address: Address, chain_id: u64) -> Result<Option<ERC20Token>, anyhow::Error> {
+    pub fn get_erc20(&self, address: Address, chain_id: u64) -> Result<ERC20Token, anyhow::Error> {
         let mut stmt = self.erc20_tokens.prepare("SELECT * FROM ERC20Token WHERE address = ?1, ?2")?;
         let mut rows = stmt.query(params![address.to_string(), chain_id])?;
     
@@ -124,15 +124,15 @@ impl ZeusDB {
                 total_supply: total_supply.parse().unwrap(),
             };
             
-            Ok(Some(token))
+            Ok(token)
         } else {
-            Ok(None)
+            Err(anyhow!("Token not found"))
         }
         
     }
 
     /// Get the [Pool] from the given token0, token1, pool variant and chain_id
-    pub fn get_pool(&self, token0: ERC20Token, token1: ERC20Token, chain_id: u64, variant: String) -> Result<Option<Pool>, anyhow::Error> {
+    pub fn get_pool(&self, token0: ERC20Token, token1: ERC20Token, chain_id: u64, variant: String) -> Result<Pool, anyhow::Error> {
         let token0_addr = token0.address.to_string();
         let token1_addr = token1.address.to_string();
         let mut stmt = self.pools.prepare("SELECT * FROM Pool WHERE chain_id, token0_addr, token1_addr = ?1, ?3, ?4, ?5")?;
@@ -152,9 +152,9 @@ impl ZeusDB {
                 fee
             };
             
-            Ok(Some(pool))
+            Ok(pool)
         } else {
-            Ok(None)
+            Err(anyhow!("Pool not found"))
         }
     }
 

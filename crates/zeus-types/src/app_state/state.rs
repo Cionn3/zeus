@@ -1,51 +1,47 @@
-use futures::future::Shared;
 use lazy_static::lazy_static;
-use std::sync::{Arc, RwLock};
+use std::sync::{ Arc, RwLock };
 use std::collections::HashMap;
+use std::path::Path;
+use crate::profile::Credentials;
 
 use crate::defi::erc20::ERC20Token;
 
-
-lazy_static!{
-    pub static ref SHARED_UI_STATE: Arc<RwLock<SharedUiState>> = Arc::new(RwLock::new(SharedUiState::default()));
-    pub static ref SWAP_UI_STATE: Arc<RwLock<SwapUIState>> = Arc::new(RwLock::new(SwapUIState::default()));
-
+lazy_static! {
+    pub static ref SHARED_UI_STATE: Arc<RwLock<SharedUiState>> = Arc::new(
+        RwLock::new(SharedUiState::default())
+    );
+    pub static ref SWAP_UI_STATE: Arc<RwLock<SwapUIState>> = Arc::new(
+        RwLock::new(SwapUIState::default())
+    );
 }
 
 /// Error message to show in the UI
 #[derive(Clone, Default)]
 pub struct ErrorMsg {
     pub on: bool,
-    
+
     pub msg: String,
 }
 
 impl ErrorMsg {
-    pub fn new<T>(on: bool, msg: T) -> Self
-    where
-        T: ToString,
-    {
+    pub fn new<T>(on: bool, msg: T) -> Self where T: ToString {
         Self {
             on,
             msg: msg.to_string(),
         }
     }
 }
-
 
 /// Info message to show in the UI
 #[derive(Clone, Default)]
 pub struct InfoMsg {
     pub on: bool,
-    
+
     pub msg: String,
 }
 
 impl InfoMsg {
-    pub fn new<T>(on: bool, msg: T) -> Self
-    where
-        T: ToString,
-    {
+    pub fn new<T>(on: bool, msg: T) -> Self where T: ToString {
         Self {
             on,
             msg: msg.to_string(),
@@ -53,11 +49,9 @@ impl InfoMsg {
     }
 }
 
-
 /// Shared State for some GUI components
 #[derive(Clone)]
 pub struct SharedUiState {
-
     /// Swap UI on/off
     pub swap_ui_on: bool,
 
@@ -100,11 +94,9 @@ impl Default for SharedUiState {
     }
 }
 
-
 /// A token that its currently selected in the SwapUI
 #[derive(Clone, PartialEq)]
 pub struct SelectedToken {
-
     pub token: ERC20Token,
 
     /// The amount of tokens to swap
@@ -116,7 +108,6 @@ pub struct SelectedToken {
 
 /// The state of the SwapUI
 pub struct SwapUIState {
-
     /// Latest Block Number
     pub block: u64,
 
@@ -140,7 +131,6 @@ pub struct SwapUIState {
 }
 
 impl SwapUIState {
-
     /// Get the input or output token by an id
     pub fn get_token(&self, id: &str) -> SelectedToken {
         match id {
@@ -166,14 +156,18 @@ impl SwapUIState {
     /// Update the balance of a [SelectedToken]
     pub fn update_balance(&mut self, id: &str, balance: String) {
         match id {
-            "input" => self.input_token.balance = balance,
-            "output" => self.output_token.balance = balance,
+            "input" => {
+                self.input_token.balance = balance;
+            }
+            "output" => {
+                self.output_token.balance = balance;
+            }
             _ => {}
         }
     }
 
     /// Get which list is on or off by an id
-    /// 
+    ///
     /// `id` -> "input" or "output" token
     pub fn get_token_list_status(&self, id: &str) -> bool {
         match id {
@@ -184,9 +178,9 @@ impl SwapUIState {
     }
 
     /// Close or Open the [token_list_window] by an id
-    /// 
+    ///
     /// `id` -> "input" or "output" token
-    /// 
+    ///
     /// `on` -> true or false
     pub fn update_token_list_status(&mut self, id: &str, on: bool) {
         match id {
@@ -203,21 +197,37 @@ impl SwapUIState {
     /// Update input_token based on the selected chain id
     pub fn default_input(&mut self, id: u64) {
         match id {
-            1 => self.input_token = SelectedToken::eth_default_input(),
-            56 => self.input_token = SelectedToken::bsc_default_input(),
-            8453 => self.input_token = SelectedToken::base_default_input(),
-            42161 => self.input_token = SelectedToken::arbitrum_default_input(),
+            1 => {
+                self.input_token = SelectedToken::eth_default_input();
+            }
+            56 => {
+                self.input_token = SelectedToken::bsc_default_input();
+            }
+            8453 => {
+                self.input_token = SelectedToken::base_default_input();
+            }
+            42161 => {
+                self.input_token = SelectedToken::arbitrum_default_input();
+            }
             _ => {}
         }
-        }
+    }
 
     /// Update output_token based on the selected chain id
     pub fn default_output(&mut self, id: u64) {
         match id {
-            1 => self.output_token = SelectedToken::eth_default_output(),
-            56 => self.output_token = SelectedToken::bsc_default_output(),
-            8453 => self.output_token = SelectedToken::base_default_output(),
-            42161 => self.output_token = SelectedToken::arbitrum_default_output(),
+            1 => {
+                self.output_token = SelectedToken::eth_default_output();
+            }
+            56 => {
+                self.output_token = SelectedToken::bsc_default_output();
+            }
+            8453 => {
+                self.output_token = SelectedToken::base_default_output();
+            }
+            42161 => {
+                self.output_token = SelectedToken::arbitrum_default_output();
+            }
             _ => {}
         }
     }
@@ -237,9 +247,7 @@ impl Default for SwapUIState {
     }
 }
 
-
 impl SelectedToken {
-
     pub fn new(token: ERC20Token) -> Self {
         Self {
             token,

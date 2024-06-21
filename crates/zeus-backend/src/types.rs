@@ -1,5 +1,5 @@
 use alloy::primitives::{ Address, U256, Bytes };
-use alloy::{ providers::RootProvider, pubsub::PubSubFrontend, transports::{TransportErrorKind, RpcError} };
+use alloy::{ providers::RootProvider, pubsub::PubSubFrontend, rpc::types::eth::Block };
 use zeus_types::{BlockInfo, defi::erc20::ERC20Token};
 
 use std::collections::HashMap;
@@ -62,17 +62,18 @@ pub enum Response {
 
 /// Parameters needed to simulate a swap
 pub struct SwapParams {
-    /// Chain id, if None will fetch from the client
-    pub chain_id: Option<ChainId>,
+    /// The target Chain id
+    pub chain_id: ChainId,
+
+    /// Latest block
+    pub block: Block,
 
     /// Client to make rpc calls
     pub client: Arc<RootProvider<PubSubFrontend>>,
 
-    /// Address of the token we want to swap
-    pub token_in: Address,
+    pub token_in: ERC20Token,
 
-    /// Address of the token we want to get
-    pub token_out: Address,
+    pub token_out: ERC20Token,
 
     /// Amount of tokens we want to swap
     pub amount_in: U256,
