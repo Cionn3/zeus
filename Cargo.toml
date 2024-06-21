@@ -1,4 +1,4 @@
-workspace = { members = ["crates/zeus-defi", "crates/zeus-gui", "crates/zeus-utils", "crates/zeus-backend", "crates/zeus-types", "crates/zeus-utils"] }
+workspace = { members = ["crates/zeus-gui", "crates/zeus-utils", "crates/zeus-backend", "crates/zeus-types", "crates/zeus-utils"] }
 [package]
 name = "Zeus"
 authors = ["Michalis Molfetas"]

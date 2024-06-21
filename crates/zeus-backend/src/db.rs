@@ -1,6 +1,6 @@
 use rusqlite::{Connection as DbConnection, params};
 use alloy::primitives::{Address, U256};
-use zeus_defi::{erc20::ERC20Token, dex::uniswap::pool::{Pool, PoolVariant}};
+use zeus_types::defi::{erc20::ERC20Token, dex::uniswap::pool::{Pool, PoolVariant}};
 use std::{collections::HashMap, path::PathBuf};
 
 
@@ -56,7 +56,7 @@ impl ZeusDB {
                       block_number         INTEGER NOT NULL,
                       address            TEXT NOT NULL,
                       balance             TEXT NOT NULL,
-                      UNIQUE(chain_id, address)
+                      UNIQUE(address, block_number)
                       )",
             [],
         )?;

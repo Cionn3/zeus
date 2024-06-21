@@ -3,8 +3,8 @@ use alloy::pubsub::PubSubFrontend;
 use std::sync::Arc;
 use std::str::FromStr;
 use lazy_static::lazy_static;
-use crate::erc20::ERC20Token;
-use zeus_types::ChainId;
+use crate::defi::erc20::ERC20Token;
+use crate::ChainId;
 
 lazy_static! {
     // Ethereum Mainnet Uniswap Factories

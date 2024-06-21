@@ -3,7 +3,7 @@ use eframe::{ egui, CreationContext };
 use egui::{ vec2, Align2, ComboBox, Context, Style, Ui };
 
 use crossbeam::channel::{ unbounded, Receiver, Sender };
-use zeus_defi::erc20::ERC20Token;
+use zeus_types::defi::erc20::ERC20Token;
 use alloy::primitives::U256;
 use zeus_types::app_state::{AppData, state::*};
 
@@ -12,7 +12,7 @@ use crate::{
     gui::{
         ZeusTheme,
         GUI,
-        misc::{ login_screen, new_profile_screen, rich_text, frame },
+        misc::{ login_screen, new_profile_screen, tx_settings_window, rich_text, frame },
         icons::*,
     },
 };
@@ -40,7 +40,9 @@ pub struct ZeusApp {
     /// The app data of the application
     pub data: AppData,
 
-    pub last_request: Instant,
+    pub last_eth_request: Instant,
+
+    pub last_erc20_request: Instant,
 }
 
 impl Default for ZeusApp {
@@ -50,7 +52,8 @@ impl Default for ZeusApp {
             front_sender: None,
             back_receiver: None,
             data: AppData::default(),
-            last_request: Instant::now(),
+            last_eth_request: Instant::now(),
+            last_erc20_request: Instant::now(),
         }
     }
 }
@@ -88,7 +91,8 @@ impl ZeusApp {
             };
         }
 
-        app.gui.swap_ui.tokens = tokens;
+        let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
+        swap_ui_state.tokens = tokens;
 
         let (front_sender, front_receiver) = unbounded();
         let (back_sender, back_receiver) = unbounded();
@@ -147,17 +151,59 @@ impl ZeusApp {
             if self.data.should_update_balance() {
                 if let Some(client) = self.data.client() {
                     let now = Instant::now();
-                    if now.duration_since(self.last_request) > Duration::from_secs(TIME_OUT) {
+                    if now.duration_since(self.last_eth_request) > Duration::from_secs(TIME_OUT) {
                         let req = Request::EthBalance {
                             address: self.data.wallet_address(),
                             client,
                         };
                         self.send_request(req);
-                        self.last_request = now;
+                        self.last_eth_request = now;
                     }
                 }   
             }
         }
+    }
+
+    fn request_erc20_balance(&mut self) {
+        if self.data.wallet_address().is_zero() {
+            return;
+        }
+
+        if !self.data.ws_client.contains_key(&self.data.chain_id.id()) {
+            return;
+        }
+
+
+        let now = Instant::now();
+        if now.duration_since(self.last_erc20_request) > Duration::from_secs(TIME_OUT) {
+        let swap_state = SWAP_UI_STATE.read().unwrap();
+        let latest_block = self.data.block_info.0.number;
+        if latest_block > swap_state.block {
+            let req = Request::GetERC20Balance {
+                id: "input".to_string(),
+                token: swap_state.input_token.token.clone(),
+                owner: self.data.wallet_address(),
+                chain_id: self.data.chain_id.id(),
+                block: latest_block,
+                client: self.data.ws_client.get(&self.data.chain_id.id()).unwrap().clone(),
+            };
+            self.send_request(req);
+
+            let req = Request::GetERC20Balance {
+                id: "output".to_string(),
+                token: swap_state.output_token.token.clone(),
+                owner: self.data.wallet_address(),
+                chain_id: self.data.chain_id.id(),
+                block: latest_block,
+                client: self.data.ws_client.get(&self.data.chain_id.id()).unwrap().clone(),
+            };
+
+            self.send_request(req);
+            self.last_erc20_request = now;
+        }
+        
+    }
+        
     }
 
     fn update_eth_balance(&mut self, balance: U256) {
@@ -200,8 +246,9 @@ impl ZeusApp {
                                 rpcs: self.data.rpc.clone(),
                                 clients: self.data.ws_client.clone()
                             });
-                            self.gui.swap_ui.default_input(id.id());
-                            self.gui.swap_ui.default_output(id.id());
+                            let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
+                            swap_ui_state.default_input(id.id());
+                            swap_ui_state.default_output(id.id());
                         }
                     }
                 });
@@ -303,17 +350,6 @@ impl eframe::App for ZeusApp {
                             });
                         }
 
-                        Response::GetERC20Token(token, id) => {
-                            self.gui.swap_ui.update_token(&id, token.clone());
-                            self.gui.swap_ui.update_token_list_status(&id, false);
-
-                            // update the token list map
-                            if let Some(vec_tokens) = self.gui.swap_ui.tokens.get_mut(&token.chain_id) {
-                                vec_tokens.push(token.clone());
-                            } else {
-                                self.gui.swap_ui.tokens.insert(token.chain_id, vec![token.clone()]);
-                            }
-                        }
                     }
                 }
                 Err(_) => {}
@@ -322,6 +358,7 @@ impl eframe::App for ZeusApp {
 
         self.update_block();
         self.request_eth_balance();
+        self.request_erc20_balance();
 
         // Draw the UI that belongs to the Top Panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -338,15 +375,17 @@ impl eframe::App for ZeusApp {
                 self.draw_login(ui);
             });
 
+            
             if !self.data.logged_in || self.data.new_profile_screen {
                 return;
-            }
+            } 
+            
 
             ui.vertical_centered_justified(|ui| {
                 ui.add_space(100.0);
                 self.gui.swap_ui.swap_panel(ui, &mut self.data);
                 self.gui.networks_ui(ui, &mut self.data);
-                self.gui.swap_ui.tx_settings_window(ui, &mut self.data);
+                tx_settings_window(ui, &mut self.data);
             });
         });
 

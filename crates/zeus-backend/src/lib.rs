@@ -5,19 +5,18 @@ use alloy::{
     rpc::types::eth::{ BlockId, BlockNumberOrTag },
 };
 
-use std::sync::Arc;
-use tokio::{ runtime::Runtime, sync::RwLock };
+use std::sync::{Arc, RwLock as stdRwLock};
+use tokio::{ runtime::Runtime, sync::RwLock as tokioRwLock };
 use crossbeam::channel::{ Sender, Receiver };
 use revm::{ primitives::{ Bytes, TransactTo }, Evm, db::{ CacheDB, EmptyDB } };
 use anyhow::{ anyhow, Context };
 
-use zeus_defi::{
-    dex::uniswap::pool::{ get_v2_pool, get_v3_pools },
-    erc20::ERC20Token,
-    zeus_router::{ encode_swap, decode_swap, SwapRouter::Params, SWAP_ROUTER_ADDR },
-};
+
 use zeus_types::{
     app_state::state::*,
+    defi::dex::uniswap::pool::{ get_v2_pool, get_v3_pools },
+    defi::zeus_router::{ encode_swap, decode_swap, SwapRouter::Params, SWAP_ROUTER_ADDR },
+    defi::erc20::ERC20Token,
     forked_db::{ fork_db::ForkDB, fork_factory::ForkFactory, revert_msg },
     profile::Profile,
     ChainId,
@@ -47,7 +46,7 @@ pub struct Backend {
     pub db: ZeusDB,
 
     /// The oracle manager
-    pub oracle_manager: Option<Arc<RwLock<OracleManager>>>,
+    pub oracle_manager: Option<Arc<tokioRwLock<OracleManager>>>,
 }
 
 impl Backend {
@@ -102,7 +101,15 @@ impl Backend {
                                 chain_id,
                                 block,
                                 client,
-                            } => {}
+                            } => {
+                                match self.get_erc20_balance(id, token, owner, chain_id, block, client).await {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        let mut state = SHARED_UI_STATE.write().unwrap();
+                                        state.err_msg = ErrorMsg::new(true, e);
+                                    },
+                                }
+                            }
 
                             Request::SimSwap { params } => {
                                 // TODO
@@ -168,7 +175,7 @@ impl Backend {
 
         let oracle_manager = OracleManager::new(client, id.clone()).await?;
         self.handle_oracle().await;
-        self.oracle_manager = Some(Arc::new(RwLock::new(oracle_manager)));
+        self.oracle_manager = Some(Arc::new(tokioRwLock::new(oracle_manager)));
         self.start_oracles().await;
         Ok(())
     }
@@ -233,30 +240,48 @@ impl Backend {
             self.db.insert_erc20(token.clone(), chain_id)?;
             token
         };
-        self.back_sender.send(Response::GetERC20Token(token, id))?;
+        let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
+
+        // replace with the new token
+        swap_ui_state.replace_token(&id, SelectedToken::new(token.clone()));
+
+        // close the token list window
+        swap_ui_state.update_token_list_status(&id, false);
+
+        // update the token list HashMap
+        if let Some(tokens) = swap_ui_state.tokens.get_mut(&chain_id) {
+            tokens.push(token);
+        } else {
+            swap_ui_state.tokens.insert(chain_id, vec![token]);
+        }
         Ok(())
     }
 
     /// Get the balance of an erc20 token
     async fn get_erc20_balance(
         &self,
+        id: String,
         token: ERC20Token,
         owner: Address,
         chain_id: u64,
         block: u64,
         client: Arc<WsClient>
-    ) -> Result<U256, anyhow::Error> {
+    ) -> Result<(), anyhow::Error> {
         // check if the balance is in the database
         let balance = if
             let Ok(balance) = self.db.get_erc20_balance(token.address, chain_id, block)
         {
-           balance
+            balance
         } else {
             let balance = token.balance_of(owner, client.clone()).await?;
-            self.db.insert_erc20_balance(token.address, balance, chain_id, block)?;
+            if let Err(_) = self.db.insert_erc20_balance(token.address, balance, chain_id, block) {  
+            } 
             balance
         };
-        Ok(balance)
+        // update the balance
+        let mut swap_state = SWAP_UI_STATE.write().unwrap();
+        swap_state.update_balance(&id, balance.to_string());
+        Ok(())
     }
 
     fn save_profile(&self, profile: Profile) -> Result<(), anyhow::Error> {
