@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::{Arc, RwLock};
 use egui::{
     vec2, Align, Align2, Button, Checkbox, Color32, FontId, Layout, RichText, TextEdit, Ui,
     Response
@@ -18,7 +19,9 @@ use crossbeam::channel::Sender;
 use alloy::primitives::Address;
 
 use zeus_backend::types::Request;
+use self::state::{SwapUIState, SWAP_UI_STATE};
 
+pub mod state;
 
 pub struct QuoteResult {
 
@@ -53,6 +56,8 @@ pub struct QuoteResult {
 pub struct SwapUI {
     /// Send Request to the backend
     pub front_sender: Option<Sender<Request>>,
+
+    pub state: Arc<RwLock<SwapUIState>>,
 
     /// Switch the UI on or off
     pub on: bool,
@@ -97,6 +102,7 @@ impl Default for SwapUI {
         Self {
             front_sender: None,
             on: true,
+            state: SWAP_UI_STATE.clone(),
             output_token_list_on: false,
             input_token_list_on: false,
             input_token: ERC20Token::eth_default_input(),
