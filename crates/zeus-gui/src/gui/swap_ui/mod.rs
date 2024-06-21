@@ -19,6 +19,7 @@ use alloy::primitives::Address;
 
 use zeus_backend::types::Request;
 
+
 pub struct QuoteResult {
 
     /// Token price against its paired token
@@ -74,6 +75,12 @@ pub struct SwapUI {
     /// The current amount of output token
     pub output_amount: String,
 
+    /// The current balance of input token
+    pub input_balance: String,
+
+    /// The current balance of output token
+    pub output_balance: String,
+
     /// The search query for a token
     pub search_token: String,
 
@@ -96,6 +103,8 @@ impl Default for SwapUI {
             output_token: ERC20Token::eth_default_output(),
             input_amount: "".to_string(),
             output_amount: "".to_string(),
+            input_balance: "".to_string(),
+            output_balance: "".to_string(),
             search_token: "".to_string(),
             input_id: String::from("input"),
             output_id: String::from("output"),
@@ -149,7 +158,18 @@ impl SwapUI {
         }
     }
 
+    /// Update the balance of a token by an id
+    pub fn update_balance(&mut self, id: &str, balance: String) {
+        match id {
+            "input" => self.input_balance = balance,
+            "output" => self.output_balance = balance,
+            _ => {}
+        }
+    }
+
     /// Get which list is on or off by an id
+    /// 
+    /// `id` -> "input" or "output" token
     fn get_token_list_status(&self, id: &str) -> bool {
         match id {
             "input" => self.input_token_list_on,
@@ -158,14 +178,18 @@ impl SwapUI {
         }
     }
 
-    /// Update the token list status by an id
-    pub fn update_token_list_status(&mut self, id: &str, status: bool) {
+    /// Close or Open the [token_list_window] by an id
+    /// 
+    /// `id` -> "input" or "output" token
+    /// 
+    /// `on` -> true or false
+    pub fn update_token_list_status(&mut self, id: &str, on: bool) {
         match id {
             "input" => {
-                self.input_token_list_on = status;
+                self.input_token_list_on = on;
             }
             "output" => {
-                self.output_token_list_on = status;
+                self.output_token_list_on = on;
             }
             _ => {}
         }
@@ -293,8 +317,8 @@ impl SwapUI {
         });
     }
 
-    /// Renders the token selection list
-    fn token_list(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData) {
+    /// Renders the token selection list window
+    fn token_list_window(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData) {
         
         if !self.get_token_list_status(id) {
             return;
@@ -365,7 +389,7 @@ impl SwapUI {
         if self.token_button(id, ui).clicked() {
             self.update_token_list_status(id, true);
         }
-        self.token_list(ui, id, tokens, data);
+        self.token_list_window(ui, id, tokens, data);
     }
 
     /// Render the balance of the token
@@ -376,6 +400,8 @@ impl SwapUI {
             .color(Color32::WHITE);
 
         ui.label(balance);
+        ui.add_space(5.0);
+        ui.label(self.input_balance.clone());
     }
 
     /// Creates the field for the input amount

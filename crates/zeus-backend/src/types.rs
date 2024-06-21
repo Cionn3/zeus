@@ -10,14 +10,6 @@ use zeus_types::{ChainId, profile::Profile, WsClient, Rpc};
 
 
 
-
-/// The result of a client request
-#[derive(Debug)]
-pub struct ClientResult {
-    pub client: Arc<WsClient>,
-    pub chain_id: ChainId,
-}
-
 /// Request received from the frontend
 pub enum Request {
 
@@ -58,13 +50,9 @@ pub enum Request {
 /// The response from the backend
 pub enum Response {
 
-    InitOracles(Result<(), anyhow::Error>),
-
     SimSwap {result: SwapResult},
 
     EthBalance(U256),
-
-    SaveProfile(Result<(), anyhow::Error>),
 
     GetClient(Arc<WsClient>, ChainId),
 

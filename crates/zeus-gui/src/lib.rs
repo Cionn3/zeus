@@ -288,25 +288,8 @@ impl eframe::App for ZeusApp {
                             println!("Swap Response: {:?}", result);
                         }
 
-                        Response::InitOracles(res) => {
-                            if res.is_err() {
-                                let mut state = SHARED_UI_STATE.write().unwrap();
-                                state.err_msg = ErrorMsg::new(true, res.unwrap_err());
-                            }
-                        }
-
                         Response::EthBalance(balance) => {
                             self.update_eth_balance(balance);
-                        }
-
-                        Response::SaveProfile(res) => {
-                            if res.is_err() {
-                                let mut state = SHARED_UI_STATE.write().unwrap();
-                                state.err_msg = ErrorMsg::new(true, res.unwrap_err());
-                            } else {
-                                let mut state = SHARED_UI_STATE.write().unwrap();
-                                state.info_msg = InfoMsg::new(true, "Profile Saved Successfully");
-                            }
                         }
 
                         Response::GetClient(client, chain_id) => {

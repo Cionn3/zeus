@@ -27,7 +27,7 @@ use zeus_types::{
 
 use zeus_utils::{ new_evm, oracles::{ OracleManager, OracleAction } };
 
-use crate::{ types::{ Request, Response, ClientResult, SwapParams, SwapResult }, db::ZeusDB };
+use crate::{ types::{ Request, Response, SwapParams, SwapResult }, db::ZeusDB };
 
 pub mod types;
 pub mod db;
@@ -82,7 +82,13 @@ impl Backend {
                             }
 
                             Request::InitOracles { client, chain_id } => {
-                                self.init_oracle_manager(client, chain_id).await;
+                                match self.init_oracle_manager(client, chain_id).await {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        let mut state = SHARED_UI_STATE.write().unwrap();
+                                        state.err_msg = ErrorMsg::new(true, e);
+                                    },
+                                }
                             }
 
                             Request::GetBlockInfo {} => {
@@ -113,7 +119,13 @@ impl Backend {
                             }
 
                             Request::SaveProfile { profile } => {
-                                self.save_profile(profile);
+                                match self.save_profile(profile) {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        let mut state = SHARED_UI_STATE.write().unwrap();
+                                        state.err_msg = ErrorMsg::new(true, e);
+                                    },
+                                }
                             }
 
                             Request::GetClient { chain_id, rpcs, clients } => {
@@ -151,28 +163,14 @@ impl Backend {
         })
     }
 
-    async fn init_oracle_manager(&mut self, client: Arc<WsClient>, id: ChainId) {
+    async fn init_oracle_manager(&mut self, client: Arc<WsClient>, id: ChainId) -> Result<(), anyhow::Error> {
         println!("Initializing Oracle Manager for Chain: {}", id.name());
-        let ok_err: Result<(), anyhow::Error>;
 
-        let oracle_manager = OracleManager::new(client, id.clone()).await;
-        match oracle_manager {
-            Ok(oracle_manager) => {
-                self.handle_oracle().await;
-                self.oracle_manager = Some(Arc::new(RwLock::new(oracle_manager)));
-                self.start_oracles().await;
-                ok_err = Ok(());
-            }
-            Err(e) => {
-                println!("Error Initializing Oracle Manager: {}", e);
-                ok_err = Err(e);
-            }
-        }
-
-        match self.back_sender.send(Response::InitOracles(ok_err)) {
-            Ok(_) => {}
-            Err(e) => println!("Error Sending Response: {}", e),
-        }
+        let oracle_manager = OracleManager::new(client, id.clone()).await?;
+        self.handle_oracle().await;
+        self.oracle_manager = Some(Arc::new(RwLock::new(oracle_manager)));
+        self.start_oracles().await;
+        Ok(())
     }
 
     /// If we already run an oracle stop it so we can start a new one
@@ -255,21 +253,15 @@ impl Backend {
            balance
         } else {
             let balance = token.balance_of(owner, client.clone()).await?;
-            if let Err(e) = self.db.insert_erc20_balance(token.address, balance, chain_id, block) {
-                println!("Error Inserting ERC20Balance: {}", e);
-            }
+            self.db.insert_erc20_balance(token.address, balance, chain_id, block)?;
             balance
         };
         Ok(balance)
     }
 
-    fn save_profile(&self, profile: Profile) {
-        let res = profile.encrypt_and_save();
-
-        match self.back_sender.send(Response::SaveProfile(res)) {
-            Ok(_) => {}
-            Err(e) => println!("Error Sending Response: {}", e),
-        }
+    fn save_profile(&self, profile: Profile) -> Result<(), anyhow::Error> {
+        profile.encrypt_and_save()?;
+        Ok(())
     }
 
     async fn get_client(&mut self, id: ChainId, rpcs: Vec<Rpc>) -> Result<(), anyhow::Error> {
