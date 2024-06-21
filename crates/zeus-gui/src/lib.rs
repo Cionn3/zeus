@@ -88,7 +88,8 @@ impl ZeusApp {
             };
         }
 
-        app.gui.swap_ui.tokens = tokens;
+        let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
+        swap_ui_state.tokens = tokens;
 
         let (front_sender, front_receiver) = unbounded();
         let (back_sender, back_receiver) = unbounded();
@@ -200,8 +201,9 @@ impl ZeusApp {
                                 rpcs: self.data.rpc.clone(),
                                 clients: self.data.ws_client.clone()
                             });
-                            self.gui.swap_ui.default_input(id.id());
-                            self.gui.swap_ui.default_output(id.id());
+                            let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
+                            swap_ui_state.default_input(id.id());
+                            swap_ui_state.default_output(id.id());
                         }
                     }
                 });
@@ -303,17 +305,6 @@ impl eframe::App for ZeusApp {
                             });
                         }
 
-                        Response::GetERC20Token(token, id) => {
-                            self.gui.swap_ui.update_token(&id, token.clone());
-                            self.gui.swap_ui.update_token_list_status(&id, false);
-
-                            // update the token list map
-                            if let Some(vec_tokens) = self.gui.swap_ui.tokens.get_mut(&token.chain_id) {
-                                vec_tokens.push(token.clone());
-                            } else {
-                                self.gui.swap_ui.tokens.insert(token.chain_id, vec![token.clone()]);
-                            }
-                        }
                     }
                 }
                 Err(_) => {}

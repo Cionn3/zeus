@@ -55,7 +55,7 @@ pub enum Response {
 
     GetClient(Arc<WsClient>, ChainId),
 
-    GetERC20Token(ERC20Token, String),
+   // GetERC20Token(ERC20Token, String),
 
     GetBlockInfo((BlockInfo, BlockInfo)),
 }

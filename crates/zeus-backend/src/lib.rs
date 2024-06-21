@@ -5,8 +5,8 @@ use alloy::{
     rpc::types::eth::{ BlockId, BlockNumberOrTag },
 };
 
-use std::sync::Arc;
-use tokio::{ runtime::Runtime, sync::RwLock };
+use std::sync::{Arc, RwLock as stdRwLock};
+use tokio::{ runtime::Runtime, sync::RwLock as tokioRwLock };
 use crossbeam::channel::{ Sender, Receiver };
 use revm::{ primitives::{ Bytes, TransactTo }, Evm, db::{ CacheDB, EmptyDB } };
 use anyhow::{ anyhow, Context };
@@ -46,7 +46,10 @@ pub struct Backend {
     pub db: ZeusDB,
 
     /// The oracle manager
-    pub oracle_manager: Option<Arc<RwLock<OracleManager>>>,
+    pub oracle_manager: Option<Arc<tokioRwLock<OracleManager>>>,
+
+    /// The swap ui state
+    pub swap_ui_state: Arc<stdRwLock<SwapUIState>>,
 }
 
 impl Backend {
@@ -56,6 +59,7 @@ impl Backend {
             front_receiver,
             db: ZeusDB::new().unwrap(),
             oracle_manager: None,
+            swap_ui_state: SWAP_UI_STATE.clone(),
         }
     }
 
@@ -167,7 +171,7 @@ impl Backend {
 
         let oracle_manager = OracleManager::new(client, id.clone()).await?;
         self.handle_oracle().await;
-        self.oracle_manager = Some(Arc::new(RwLock::new(oracle_manager)));
+        self.oracle_manager = Some(Arc::new(tokioRwLock::new(oracle_manager)));
         self.start_oracles().await;
         Ok(())
     }
@@ -232,7 +236,20 @@ impl Backend {
             self.db.insert_erc20(token.clone(), chain_id)?;
             token
         };
-        self.back_sender.send(Response::GetERC20Token(token, id))?;
+        let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
+
+        // replace with the new token
+        swap_ui_state.replace_token(&id, SelectedToken::new(token.clone()));
+
+        // close the token list window
+        swap_ui_state.update_token_list_status(&id, false);
+
+        // update the token list HashMap
+        if let Some(tokens) = swap_ui_state.tokens.get_mut(&chain_id) {
+            tokens.push(token);
+        } else {
+            swap_ui_state.tokens.insert(chain_id, vec![token]);
+        }
         Ok(())
     }
 

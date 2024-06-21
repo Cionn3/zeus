@@ -76,7 +76,7 @@ impl GUI {
         if ui.label(swap).clicked() {
             let mut state = SHARED_UI_STATE.write().unwrap();
             state.networks_on = false;
-            self.swap_ui.on = true;
+            state.swap_ui_on = true;
         }
 
         ui.add_space(10.0);
@@ -84,8 +84,8 @@ impl GUI {
         ui.collapsing(settings, |ui| {
             
             if ui.label(networks).clicked() {
-                self.swap_ui.on = false;
                 let mut state = SHARED_UI_STATE.write().unwrap();
+                state.swap_ui_on = false;
                 state.networks_on = true;
             }
         });
