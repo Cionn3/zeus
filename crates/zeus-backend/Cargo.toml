@@ -10,6 +10,7 @@ zeus-types = { path = "../zeus-types" }
 zeus-defi = { path = "../zeus-defi" }
 zeus-utils = {path = "../zeus-utils"}
 
+
 alloy = { git = "https://github.com/alloy-rs/alloy", rev = "4000b77", features = [
     "contract",
     "network",
@@ -38,4 +39,3 @@ rusqlite = { version = "0.31.0", features = ["bundled"] }
 tokio = { version = "1.35.1", features = ["full"] }
 crossbeam = "0.8.4"
 anyhow = "1.0.44"
-lazy_static = "1.4.0"

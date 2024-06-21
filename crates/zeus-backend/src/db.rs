@@ -1,6 +1,5 @@
-use revm::primitives::bitvec::vec;
 use rusqlite::{Connection as DbConnection, params};
-use alloy::primitives::Address;
+use alloy::primitives::{Address, U256};
 use zeus_defi::{erc20::ERC20Token, dex::uniswap::pool::{Pool, PoolVariant}};
 use std::{collections::HashMap, path::PathBuf};
 
@@ -8,6 +7,7 @@ use std::{collections::HashMap, path::PathBuf};
 pub struct ZeusDB {
     pub erc20_tokens: DbConnection,
     pub pools: DbConnection,
+    pub erc20_balance: DbConnection,
 }
 
 impl ZeusDB {
@@ -48,9 +48,23 @@ impl ZeusDB {
             [],
         )?;
 
+        let erc20_balance = DbConnection::open(db_path.join("erc20_balance.db"))?;
+        erc20_balance.execute(
+            "CREATE TABLE IF NOT EXISTS ERC20Balance (
+                      id              INTEGER PRIMARY KEY,
+                      chain_id         INTEGER NOT NULL,
+                      block_number         INTEGER NOT NULL,
+                      address            TEXT NOT NULL,
+                      balance             TEXT NOT NULL,
+                      UNIQUE(chain_id, address)
+                      )",
+            [],
+        )?;
+
         Ok(Self {
             erc20_tokens: erc20,
             pools,
+            erc20_balance,
         })
     }
 
@@ -74,7 +88,6 @@ impl ZeusDB {
 
     /// Insert a new [Pool] into the database
     pub fn insert_pool(&self, pool: Pool, chain_id: u64) -> Result<(), anyhow::Error> {
-        let time = std::time::Instant::now();
         self.pools.execute(
             "INSERT INTO Pool (chain_id, address, token0, token1, variant, fee) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
@@ -86,7 +99,6 @@ impl ZeusDB {
                 pool.fee
             ],
         )?;
-        println!("Time to insert: {:?}ms", time.elapsed().as_millis());
         Ok(())
     }
 
@@ -173,6 +185,34 @@ impl ZeusDB {
         }
         
         Ok(tokens)
+    }
+
+    /// Insert the balance of a token at a given block for a given chain
+    pub fn insert_erc20_balance(&self, address: Address, balance: U256, chain_id: u64, block: u64) -> Result<(), anyhow::Error> {
+        self.erc20_balance.execute(
+            "INSERT INTO ERC20Balance (chain_id, block_number, address, balance) VALUES (?1, ?2, ?3, ?4)",
+            params![chain_id, block, address.to_string(), balance.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// Get the balance of a token at a given block for a given chain
+    pub fn get_erc20_balance(&self, address: Address, chain_id: u64, block: u64) -> Result<U256, anyhow::Error> {
+        let mut stmt = self.erc20_balance.prepare("SELECT * FROM ERC20Balance WHERE address = ?1, ?2, ?3")?;
+        let mut rows = stmt.query(params![chain_id, block, address.to_string()])?;
+       
+        if let Some(row) = rows.next()? {
+            let balance: String = row.get(4)?;
+            Ok(balance.parse().unwrap())
+        } else {
+            Ok(U256::ZERO)
+        }
+    }
+
+    /// Remove old erc20 balances from a given block for a specific chain
+    pub fn remove_erc20_balance(&self, block: u64, chain_id: u64) -> Result<(), anyhow::Error> {
+        self.erc20_balance.execute("DELETE FROM ERC20Balance WHERE block_number < ?1 AND chain_id = ?2", params![block, chain_id])?;
+        Ok(())
     }
     
     /// Load all tokens to a hashmap

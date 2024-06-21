@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 
 pub mod forked_db;
-pub mod app_data;
+pub mod app_state;
 pub mod profile;
 
 /// Websocket client

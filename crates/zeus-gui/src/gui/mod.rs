@@ -10,14 +10,14 @@ use crate::{fonts::roboto_regular, AppData};
 use wallet_ui::wallet_ui;
 
 use zeus_backend::types::Request;
-use crate::gui::{swap_ui::SwapUI, state::*};
+use crate::gui::swap_ui::SwapUI;
+use zeus_types::app_state::state::*;
 use lazy_static::lazy_static;
 use crossbeam::channel::Sender;
 
 pub mod swap_ui;
 pub mod wallet_ui;
 pub mod icons;
-pub mod state;
 pub mod misc;
 
 lazy_static! {
@@ -47,19 +47,20 @@ impl Default for GUI {
 impl GUI {
 
     /// Send a request to the backend
-    pub fn send_request(&self, request: Request, shared_state: &mut SharedUiState) {
+    pub fn send_request(&self, request: Request) {
         if let Some(sender) = &self.sender {
             match sender.send(request) {
                 Ok(_) => {}
                 Err(e) => {
-                   shared_state.err_msg = ErrorMsg::new(true, e);
+                   let mut state = SHARED_UI_STATE.write().unwrap();
+                   state.err_msg = ErrorMsg::new(true, e);
                 }
             }
         }
     }
 
     /// Render and handle the menu
-    pub fn menu(&mut self, ui: &mut Ui, shared_state: &mut SharedUiState, data: &mut AppData) {
+    pub fn menu(&mut self, ui: &mut Ui, data: &mut AppData) {
        let swap = RichText::new("Swap").family(roboto_regular()).size(20.0);
        let settings = RichText::new("Settings").family(roboto_regular()).size(20.0);
        let networks = RichText::new("Networks").family(roboto_regular()).size(15.0);
@@ -73,7 +74,8 @@ impl GUI {
         ui.add_space(10.0);
 
         if ui.label(swap).clicked() {
-            shared_state.networks_on = false;
+            let mut state = SHARED_UI_STATE.write().unwrap();
+            state.networks_on = false;
             self.swap_ui.on = true;
         }
 
@@ -83,7 +85,8 @@ impl GUI {
             
             if ui.label(networks).clicked() {
                 self.swap_ui.on = false;
-                shared_state.networks_on = true;
+                let mut state = SHARED_UI_STATE.write().unwrap();
+                state.networks_on = true;
             }
         });
     });
@@ -91,10 +94,13 @@ impl GUI {
     }
 
     /// Render Network Settings UI
-    pub fn networks_ui(&mut self, ui: &mut Ui, data: &mut AppData, shared_state: &mut SharedUiState) {
+    pub fn networks_ui(&mut self, ui: &mut Ui, data: &mut AppData) {
 
-        if !shared_state.networks_on {
-           return;
+        {
+            let state = SHARED_UI_STATE.read().unwrap();
+            if !state.networks_on {
+                return;
+            }
         }
         
         let description = RichText::new("RPC Endpoints, Currently only supports Websockets").family(roboto_regular()).size(20.0);
@@ -132,7 +138,8 @@ impl GUI {
                         match data.save_rpc() {
                             Ok(_) => {}
                             Err(e) => {
-                                shared_state.err_msg = ErrorMsg::new(true, e);
+                                let mut state = SHARED_UI_STATE.write().unwrap();
+                                state.err_msg = ErrorMsg::new(true, e);
                             }
                         }
                     }
@@ -142,8 +149,8 @@ impl GUI {
     }
 
     /// Render the UI repsonsible for managing the wallets
-    pub fn render_wallet_ui (&mut self, ui: &mut Ui, data: &mut AppData, shared_state: &mut SharedUiState) {
-        wallet_ui(ui, data, shared_state, &self);
+    pub fn render_wallet_ui (&mut self, ui: &mut Ui, data: &mut AppData) {
+        wallet_ui(ui, data, &self);
     }
 
     

@@ -5,6 +5,7 @@ use egui::{ vec2, Align2, ComboBox, Context, Style, Ui };
 use crossbeam::channel::{ unbounded, Receiver, Sender };
 use zeus_defi::erc20::ERC20Token;
 use alloy::primitives::U256;
+use zeus_types::app_state::{AppData, state::*};
 
 use crate::{
     fonts::get_fonts,
@@ -12,13 +13,11 @@ use crate::{
         ZeusTheme,
         GUI,
         misc::{ login_screen, new_profile_screen, rich_text, frame },
-        state::*,
         icons::*,
     },
 };
 
 use zeus_backend::{ Backend, types::{ Request, Response }, db::ZeusDB };
-use zeus_types::app_data::AppData;
 
 
 pub mod gui;
@@ -41,9 +40,6 @@ pub struct ZeusApp {
     /// The app data of the application
     pub data: AppData,
 
-    /// Shared Ui State
-    pub shared_state: SharedUiState,
-
     pub last_request: Instant,
 }
 
@@ -54,7 +50,6 @@ impl Default for ZeusApp {
             front_sender: None,
             back_receiver: None,
             data: AppData::default(),
-            shared_state: SharedUiState::default(),
             last_request: Instant::now(),
         }
     }
@@ -115,6 +110,8 @@ impl ZeusApp {
             });
         }
 
+        let _state = SHARED_UI_STATE.write().unwrap();
+
         app
     }
 
@@ -133,7 +130,8 @@ impl ZeusApp {
             match sender.send(request) {
                 Ok(_) => {}
                 Err(e) => {
-                    self.shared_state.err_msg = ErrorMsg::new(true, e);
+                    let mut state = SHARED_UI_STATE.write().unwrap();
+                    state.err_msg = ErrorMsg::new(true, e);
                 }
             }
         }
@@ -146,7 +144,6 @@ impl ZeusApp {
 
     fn request_eth_balance(&mut self) {
         if !self.data.wallet_address().is_zero() {
-            
             if self.data.should_update_balance() {
                 if let Some(client) = self.data.client() {
                     let now = Instant::now();
@@ -155,11 +152,10 @@ impl ZeusApp {
                             address: self.data.wallet_address(),
                             client,
                         };
-                        println!("Requesting Eth Balance");
                         self.send_request(req);
                         self.last_request = now;
                     }
-                }
+                }   
             }
         }
     }
@@ -215,8 +211,13 @@ impl ZeusApp {
 
     /// Show an error message if needed
     fn err_msg(&mut self, ui: &mut Ui) {
-        if !self.shared_state.err_msg.on {
-            return;
+        let err_msg;
+        {
+            let state = SHARED_UI_STATE.read().unwrap();
+            err_msg = state.err_msg.msg.clone();
+            if !state.err_msg.on {
+                return;
+            }
         }
 
         egui::Window
@@ -227,13 +228,15 @@ impl ZeusApp {
             .title_bar(false)
             .show(ui.ctx(), |ui| {
                 ui.vertical_centered(|ui| {
-                    let msg_text = rich_text(&self.shared_state.err_msg.msg, 16.0);
+                    
+                    let msg_text = rich_text(&err_msg, 16.0);
                     let close_text = rich_text("Close", 16.0);
 
                     ui.label(msg_text);
                     ui.add_space(5.0);
                     if ui.button(close_text).clicked() {
-                        self.shared_state.err_msg.on = false;
+                        let mut state = SHARED_UI_STATE.write().unwrap();
+                        state.err_msg.on = false;
                     }
                 });
             });
@@ -242,21 +245,26 @@ impl ZeusApp {
     // TODO: Auto close it after a few seconds
     /// Show an info message if needed
     fn info_msg(&mut self, ui: &mut Ui) {
-        if !self.shared_state.info_msg.on {
-            return;
+        {
+            let state = SHARED_UI_STATE.read().unwrap();
+            if !state.info_msg.on {
+                return;
+            }
         }
 
         ui.vertical_centered_justified(|ui| {
             frame().show(ui, |ui| {
-                ui.set_max_size(vec2(100.0, 50.0));
+                ui.set_max_size(vec2(1000.0, 50.0));
 
-                let msg_text = rich_text(&self.shared_state.info_msg.msg, 16.0);
+                let state = SHARED_UI_STATE.read().unwrap();
+                let msg_text = rich_text(&state.info_msg.msg, 16.0);
                 let close_text = rich_text("Close", 16.0);
 
                 ui.label(msg_text);
                 ui.add_space(5.0);
                 if ui.button(close_text).clicked() {
-                    self.shared_state.info_msg.on = false;
+                    let mut state = SHARED_UI_STATE.write().unwrap();
+                    state.info_msg.on = false;
                 }
             });
         });
@@ -272,7 +280,6 @@ impl eframe::App for ZeusApp {
             match receive.try_recv() {
                 Ok(response) => {
                     match response {
-
                         Response::GetBlockInfo(block_info) => {
                             self.data.block_info = block_info;
                         }
@@ -283,69 +290,45 @@ impl eframe::App for ZeusApp {
 
                         Response::InitOracles(res) => {
                             if res.is_err() {
-                                self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
+                                let mut state = SHARED_UI_STATE.write().unwrap();
+                                state.err_msg = ErrorMsg::new(true, res.unwrap_err());
                             }
                         }
 
-                        Response::EthBalance(res) => {
-                            if res.is_err() {
-                                self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
-                            } else {
-                                self.update_eth_balance(res.unwrap());
-                            }
+                        Response::EthBalance(balance) => {
+                            self.update_eth_balance(balance);
                         }
 
                         Response::SaveProfile(res) => {
                             if res.is_err() {
-                                self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
+                                let mut state = SHARED_UI_STATE.write().unwrap();
+                                state.err_msg = ErrorMsg::new(true, res.unwrap_err());
                             } else {
-                                self.shared_state.info_msg = InfoMsg::new(
-                                    true,
-                                    "Profile Saved Successfully"
-                                );
+                                let mut state = SHARED_UI_STATE.write().unwrap();
+                                state.info_msg = InfoMsg::new(true, "Profile Saved Successfully");
                             }
                         }
 
-                        Response::GetClient(res) => {
-                            if res.is_err() {
-                                self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
-                            } else {
-                                let res = res.unwrap();
-                                self.data.ws_client.insert(
-                                    res.chain_id.id().clone(),
-                                    res.client.clone()
-                                );
-                                // setup oracles
-                                println!("Changed Chain: {:?}", res.chain_id.name().clone());
-                                println!("Sending request to init oracles");
-                                self.send_request(Request::InitOracles {
-                                    client: res.client,
-                                    chain_id: res.chain_id.clone(),
-                                });
-                            }
+                        Response::GetClient(client, chain_id) => {
+                            self.data.ws_client.insert(chain_id.id(), client.clone());
+                            // setup oracles
+                            println!("Changed Chain: {:?}", chain_id.name().clone());
+                            println!("Sending request to init oracles");
+                            self.send_request(Request::InitOracles {
+                                client,
+                                chain_id,
+                            });
                         }
 
-                        Response::GetERC20Token(res) => {
-                            if res.is_err() {
-                                self.shared_state.err_msg = ErrorMsg::new(true, res.unwrap_err());
-                            } else {
-                                let (token, id) = res.unwrap();
-                                self.gui.swap_ui.update_token(&id, token.clone());
-                                self.gui.swap_ui.update_token_list_status(&id, false);
+                        Response::GetERC20Token(token, id) => {
+                            self.gui.swap_ui.update_token(&id, token.clone());
+                            self.gui.swap_ui.update_token_list_status(&id, false);
 
-                                // update the token list map
-                                if
-                                    let Some(vec_tokens) = self.gui.swap_ui.tokens.get_mut(
-                                        &token.chain_id
-                                    )
-                                {
-                                    vec_tokens.push(token.clone());
-                                } else {
-                                    self.gui.swap_ui.tokens.insert(
-                                        token.chain_id,
-                                        vec![token.clone()]
-                                    );
-                                }
+                            // update the token list map
+                            if let Some(vec_tokens) = self.gui.swap_ui.tokens.get_mut(&token.chain_id) {
+                                vec_tokens.push(token.clone());
+                            } else {
+                                self.gui.swap_ui.tokens.insert(token.chain_id, vec![token.clone()]);
                             }
                         }
                     }
@@ -360,7 +343,7 @@ impl eframe::App for ZeusApp {
         // Draw the UI that belongs to the Top Panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                self.gui.render_wallet_ui(ui, &mut self.data, &mut self.shared_state);
+                self.gui.render_wallet_ui(ui, &mut self.data);
                 self.info_msg(ui);
             });
         });
@@ -369,32 +352,28 @@ impl eframe::App for ZeusApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered_justified(|ui| {
                 self.err_msg(ui);
-                 self.draw_login(ui);
+                self.draw_login(ui);
             });
 
-             
             if !self.data.logged_in || self.data.new_profile_screen {
                 return;
             }
 
             ui.vertical_centered_justified(|ui| {
                 ui.add_space(100.0);
-                self.gui.swap_ui.swap_panel(ui, &mut self.data, &mut self.shared_state);
-                self.gui.networks_ui(ui, &mut self.data, &mut self.shared_state);
-                self.gui.swap_ui.tx_settings_window(ui, &mut self.data, &mut self.shared_state);
+                self.gui.swap_ui.swap_panel(ui, &mut self.data);
+                self.gui.networks_ui(ui, &mut self.data);
+                self.gui.swap_ui.tx_settings_window(ui, &mut self.data);
             });
         });
 
         // Draw the UI that belongs to the Left Panel
-        egui::SidePanel
-            ::left("left_panel")
+        egui::SidePanel::left("left_panel")
             .exact_width(170.0)
             .show(ctx, |ui| {
                 self.select_chain(ui);
-
                 ui.add_space(10.0);
-
-                self.gui.menu(ui, &mut self.shared_state, &mut self.data);
+                self.gui.menu(ui, &mut self.data);
             });
     }
 }

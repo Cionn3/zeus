@@ -7,12 +7,11 @@ use egui::{
 };
 
 use crate::fonts::roboto_regular;
-use crate::SharedUiState;
 use super::icons::tx_settings_icon;
 use super::misc::{frame, rich_text};
 use super::ErrorMsg;
 use zeus_defi::erc20::ERC20Token;
-use zeus_types::app_data::AppData;
+use zeus_types::app_state::{AppData, state::SHARED_UI_STATE};
 
 
 use crossbeam::channel::Sender;
@@ -180,10 +179,13 @@ impl SwapUI {
     }
 
     /// TxSettings popup
-    pub fn tx_settings_window(&mut self, ui: &mut Ui, data: &mut AppData, shared_state: &mut SharedUiState) {
-        if !shared_state.tx_settings_on {
+    pub fn tx_settings_window(&mut self, ui: &mut Ui, data: &mut AppData) {
+        {
+        let state = SHARED_UI_STATE.read().unwrap();
+        if !state.tx_settings_on {
             return;
         }
+    }
 
         egui::Window::new("Transaction Settings")
             .resizable(false)
@@ -229,7 +231,8 @@ impl SwapUI {
 
                     if ui.button("Save").clicked() {
                         // TODO save the settings
-                        shared_state.tx_settings_on = false;
+                        let mut state = SHARED_UI_STATE.write().unwrap();
+                        state.tx_settings_on = false;
                     }
                 });
             });
@@ -237,7 +240,7 @@ impl SwapUI {
     }
 
     /// Renders the swap panel
-    pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, shared_state: &mut SharedUiState) {
+    pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData) {
         if !self.on {
             return;
         }
@@ -259,7 +262,8 @@ impl SwapUI {
                     let response = ui.add(tx_settings_icon());
         
                     if response.clicked() {
-                        shared_state.tx_settings_on = true;
+                        let mut state = SHARED_UI_STATE.write().unwrap();
+                        state.tx_settings_on = true;
                     }
                 });
 
@@ -270,7 +274,7 @@ impl SwapUI {
                 ui.horizontal(|ui| {
                     ui.add_space(115.0);
                     self.input_amount_field(ui);
-                    self.token_select_button(ui, &input_id, tokens.clone(), data, shared_state);
+                    self.token_select_button(ui, &input_id, tokens.clone(), data);
                 });
                 ui.add_space(10.0);
 
@@ -280,7 +284,7 @@ impl SwapUI {
                 ui.horizontal(|ui| {
                     ui.add_space(115.0);
                     self.output_amount_field(ui);
-                    self.token_select_button(ui, &output_id, tokens.clone(), data, shared_state);
+                    self.token_select_button(ui, &output_id, tokens.clone(), data);
                 });
 
           
@@ -290,7 +294,7 @@ impl SwapUI {
     }
 
     /// Renders the token selection list
-    fn token_list(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData, shared_state: &mut SharedUiState) {
+    fn token_list(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData) {
         
         if !self.get_token_list_status(id) {
             return;
@@ -336,11 +340,13 @@ impl SwapUI {
                     if let Ok(address) = Address::from_str(&self.search_token) {
                         if ui.button("Add Token").clicked() {
                             println!("Adding Token: {:?}", address);
-                            let client = if let Some(client) = data.ws_client.get(&data.chain_id.id()) {
-                                client.clone()
-                            } else {
-                                shared_state.err_msg = ErrorMsg::new(true, "You are not connected to a node");
-                                return;
+                            let client = match data.client() {
+                                Some(client) => client,
+                                None => {
+                                    let mut state = SHARED_UI_STATE.write().unwrap();
+                                    state.err_msg = ErrorMsg::new(true, "You are not connected to a node");
+                                    return;
+                                }
                             };
                             self.send_request(Request::GetERC20Token {
                                 id: id.to_string(),
@@ -355,11 +361,11 @@ impl SwapUI {
     }
 
     /// Renders the token select button
-    fn token_select_button(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData, shared_state: &mut SharedUiState) {
+    fn token_select_button(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData) {
         if self.token_button(id, ui).clicked() {
             self.update_token_list_status(id, true);
         }
-        self.token_list(ui, id, tokens, data, shared_state);
+        self.token_list(ui, id, tokens, data);
     }
 
     /// Render the balance of the token

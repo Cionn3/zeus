@@ -39,7 +39,7 @@ pub enum Request {
     EthBalance { address: Address, client: Arc<WsClient>},
 
     /// Get ERC20 Balance
-    GetERC20Balance { address: Address, token: Address, client: Arc<WsClient> },
+    GetERC20Balance { id: String, token: ERC20Token, owner: Address, chain_id: u64, block: u64, client: Arc<WsClient> },
 
     /// Encrypt and save the profile
     SaveProfile { profile: Profile },
@@ -62,13 +62,13 @@ pub enum Response {
 
     SimSwap {result: SwapResult},
 
-    EthBalance(Result<U256, RpcError<TransportErrorKind>>),
+    EthBalance(U256),
 
     SaveProfile(Result<(), anyhow::Error>),
 
-    GetClient(Result<ClientResult, anyhow::Error>),
+    GetClient(Arc<WsClient>, ChainId),
 
-    GetERC20Token(Result<(ERC20Token, String), anyhow::Error>),
+    GetERC20Token(ERC20Token, String),
 
     GetBlockInfo((BlockInfo, BlockInfo)),
 }

@@ -1,7 +1,12 @@
+use lazy_static::lazy_static;
+use std::sync::{Arc, RwLock};
 
+lazy_static!{
+    pub static ref SHARED_UI_STATE: Arc<RwLock<SharedUiState>> = Arc::new(RwLock::new(SharedUiState::default()));
+}
 
 /// Error message to show in the UI
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ErrorMsg {
     pub on: bool,
     
@@ -20,17 +25,9 @@ impl ErrorMsg {
     }
 }
 
-impl Default for ErrorMsg {
-    fn default() -> Self {
-        Self {
-            on: false,
-            msg: "".to_string(),
-        }
-    }
-}
 
 /// Info message to show in the UI
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct InfoMsg {
     pub on: bool,
     
@@ -49,17 +46,9 @@ impl InfoMsg {
     }
 }
 
-impl Default for InfoMsg {
-    fn default() -> Self {
-        Self {
-            on: false,
-            msg: "".to_string(),
-        }
-    }
-}
 
 /// Shared State for some GUI components
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SharedUiState {
     /// Network settings UI on/off
     pub networks_on: bool,
@@ -83,18 +72,4 @@ pub struct SharedUiState {
 
     /// Info message to show in the UI
     pub info_msg: InfoMsg,
-}
-
-impl Default for SharedUiState {
-    fn default() -> Self {
-        Self {
-            networks_on: false,
-            wallet_popup: (false, "New"),
-            export_key_ui: false,
-            exported_key_window: (false, "".to_string()),
-            tx_settings_on: false,
-            err_msg: ErrorMsg::default(),
-            info_msg: InfoMsg::default(),
-        }
-    }
 }

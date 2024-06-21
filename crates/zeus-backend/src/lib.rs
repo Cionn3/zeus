@@ -1,32 +1,33 @@
 use alloy::{
-    primitives::{U256, Address},
+    primitives::{ U256, Address },
     providers::{ Provider, ProviderBuilder },
     transports::ws::WsConnect,
     rpc::types::eth::{ BlockId, BlockNumberOrTag },
 };
 
 use std::sync::Arc;
-use tokio::{runtime::Runtime, sync::RwLock};
+use tokio::{ runtime::Runtime, sync::RwLock };
 use crossbeam::channel::{ Sender, Receiver };
 use revm::{ primitives::{ Bytes, TransactTo }, Evm, db::{ CacheDB, EmptyDB } };
-use anyhow::{anyhow, Context};
+use anyhow::{ anyhow, Context };
 
 use zeus_defi::{
     dex::uniswap::pool::{ get_v2_pool, get_v3_pools },
     erc20::ERC20Token,
     zeus_router::{ encode_swap, decode_swap, SwapRouter::Params, SWAP_ROUTER_ADDR },
 };
-use zeus_types::{ forked_db::fork_factory::ForkFactory, Rpc, WsClient };
-use zeus_types::{ ChainId, profile::Profile, forked_db::{ fork_db::ForkDB, revert_msg } };
+use zeus_types::{
+    app_state::state::*,
+    forked_db::{ fork_db::ForkDB, fork_factory::ForkFactory, revert_msg },
+    profile::Profile,
+    ChainId,
+    Rpc,
+    WsClient,
+};
 
-use zeus_utils::{new_evm, oracles::{OracleManager, OracleAction}};
+use zeus_utils::{ new_evm, oracles::{ OracleManager, OracleAction } };
 
-use crate::{types::{ Request, Response, ClientResult, SwapParams, SwapResult }, db::ZeusDB};
-use lazy_static::lazy_static;
-
-lazy_static!(
-    pub static ref REQUESTING_ETH_BALANCE: bool = true;
-);
+use crate::{ types::{ Request, Response, ClientResult, SwapParams, SwapResult }, db::ZeusDB };
 
 pub mod types;
 pub mod db;
@@ -37,7 +38,6 @@ pub mod db;
 ///
 /// Still in WIP
 pub struct Backend {
-
     /// Send Data back to the frontend
     pub back_sender: Sender<Response>,
 
@@ -48,7 +48,6 @@ pub struct Backend {
 
     /// The oracle manager
     pub oracle_manager: Option<Arc<RwLock<OracleManager>>>,
-
 }
 
 impl Backend {
@@ -71,32 +70,46 @@ impl Backend {
                 match self.front_receiver.recv() {
                     Ok(request) => {
                         match request {
-
                             Request::OnStartup { chain_id, rpcs } => {
                                 println!("On Startup");
-                                self.get_client(chain_id.clone(), rpcs.clone()).await;
+                                match self.get_client(chain_id.clone(), rpcs.clone()).await {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        let mut state = SHARED_UI_STATE.write().unwrap();
+                                        state.err_msg = ErrorMsg::new(true, e);
+                                    },
+                                }
                             }
 
                             Request::InitOracles { client, chain_id } => {
                                 self.init_oracle_manager(client, chain_id).await;
                             }
 
-                            Request::GetBlockInfo { } => {
+                            Request::GetBlockInfo {} => {
                                 self.get_block_info().await;
                             }
 
-                            Request::GetERC20Balance { address, token, client } => {
-                                // TODO
-                            }
+                            Request::GetERC20Balance {
+                                id,
+                                token,
+                                owner,
+                                chain_id,
+                                block,
+                                client,
+                            } => {}
 
                             Request::SimSwap { params } => {
                                 // TODO
                             }
 
                             Request::EthBalance { address, client } => {
-                               // if !self.requesting_eth_balance {
-                                    self.get_eth_balance(address, client).await;
-                                //}
+                                match self.get_eth_balance(address, client).await {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        let mut state = SHARED_UI_STATE.write().unwrap();
+                                        state.err_msg = ErrorMsg::new(true, e);
+                                    },
+                                }
                             }
 
                             Request::SaveProfile { profile } => {
@@ -105,18 +118,30 @@ impl Backend {
 
                             Request::GetClient { chain_id, rpcs, clients } => {
                                 if !clients.contains_key(&chain_id.id()) {
-                                self.get_client(chain_id, rpcs).await;
-                            } else {
-                                let client = clients.get(&chain_id.id()).unwrap().clone();
-                                let res = Ok(ClientResult {client, chain_id});
-                                if let Err(e) = self.back_sender.send(Response::GetClient(res)) {
-                                    println!("Error Sending Response: {}", e);
+                                    match self.get_client(chain_id, rpcs).await {
+                                        Ok(_) => {}
+                                        Err(e) => {
+                                            let mut state = SHARED_UI_STATE.write().unwrap();
+                                            state.err_msg = ErrorMsg::new(true, e);
+                                        },
+                                    }
+                                } else {
+                                    let client = clients.get(&chain_id.id()).unwrap().clone();
+                                    match self.back_sender.send(Response::GetClient(client, chain_id)) {
+                                        Ok(_) => {}
+                                        Err(e) => println!("Error Sending Response: {}", e),
+                                    }
                                 }
                             }
-                        }
 
                             Request::GetERC20Token { id, address, client, chain_id } => {
-                                self.get_erc20_token(id, address, client, chain_id).await;
+                                match self.get_erc20_token(id, address, client, chain_id).await {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        let mut state = SHARED_UI_STATE.write().unwrap();
+                                        state.err_msg = ErrorMsg::new(true, e);
+                                    },
+                                }
                             }
                         }
                     }
@@ -143,7 +168,7 @@ impl Backend {
                 ok_err = Err(e);
             }
         }
-        
+
         match self.back_sender.send(Response::InitOracles(ok_err)) {
             Ok(_) => {}
             Err(e) => println!("Error Sending Response: {}", e),
@@ -158,76 +183,85 @@ impl Backend {
         }
     }
 
-        async fn start_oracles(&mut self) {
-            if let Some(oracle_manager) = &self.oracle_manager {
-                let oracle_manager = oracle_manager.write().await;
-                oracle_manager.start_oracles().await;
-                println!("Oracles Started");
-            }
+    async fn start_oracles(&mut self) {
+        if let Some(oracle_manager) = &self.oracle_manager {
+            let oracle_manager = oracle_manager.write().await;
+            oracle_manager.start_oracles().await;
+            println!("Oracles Started");
         }
+    }
 
-        async fn get_block_info(&self) {
-            if let Some(oracle_manager) = &self.oracle_manager {
-                let oracle = oracle_manager.read().await;
-                let (latest_block, next_block) = oracle.get_block_info().await;
-                match self.back_sender.send(Response::GetBlockInfo((latest_block, next_block))) {
-                    Ok(_) => {}
-                    Err(e) => println!("Error Sending Response: {}", e),
-                }
-            }
-        }
-
-        async fn get_eth_balance(&mut self, address: Address, client: Arc<WsClient>) {
-            let res = client.get_balance(address).await;
-            match self.back_sender.send(Response::EthBalance(res)) {
+    async fn get_block_info(&self) {
+        if let Some(oracle_manager) = &self.oracle_manager {
+            let oracle = oracle_manager.read().await;
+            let (latest_block, next_block) = oracle.get_block_info().await;
+            match self.back_sender.send(Response::GetBlockInfo((latest_block, next_block))) {
                 Ok(_) => {}
                 Err(e) => println!("Error Sending Response: {}", e),
             }
-
-        }
-       
-
-
-    /// Get the [ERC20Token] from the given address
-    /// 
-    /// If the token is not found in the database, we fetch it from the rpc
-    /// 
-    /// ### Arguments:
-    /// 
-    /// `id:` Which token to update in the UI ("token_in" or "token_out")
-    /// 
-    /// `address:` The address of the token
-    /// 
-    /// `client:` The websocket client
-    /// 
-    /// `chain_id:` The chain id
-    async fn get_erc20_token(&self, id: String, address: Address, client: Arc<WsClient>, chain_id: u64) {
-        let res = if let Ok(Some(token)) = self.db.get_erc20(address, chain_id) {
-            Ok(token)
-        } else {
-            let token_result = ERC20Token::new(address, client, chain_id).await;
-            match &token_result {
-                Ok(token) => {
-                    let token_to_insert = token.clone();
-                    if let Err(e) = self.db.insert_erc20(token_to_insert, chain_id) {
-                        println!("Error Inserting ERC20Token: {}", e);
-                    }
-                }
-                Err(e) => println!("Error fetching ERC20Token from RPC: {}", e),
-            }
-            token_result
-        };
-
-        let res_converted = res
-            .map(|token| (token, id))
-            .context("Failed to get ERC20Token");
-
-        match self.back_sender.send(Response::GetERC20Token(res_converted)) {
-            Ok(_) => {}
-            Err(e) => println!("Error Sending Response: {}", e),
         }
     }
-    
+
+    async fn get_eth_balance(&mut self, address: Address, client: Arc<WsClient>) -> Result<(), anyhow::Error> {
+        let balance = client.get_balance(address).await?;
+        self.back_sender.send(Response::EthBalance(balance))?;
+        Ok(())
+    }
+
+    /// Get the [ERC20Token] from the given address
+    ///
+    /// If the token is not found in the database, we fetch it from the rpc
+    ///
+    /// ### Arguments:
+    ///
+    /// `id:` Which token to update in the UI ("token_in" or "token_out")
+    ///
+    /// `address:` The address of the token
+    ///
+    /// `client:` The websocket client
+    ///
+    /// `chain_id:` The chain id
+    async fn get_erc20_token(
+        &self,
+        id: String,
+        address: Address,
+        client: Arc<WsClient>,
+        chain_id: u64
+    ) -> Result<(), anyhow::Error> {
+        let token = if let Ok(Some(token)) = self.db.get_erc20(address, chain_id) {
+            token
+        } else {
+            let token = ERC20Token::new(address, client, chain_id).await?;
+            self.db.insert_erc20(token.clone(), chain_id)?;
+            token
+        };
+        self.back_sender.send(Response::GetERC20Token(token, id))?;
+        Ok(())
+    }
+
+    /// Get the balance of an erc20 token
+    async fn get_erc20_balance(
+        &self,
+        token: ERC20Token,
+        owner: Address,
+        chain_id: u64,
+        block: u64,
+        client: Arc<WsClient>
+    ) -> Result<U256, anyhow::Error> {
+        // check if the balance is in the database
+        let balance = if
+            let Ok(balance) = self.db.get_erc20_balance(token.address, chain_id, block)
+        {
+           balance
+        } else {
+            let balance = token.balance_of(owner, client.clone()).await?;
+            if let Err(e) = self.db.insert_erc20_balance(token.address, balance, chain_id, block) {
+                println!("Error Inserting ERC20Balance: {}", e);
+            }
+            balance
+        };
+        Ok(balance)
+    }
 
     fn save_profile(&self, profile: Profile) {
         let res = profile.encrypt_and_save();
@@ -238,16 +272,18 @@ impl Backend {
         }
     }
 
-    async fn get_client(&mut self, id: ChainId, rpcs: Vec<Rpc>)  {
-        let url = rpcs.iter().find(|rpc| rpc.chain_id == id).unwrap().url.clone();
+    async fn get_client(&mut self, id: ChainId, rpcs: Vec<Rpc>) -> Result<(), anyhow::Error> {
+        let url = rpcs
+            .iter()
+            .find(|rpc| rpc.chain_id == id)
+            .context(format!("Failed to find RPC for {}", id.name()))?
+            .url.clone();
 
-        let client_res = ProviderBuilder::new().on_ws(WsConnect::new(url)).await;
-        let client_res = client_res.map(|client| ClientResult { client: client.into(), chain_id: id }).context("Failed to get client");
+        let client = ProviderBuilder::new().on_ws(WsConnect::new(url)).await?;
+        let client = Arc::new(client);
 
-        match self.back_sender.send(Response::GetClient(client_res)) {
-            Ok(_) => {}
-            Err(e) => println!("Error Sending Response: {}", e),
-        }
+        self.back_sender.send(Response::GetClient(client, id))?;
+        Ok(())
     }
 }
 

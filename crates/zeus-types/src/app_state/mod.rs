@@ -6,6 +6,8 @@ use alloy::primitives::{ U256, Address };
 use bigdecimal::BigDecimal;
 use crate::{ profile::{ Credentials, Profile }, ChainId, Rpc };
 
+pub mod state;
+
 /// Supported networks
 pub const NETWORKS: [ChainId; 4] = [
     ChainId::Ethereum(1),
