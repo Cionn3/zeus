@@ -12,7 +12,7 @@ use crate::{
     gui::{
         ZeusTheme,
         GUI,
-        misc::{ login_screen, new_profile_screen, rich_text, frame },
+        misc::{ login_screen, new_profile_screen, tx_settings_window, rich_text, frame },
         icons::*,
     },
 };
@@ -40,7 +40,9 @@ pub struct ZeusApp {
     /// The app data of the application
     pub data: AppData,
 
-    pub last_request: Instant,
+    pub last_eth_request: Instant,
+
+    pub last_erc20_request: Instant,
 }
 
 impl Default for ZeusApp {
@@ -50,7 +52,8 @@ impl Default for ZeusApp {
             front_sender: None,
             back_receiver: None,
             data: AppData::default(),
-            last_request: Instant::now(),
+            last_eth_request: Instant::now(),
+            last_erc20_request: Instant::now(),
         }
     }
 }
@@ -148,17 +151,59 @@ impl ZeusApp {
             if self.data.should_update_balance() {
                 if let Some(client) = self.data.client() {
                     let now = Instant::now();
-                    if now.duration_since(self.last_request) > Duration::from_secs(TIME_OUT) {
+                    if now.duration_since(self.last_eth_request) > Duration::from_secs(TIME_OUT) {
                         let req = Request::EthBalance {
                             address: self.data.wallet_address(),
                             client,
                         };
                         self.send_request(req);
-                        self.last_request = now;
+                        self.last_eth_request = now;
                     }
                 }   
             }
         }
+    }
+
+    fn request_erc20_balance(&mut self) {
+        if self.data.wallet_address().is_zero() {
+            return;
+        }
+
+        if !self.data.ws_client.contains_key(&self.data.chain_id.id()) {
+            return;
+        }
+
+
+        let now = Instant::now();
+        if now.duration_since(self.last_erc20_request) > Duration::from_secs(TIME_OUT) {
+        let swap_state = SWAP_UI_STATE.read().unwrap();
+        let latest_block = self.data.block_info.0.number;
+        if latest_block > swap_state.block {
+            let req = Request::GetERC20Balance {
+                id: "input".to_string(),
+                token: swap_state.input_token.token.clone(),
+                owner: self.data.wallet_address(),
+                chain_id: self.data.chain_id.id(),
+                block: latest_block,
+                client: self.data.ws_client.get(&self.data.chain_id.id()).unwrap().clone(),
+            };
+            self.send_request(req);
+
+            let req = Request::GetERC20Balance {
+                id: "output".to_string(),
+                token: swap_state.output_token.token.clone(),
+                owner: self.data.wallet_address(),
+                chain_id: self.data.chain_id.id(),
+                block: latest_block,
+                client: self.data.ws_client.get(&self.data.chain_id.id()).unwrap().clone(),
+            };
+
+            self.send_request(req);
+            self.last_erc20_request = now;
+        }
+        
+    }
+        
     }
 
     fn update_eth_balance(&mut self, balance: U256) {
@@ -313,6 +358,7 @@ impl eframe::App for ZeusApp {
 
         self.update_block();
         self.request_eth_balance();
+        self.request_erc20_balance();
 
         // Draw the UI that belongs to the Top Panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -329,15 +375,17 @@ impl eframe::App for ZeusApp {
                 self.draw_login(ui);
             });
 
+            
             if !self.data.logged_in || self.data.new_profile_screen {
                 return;
-            }
+            } 
+            
 
             ui.vertical_centered_justified(|ui| {
                 ui.add_space(100.0);
                 self.gui.swap_ui.swap_panel(ui, &mut self.data);
                 self.gui.networks_ui(ui, &mut self.data);
-                self.gui.swap_ui.tx_settings_window(ui, &mut self.data);
+                tx_settings_window(ui, &mut self.data);
             });
         });
 

@@ -8,6 +8,8 @@ use alloy::core::sol_types::SolCall;
 use std::sync::Arc;
 use std::str::FromStr;
 use tokio::try_join;
+use bigdecimal::BigDecimal;
+
 
 sol! {
     #[sol(rpc)]
@@ -62,6 +64,14 @@ impl ERC20Token {
             decimals,
             total_supply,
         })
+    }
+
+    pub fn readable(&self, amount: String) -> String {
+        let divisor_str = format!("1{:0>width$}", "", width = self.decimals as usize);
+        let divisor = BigDecimal::from_str(&divisor_str).unwrap_or_default();
+        let amount = BigDecimal::from_str(&amount).unwrap_or_default();
+        let readable = amount / divisor;
+        format!("{:.4}", readable)
     }
 
     async fn symbol(address: Address, client: Arc<RootProvider<PubSubFrontend>>) -> Result<String, anyhow::Error> {

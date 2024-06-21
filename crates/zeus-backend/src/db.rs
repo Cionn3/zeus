@@ -56,7 +56,7 @@ impl ZeusDB {
                       block_number         INTEGER NOT NULL,
                       address            TEXT NOT NULL,
                       balance             TEXT NOT NULL,
-                      UNIQUE(chain_id, address)
+                      UNIQUE(address, block_number)
                       )",
             [],
         )?;

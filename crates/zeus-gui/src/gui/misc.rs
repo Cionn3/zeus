@@ -6,7 +6,9 @@ use eframe::{
         RichText,
         widgets::TextEdit,
         Rounding,
-        vec2
+        vec2,
+        Align2,
+        Checkbox
     },
     epaint::{ Margin, Shadow },
     emath::Vec2,
@@ -14,7 +16,7 @@ use eframe::{
 
 use crate::{ fonts::roboto_regular, ZeusApp };
 
-use super::THEME;
+use super::{ THEME, SHARED_UI_STATE, AppData };
 
 
 /// Render the login screen
@@ -155,6 +157,68 @@ pub fn new_profile_screen(ui: &mut Ui, app: &mut ZeusApp) {
             }
         });
     });
+}
+
+
+/// TxSettings popup
+pub fn tx_settings_window(ui: &mut Ui, data: &mut AppData) {
+    {
+    let state = SHARED_UI_STATE.read().unwrap();
+    if !state.tx_settings_on {
+        return;
+    }
+}
+
+    egui::Window::new("Transaction Settings")
+        .resizable(false)
+        .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+        .collapsible(false)
+        .show(ui.ctx(), |ui| {
+            ui.set_max_size(vec2(200.0, 100.0));
+
+            ui.vertical_centered(|ui| {
+                let priority_fee = rich_text("Priority Fee (Gwei)", 15.0);
+                let slippage_text = rich_text("Slippage", 15.0);
+                let mev_protect = rich_text("MEV Protect", 15.0);
+
+                let fee_field = TextEdit::singleline(&mut data.tx_settings.priority_fee)
+                    .desired_width(15.0);
+
+                let slippage_field = TextEdit::singleline(&mut data.tx_settings.slippage)
+                    .desired_width(15.0);
+
+                let mev_protect_check = Checkbox::new(&mut data.tx_settings.mev_protect, "");
+
+                ui.horizontal(|ui| {
+                    ui.label(priority_fee);
+                    ui.add_space(5.0);
+                    ui.add(fee_field);
+                   
+                });
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    ui.label(slippage_text);
+                    ui.add_space(5.0);
+                    ui.add(slippage_field);
+                });
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    ui.label(mev_protect);
+                    ui.add_space(5.0);
+                    ui.add(mev_protect_check);
+                });
+                ui.add_space(10.0);
+
+                if ui.button("Save").clicked() {
+                    // TODO save the settings
+                    let mut state = SHARED_UI_STATE.write().unwrap();
+                    state.tx_settings_on = false;
+                }
+            });
+        });
+            
 }
 
 

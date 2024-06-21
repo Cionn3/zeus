@@ -117,6 +117,9 @@ pub struct SelectedToken {
 /// The state of the SwapUI
 pub struct SwapUIState {
 
+    /// Latest Block Number
+    pub block: u64,
+
     /// Status Of The `Input Token` Window List
     pub input_token_list_on: bool,
 
@@ -223,6 +226,7 @@ impl SwapUIState {
 impl Default for SwapUIState {
     fn default() -> Self {
         Self {
+            block: 0,
             input_token_list_on: false,
             output_token_list_on: false,
             input_token: SelectedToken::eth_default_input(),
@@ -240,7 +244,7 @@ impl SelectedToken {
         Self {
             token,
             amount_to_swap: String::new(),
-            balance: String::new(),
+            balance: "0".to_string(),
         }
     }
 
@@ -248,7 +252,7 @@ impl SelectedToken {
         Self {
             token: ERC20Token::eth_default_input(),
             amount_to_swap: String::new(),
-            balance: String::new(),
+            balance: "0".to_string(),
         }
     }
 
@@ -256,7 +260,7 @@ impl SelectedToken {
         Self {
             token: ERC20Token::eth_default_output(),
             amount_to_swap: String::new(),
-            balance: String::new(),
+            balance: "0".to_string(),
         }
     }
 
@@ -264,7 +268,7 @@ impl SelectedToken {
         Self {
             token: ERC20Token::bsc_default_input(),
             amount_to_swap: String::new(),
-            balance: String::new(),
+            balance: "0".to_string(),
         }
     }
 
@@ -272,7 +276,7 @@ impl SelectedToken {
         Self {
             token: ERC20Token::bsc_default_output(),
             amount_to_swap: String::new(),
-            balance: String::new(),
+            balance: "0".to_string(),
         }
     }
 
@@ -280,7 +284,7 @@ impl SelectedToken {
         Self {
             token: ERC20Token::base_default_input(),
             amount_to_swap: String::new(),
-            balance: String::new(),
+            balance: "0".to_string(),
         }
     }
 
@@ -288,7 +292,7 @@ impl SelectedToken {
         Self {
             token: ERC20Token::base_default_output(),
             amount_to_swap: String::new(),
-            balance: String::new(),
+            balance: "0".to_string(),
         }
     }
 
@@ -296,7 +300,7 @@ impl SelectedToken {
         Self {
             token: ERC20Token::arbitrum_default_input(),
             amount_to_swap: String::new(),
-            balance: String::new(),
+            balance: "0".to_string(),
         }
     }
 
@@ -304,7 +308,7 @@ impl SelectedToken {
         Self {
             token: ERC20Token::arbitrum_default_output(),
             amount_to_swap: String::new(),
-            balance: String::new(),
+            balance: "0".to_string(),
         }
     }
 }

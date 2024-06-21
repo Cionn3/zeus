@@ -1,9 +1,8 @@
 use eframe::egui;
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use egui::{
-    vec2, Align, Align2, Button, Checkbox, Color32, FontId, Layout, RichText, TextEdit, Ui,
+    vec2, Align, Align2, Button, Color32, FontId, Layout, RichText, TextEdit, Ui,
     Response
 };
 
@@ -78,126 +77,65 @@ impl SwapUI {
         }
     }
 
-    /// TxSettings popup
-    pub fn tx_settings_window(&mut self, ui: &mut Ui, data: &mut AppData) {
-        {
-        let state = SHARED_UI_STATE.read().unwrap();
-        if !state.tx_settings_on {
+/// Renders the swap panel
+pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData) {
+    let tokens;
+    {
+        let state = SWAP_UI_STATE.read().unwrap();
+        let shared = SHARED_UI_STATE.read().unwrap();
+        tokens = state.tokens.get(&data.chain_id.id()).unwrap_or(&vec![]).clone();
+        if !shared.swap_ui_on {
             return;
         }
     }
 
-        egui::Window::new("Transaction Settings")
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
-            .collapsible(false)
-            .show(ui.ctx(), |ui| {
-                ui.set_max_size(vec2(200.0, 100.0));
+    let swap = rich_text("Swap", 20.0);
+    let for_t = rich_text("For", 20.0);
 
-                ui.vertical_centered(|ui| {
-                    let priority_fee = rich_text("Priority Fee (Gwei)", 15.0);
-                    let slippage_text = rich_text("Slippage", 15.0);
-                    let mev_protect = rich_text("MEV Protect", 15.0);
+    frame().show(ui, |ui| {
+        ui.vertical_centered(|ui| {
+            ui.set_width(550.0);
+            ui.set_height(220.0);
 
-                    let fee_field = TextEdit::singleline(&mut data.tx_settings.priority_fee)
-                        .desired_width(15.0);
+            ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
+                let response = ui.add(tx_settings_icon());
 
-                    let slippage_field = TextEdit::singleline(&mut data.tx_settings.slippage)
-                        .desired_width(15.0);
+                if response.clicked() {
+                    let mut state = SHARED_UI_STATE.write().unwrap();
+                    state.tx_settings_on = true;
+                }
+            });
 
-                    let mev_protect_check = Checkbox::new(&mut data.tx_settings.mev_protect, "");
+            // Input Token Field
+            ui.label(swap);
 
-                    ui.horizontal(|ui| {
-                        ui.label(priority_fee);
-                        ui.add_space(5.0);
-                        ui.add(fee_field);
-                       
-                    });
-                    ui.add_space(10.0);
-
-                    ui.horizontal(|ui| {
-                        ui.label(slippage_text);
-                        ui.add_space(5.0);
-                        ui.add(slippage_field);
-                    });
-                    ui.add_space(10.0);
-
-                    ui.horizontal(|ui| {
-                        ui.label(mev_protect);
-                        ui.add_space(5.0);
-                        ui.add(mev_protect_check);
-                    });
-                    ui.add_space(10.0);
-
-                    if ui.button("Save").clicked() {
-                        // TODO save the settings
-                        let mut state = SHARED_UI_STATE.write().unwrap();
-                        state.tx_settings_on = false;
-                    }
+            ui.horizontal(|ui| {
+                ui.add_space(115.0);
+                self.input_amount_field(ui);
+                ui.add_space(10.0);
+                ui.vertical(|ui| {
+                    self.token_select_button(ui, "input", tokens.clone(), data);
+                    self.token_balance(ui, "input");
                 });
             });
-                
-    }
+            ui.add_space(10.0);
 
-    /// Renders the swap panel
-    pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData) {
+            // Output Token Field
+            ui.label(for_t);
 
-        let tokens;
-        {
-            let state = SWAP_UI_STATE.read().unwrap();
-            let shared = SHARED_UI_STATE.read().unwrap();
-            tokens = state.tokens.get(&data.chain_id.id()).unwrap_or(&vec![]).clone();
-            if !shared.swap_ui_on {
-                return;
-            }
-        }
-
-        
-       // let input_id = self.input_id.clone();
-       // let output_id = self.output_id.clone();
-
-        let swap = rich_text("Swap", 20.0);
-        let for_t = rich_text("For", 20.0);
-
-        frame().show(ui, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.set_width(550.0);
-                ui.set_height(220.0);
-
-                ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
-                    let response = ui.add(tx_settings_icon());
-        
-                    if response.clicked() {
-                        let mut state = SHARED_UI_STATE.write().unwrap();
-                        state.tx_settings_on = true;
-                    }
-                });
-
-                
-                // Input Token Field
-                ui.label(swap);
-
-                ui.horizontal(|ui| {
-                    ui.add_space(115.0);
-                    self.input_amount_field(ui);
-                    self.token_select_button(ui, "input", tokens.clone(), data);
-                });
+            ui.horizontal(|ui| {
+                ui.add_space(115.0);
+                self.output_amount_field(ui);
                 ui.add_space(10.0);
-
-                // Output Token Field
-                ui.label(for_t);
-
-                ui.horizontal(|ui| {
-                    ui.add_space(115.0);
-                    self.output_amount_field(ui);
+                ui.vertical(|ui| {
                     self.token_select_button(ui, "output", tokens.clone(), data);
+                    self.token_balance(ui, "output");
                 });
+            });
+        });
+    });
+}
 
-          
-        });
-        
-        });
-    }
 
     /// Renders the token selection list window
     fn token_list_window(&mut self, ui: &mut Ui, id: &str, tokens: Vec<ERC20Token>, data: &mut AppData) {
@@ -280,17 +218,26 @@ impl SwapUI {
     }
 
     /// Render the balance of the token
-    fn token_balance(&mut self, ui: &mut Ui) {
+    fn token_balance(&mut self, ui: &mut Ui, id: &str) {
+        let token;
+        {
         let state = SWAP_UI_STATE.read().unwrap();
-        let balance = RichText::new("Balance:")
-            .size(15.0)
+        token = state.get_token(id).clone();
+        }
+
+        let balance_text = RichText::new("Balance:")
+            .size(12.0)
             .family(roboto_regular())
             .color(Color32::WHITE);
 
-        ui.label(balance);
-        ui.add_space(5.0);
-        ui.label(state.input_token.balance.clone());
+        ui.horizontal(|ui| {
+            ui.label(balance_text);
+            ui.add_space(1.0);
+            ui.label(token.token.readable(token.balance));
+        });
     }
+    
+    
 
     /// Creates the field for the input amount
     fn input_amount_field(&mut self, ui: &mut Ui) {
@@ -336,7 +283,7 @@ impl SwapUI {
             .family(roboto_regular())
             .color(Color32::WHITE);
 
-       let button = Button::new(token_symbol).min_size(vec2(30.0, 15.0));
+       let button = Button::new(token_symbol).min_size(vec2(30.0, 15.0)).rounding(10.0).stroke((0.3, Color32::WHITE));
        let res = ui.add(button);
        res
     }
