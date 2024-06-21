@@ -7045,21 +7045,8 @@ dependencies = [
  "revm",
  "rusqlite",
  "tokio",
- "zeus-defi",
  "zeus-types",
  "zeus-utils",
-]
-
-[[package]]
-name = "zeus-defi"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "lazy_static",
- "revm",
- "tokio",
- "zeus-types",
 ]
 
 [[package]]
@@ -7080,7 +7067,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "zeus-backend",
- "zeus-defi",
  "zeus-types",
  "zeus-utils",
 ]

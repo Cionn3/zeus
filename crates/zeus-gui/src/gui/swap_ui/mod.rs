@@ -11,7 +11,7 @@ use crate::fonts::roboto_regular;
 use super::icons::tx_settings_icon;
 use super::misc::{frame, rich_text};
 use super::ErrorMsg;
-use zeus_defi::erc20::ERC20Token;
+use zeus_types::defi::erc20::ERC20Token;
 use zeus_types::app_state::{AppData, state::SHARED_UI_STATE};
 
 

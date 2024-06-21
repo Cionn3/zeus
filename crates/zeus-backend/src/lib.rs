@@ -11,13 +11,12 @@ use crossbeam::channel::{ Sender, Receiver };
 use revm::{ primitives::{ Bytes, TransactTo }, Evm, db::{ CacheDB, EmptyDB } };
 use anyhow::{ anyhow, Context };
 
-use zeus_defi::{
-    dex::uniswap::pool::{ get_v2_pool, get_v3_pools },
-    erc20::ERC20Token,
-    zeus_router::{ encode_swap, decode_swap, SwapRouter::Params, SWAP_ROUTER_ADDR },
-};
+
 use zeus_types::{
     app_state::state::*,
+    defi::dex::uniswap::pool::{ get_v2_pool, get_v3_pools },
+    defi::zeus_router::{ encode_swap, decode_swap, SwapRouter::Params, SWAP_ROUTER_ADDR },
+    defi::erc20::ERC20Token,
     forked_db::{ fork_db::ForkDB, fork_factory::ForkFactory, revert_msg },
     profile::Profile,
     ChainId,

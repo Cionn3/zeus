@@ -1,6 +1,6 @@
 use rusqlite::{Connection as DbConnection, params};
 use alloy::primitives::{Address, U256};
-use zeus_defi::{erc20::ERC20Token, dex::uniswap::pool::{Pool, PoolVariant}};
+use zeus_types::defi::{erc20::ERC20Token, dex::uniswap::pool::{Pool, PoolVariant}};
 use std::{collections::HashMap, path::PathBuf};
 
 

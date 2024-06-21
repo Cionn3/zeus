@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 
 pub mod forked_db;
+pub mod defi;
 pub mod app_state;
 pub mod profile;
 

@@ -3,7 +3,7 @@ use eframe::{ egui, CreationContext };
 use egui::{ vec2, Align2, ComboBox, Context, Style, Ui };
 
 use crossbeam::channel::{ unbounded, Receiver, Sender };
-use zeus_defi::erc20::ERC20Token;
+use zeus_types::defi::erc20::ERC20Token;
 use alloy::primitives::U256;
 use zeus_types::app_state::{AppData, state::*};
 

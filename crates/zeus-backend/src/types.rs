@@ -1,7 +1,6 @@
 use alloy::primitives::{ Address, U256, Bytes };
 use alloy::{ providers::RootProvider, pubsub::PubSubFrontend, transports::{TransportErrorKind, RpcError} };
-use zeus_defi::erc20::ERC20Token;
-use zeus_types::BlockInfo;
+use zeus_types::{BlockInfo, defi::erc20::ERC20Token};
 
 use std::collections::HashMap;
 use std::sync::Arc;

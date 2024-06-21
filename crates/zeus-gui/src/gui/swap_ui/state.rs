@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use zeus_defi::erc20::ERC20Token;
+use zeus_types::defi::erc20::ERC20Token;
 
 use lazy_static::lazy_static;
 use std::sync::{Arc, RwLock};

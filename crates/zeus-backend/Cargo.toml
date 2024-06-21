@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 zeus-types = { path = "../zeus-types" }
-zeus-defi = { path = "../zeus-defi" }
 zeus-utils = {path = "../zeus-utils"}
 
 
