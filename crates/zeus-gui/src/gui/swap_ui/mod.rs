@@ -21,33 +21,7 @@ use zeus_backend::types::Request;
 use zeus_types::app_state::state::{SelectedToken, SwapUIState, SWAP_UI_STATE};
 
 
-pub struct QuoteResult {
 
-    /// Token price against its paired token
-    pub token_price: String,
-
-    /// The price impact of the swap
-    pub price_impact: String,
-
-    /// Selected slippage
-    pub slippage: String,
-
-    /// The real amount of tokens we will receive, after considering the pool fee and token tax if any
-    pub real_amount: String,
-
-    /// Minimum amount we may receive depending on the slippage
-    pub minimum_received: String,
-
-    /// Token Tax (If any)
-    pub token_tax: String,
-
-    /// Pool Fee
-    pub pool_fee: String,
-
-    /// Gas Cost of the swap
-    pub gas_cost: String,
-
-}
 
 
 /// Manages the state of the swap UI
@@ -131,6 +105,25 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData) {
                     self.token_select_button(ui, "output", tokens.clone(), data);
                     self.token_balance(ui, "output");
                 });
+            });
+
+            // Quote Result
+            
+            let state = SWAP_UI_STATE.read().unwrap();
+            let quote_result = state.quote_result.clone();
+            
+            let real_amount_txt = rich_text("Real Amount", 15.0);
+            ui.horizontal(|ui| {
+                ui.label(real_amount_txt);
+                ui.add_space(10.0);
+                ui.label(state.output_token.token.readable(quote_result.real_amount));
+            });
+
+            let minimum_received_txt = rich_text("Minimum Received", 15.0);
+            ui.horizontal(|ui| {
+                ui.label(minimum_received_txt);
+                ui.add_space(10.0);
+                ui.label(state.output_token.token.readable(quote_result.minimum_received));
             });
         });
     });

@@ -5,6 +5,7 @@ use std::str::FromStr;
 use lazy_static::lazy_static;
 use crate::defi::erc20::ERC20Token;
 use crate::ChainId;
+use anyhow::anyhow;
 
 pub const V3_FEES: [u32; 4] = [100, 500, 3000, 10000];
 
@@ -105,51 +106,36 @@ pub async fn get_v2_pool(
     token1: ERC20Token,
     chain_id: ChainId,
     client: Arc<RootProvider<PubSubFrontend>>
-) -> Result<Option<Pool>, anyhow::Error> {
+) -> Result<Pool, anyhow::Error> {
     let fact_addr = get_v2_pool_factory(chain_id.clone());
     let factory = UniswapV2Factory::new(fact_addr, client.clone());
-    let pair = factory.getPair(token0.address, token1.address).call().await?.pair;
-    if pair == Address::ZERO {
-        return Ok(None);
+    let pool_address = factory.getPair(token0.address, token1.address).call().await?.pair;
+    if pool_address == Address::ZERO {
+        return Err(anyhow!("Pool not found"));
     }
 
-    Ok(
-        Some(Pool {
-            chain_id: chain_id.id(),
-            address: pair,
-            token0,
-            token1,
-            variant: PoolVariant::UniswapV2,
-            fee: 3000
-        })
-    )
+    let pool = Pool::new(pool_address, token0, token1, PoolVariant::UniswapV2, 3000, chain_id.id());
+    Ok(pool)
 }
 
-/// Returns all Uniswap V3 pools based on token0 and token1
-pub async fn get_v3_pools(
+/// Returns a Uniswap V3 pool based on token0 and token1 and pool fee
+pub async fn get_v3_pool(
     token0: ERC20Token,
     token1: ERC20Token,
+    fee: u32,
     chain_id: ChainId,
     client: Arc<RootProvider<PubSubFrontend>>
-) -> Result<Vec<Pool>, anyhow::Error> {
-    let mut pools = Vec::new();
+) -> Result<Pool, anyhow::Error> {
     let fact_addr = get_v3_pool_factory(chain_id.clone());
     let factory = UniswapV3Factory::new(fact_addr, client.clone());
-    for fee in &V3_FEES {
-        let pool = factory.getPool(token0.address, token1.address, *fee).call().await?.pool;
-        if pool != Address::ZERO {
-            pools.push(Pool {
-                chain_id: chain_id.id(),
-                address: pool,
-                token0: token0.clone(),
-                token1: token1.clone(),
-                variant: PoolVariant::UniswapV3,
-                fee: fee.clone()
-            });
-        }
+    let pool_address = factory.getPool(token0.address, token1.address, fee).call().await?.pool;
+    if pool_address == Address::ZERO {
+        return Err(anyhow!("Pool not found"));
     }
 
-    Ok(pools)
+    let pool = Pool::new(pool_address, token0, token1, PoolVariant::UniswapV3, fee, chain_id.id());
+
+    Ok(pool)
 }
 
 /// Gets the v2 pool factory based on the chain id

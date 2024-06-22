@@ -5,18 +5,19 @@ use alloy::{
     rpc::types::eth::{ BlockId, BlockNumberOrTag },
 };
 
-use std::sync::{Arc, RwLock as stdRwLock};
-use tokio::{ runtime::Runtime, sync::RwLock as tokioRwLock };
+use std::sync::Arc;
+use tokio::{ runtime::Runtime, sync::{ RwLock as tokioRwLock, Mutex } };
 use crossbeam::channel::{ Sender, Receiver };
 use revm::{ primitives::{ Bytes, TransactTo }, Evm, db::{ CacheDB, EmptyDB } };
 use anyhow::{ anyhow, Context };
 
-
 use zeus_types::{
     app_state::state::*,
-    defi::dex::uniswap::pool::{ get_v2_pool, get_v3_pools },
-    defi::zeus_router::{ encode_swap, decode_swap, SwapRouter::Params, SWAP_ROUTER_ADDR },
-    defi::erc20::ERC20Token,
+    defi::{
+        dex::uniswap::pool::{ get_v2_pool, get_v3_pool, V3_FEES, PoolVariant, Pool },
+        erc20::ERC20Token,
+        zeus_router::{ decode_swap, encode_swap, SwapRouter::Params, swap_router_bytecode },
+    },
     forked_db::{ fork_db::ForkDB, fork_factory::ForkFactory, revert_msg },
     profile::Profile,
     ChainId,
@@ -24,9 +25,14 @@ use zeus_types::{
     WsClient,
 };
 
-use zeus_utils::{ new_evm, oracles::{ OracleManager, OracleAction } };
+use zeus_utils::{
+    new_evm,
+    oracles::{ OracleManager, OracleAction },
+    dummy_account::*,
+    parse_ether,
+};
 
-use crate::{ types::{ Request, Response, SwapParams, SwapResult }, db::ZeusDB };
+use crate::{ types::{ Request, Response, SwapParams }, db::ZeusDB };
 
 pub mod types;
 pub mod db;
@@ -76,7 +82,7 @@ impl Backend {
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
                                         state.err_msg = ErrorMsg::new(true, e);
-                                    },
+                                    }
                                 }
                             }
 
@@ -86,7 +92,7 @@ impl Backend {
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
                                         state.err_msg = ErrorMsg::new(true, e);
-                                    },
+                                    }
                                 }
                             }
 
@@ -102,17 +108,35 @@ impl Backend {
                                 block,
                                 client,
                             } => {
-                                match self.get_erc20_balance(id, token, owner, chain_id, block, client).await {
+                                match
+                                    self.get_erc20_balance(
+                                        id,
+                                        token,
+                                        owner,
+                                        chain_id,
+                                        block,
+                                        client
+                                    ).await
+                                {
                                     Ok(_) => {}
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
                                         state.err_msg = ErrorMsg::new(true, e);
-                                    },
+                                    }
                                 }
                             }
 
-                            Request::SimSwap { params } => {
-                                // TODO
+                            Request::GetQuoteResult { params } => {
+                                match self.get_swap_result(params).await {
+                                    Ok(result) => {
+                                        let mut swap_state = SWAP_UI_STATE.write().unwrap();
+                                        swap_state.quote_result = result;
+                                    }
+                                    Err(e) => {
+                                        let mut state = SHARED_UI_STATE.write().unwrap();
+                                        state.err_msg = ErrorMsg::new(true, e);
+                                    }
+                                }
                             }
 
                             Request::EthBalance { address, client } => {
@@ -121,7 +145,7 @@ impl Backend {
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
                                         state.err_msg = ErrorMsg::new(true, e);
-                                    },
+                                    }
                                 }
                             }
 
@@ -131,7 +155,7 @@ impl Backend {
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
                                         state.err_msg = ErrorMsg::new(true, e);
-                                    },
+                                    }
                                 }
                             }
 
@@ -142,11 +166,13 @@ impl Backend {
                                         Err(e) => {
                                             let mut state = SHARED_UI_STATE.write().unwrap();
                                             state.err_msg = ErrorMsg::new(true, e);
-                                        },
+                                        }
                                     }
                                 } else {
                                     let client = clients.get(&chain_id.id()).unwrap().clone();
-                                    match self.back_sender.send(Response::GetClient(client, chain_id)) {
+                                    match
+                                        self.back_sender.send(Response::GetClient(client, chain_id))
+                                    {
                                         Ok(_) => {}
                                         Err(e) => println!("Error Sending Response: {}", e),
                                     }
@@ -159,7 +185,7 @@ impl Backend {
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
                                         state.err_msg = ErrorMsg::new(true, e);
-                                    },
+                                    }
                                 }
                             }
                         }
@@ -170,7 +196,11 @@ impl Backend {
         })
     }
 
-    async fn init_oracle_manager(&mut self, client: Arc<WsClient>, id: ChainId) -> Result<(), anyhow::Error> {
+    async fn init_oracle_manager(
+        &mut self,
+        client: Arc<WsClient>,
+        id: ChainId
+    ) -> Result<(), anyhow::Error> {
         println!("Initializing Oracle Manager for Chain: {}", id.name());
 
         let oracle_manager = OracleManager::new(client, id.clone()).await?;
@@ -207,7 +237,11 @@ impl Backend {
         }
     }
 
-    async fn get_eth_balance(&mut self, address: Address, client: Arc<WsClient>) -> Result<(), anyhow::Error> {
+    async fn get_eth_balance(
+        &mut self,
+        address: Address,
+        client: Arc<WsClient>
+    ) -> Result<(), anyhow::Error> {
         let balance = client.get_balance(address).await?;
         self.back_sender.send(Response::EthBalance(balance))?;
         Ok(())
@@ -274,8 +308,10 @@ impl Backend {
             balance
         } else {
             let balance = token.balance_of(owner, client.clone()).await?;
-            if let Err(_) = self.db.insert_erc20_balance(token.address, balance, chain_id, block) {}
-            if let Err(_) = self.db.remove_erc20_balance(block, chain_id) {}
+            if let Err(_) = self.db.insert_erc20_balance(token.address, balance, chain_id, block) {
+            }
+            if let Err(_) = self.db.remove_erc20_balance(block, chain_id) {
+            }
             balance
         };
         // update the balance
@@ -303,146 +339,204 @@ impl Backend {
         Ok(())
     }
 
+    /// Dummy implementation
+    async fn get_swap_result(&self, params: SwapParams) -> Result<QuoteResult, anyhow::Error> {
+        let block_id = BlockId::Number(
+            BlockNumberOrTag::Number(params.block.header.number.unwrap())
+        );
+        let cache_db = CacheDB::new(EmptyDB::default());
 
-/// Dummy implementation
-async fn get_swap_result(&self, params: SwapParams) -> Result<SwapResult, anyhow::Error> {
-    let block_id = BlockId::Number(BlockNumberOrTag::Number(params.block.header.number.unwrap()));
-    let cache_db = CacheDB::new(EmptyDB::default());
+        let mut fork_factory = ForkFactory::new_sandbox_factory(
+            params.client.clone(),
+            cache_db,
+            Some(block_id)
+        );
 
-    let fork_factory = ForkFactory::new_sandbox_factory(
-        params.client.clone(),
-        cache_db,
-        Some(block_id)
-    );
-    let fork_db = fork_factory.new_sandbox_fork();
+        let dummy_caller = DummyAccount::new(
+            AccountType::EOA,
+            parse_ether("10")?,
+            parse_ether("10")?
+        );
+        let dummy_contract = DummyAccount::new(
+            AccountType::Contract(swap_router_bytecode()),
+            U256::ZERO,
+            U256::ZERO
+        );
+        if
+            let Err(e) = insert_dummy_account(
+                &dummy_caller,
+                params.chain_id.clone(),
+                &mut fork_factory
+            )
+        {
+            return Err(e);
+        }
+        if
+            let Err(e) = insert_dummy_account(
+                &dummy_contract,
+                params.chain_id.clone(),
+                &mut fork_factory
+            )
+        {
+            return Err(e);
+        }
+        let fork_db = fork_factory.new_sandbox_fork();
 
-    let mut evm = new_evm(fork_db, params.block.clone(), params.chain_id.clone());
-    let result = self.swap(params, &mut evm).await?;
-    Ok(result)
-}
-
-/// Simulate a swap on Uniswap V2/V3
-///
-/// The pool with the highest output is selected
-async fn swap(
-    &self,
-    params: SwapParams,
-    evm: &mut Evm<'static, (), ForkDB>
-) -> Result<SwapResult, anyhow::Error> {
-    let client = params.client;
-    let slippage: u32 = params.slippage.parse().unwrap_or(1);
-
-    let v2_pool = get_v2_pool(
-        params.token_in.clone(),
-        params.token_out.clone(),
-        params.chain_id.clone(),
-        client.clone()
-    ).await?;
-
-    let mut pools = get_v3_pools(
-        params.token_in.clone(),
-        params.token_out.clone(),
-        params.chain_id.clone(),
-        client.clone()
-    ).await?;
-
-    if let Some(v2_pool) = v2_pool {
-        pools.push(v2_pool);
+        let mut evm = new_evm(fork_db, params.block.clone(), params.chain_id.clone());
+        let result = self.swap(dummy_contract, dummy_caller, params, &mut evm).await?;
+        Ok(result)
     }
 
-    if pools.is_empty() {
-        return Err(anyhow!("No pools found"));
-    }
+    /// Simulate a swap on Uniswap V2/V3
+    ///
+    /// The pool with the highest output is selected
+    async fn swap(
+        &self,
+        contract: DummyAccount,
+        caller: DummyAccount,
+        params: SwapParams,
+        evm: &mut Evm<'static, (), ForkDB>
+    ) -> Result<QuoteResult, anyhow::Error> {
+        let slippage: f32 = params.slippage.parse().unwrap_or(1.0);
+        let amount_in = params.amount_in.parse::<U256>()?;
 
-    let mut highest_amount_out = U256::ZERO;
-    let mut gas_used: u64 = 0;
-    let mut success = false;
-    let mut evm_err = Vec::new();
-    let mut call_data = Bytes::default();
+        let pools = self.collect_pools(params.clone()).await?;
 
-    // approve the contract to spend token_in
-    evm.tx_mut().caller = params.caller;
-    evm.tx_mut().transact_to = TransactTo::Call(params.token_in.address);
-    evm.tx_mut().value = U256::ZERO;
-    evm.tx_mut().data = params.token_in.encode_approve(*SWAP_ROUTER_ADDR, params.amount_in).into();
+        let mut liquidity = U256::ZERO;
+        let mut selected_pool = pools[0].clone();
 
-    let res = evm.transact_commit()?;
+        // seleect the pool with the highest liquidity
+        for pool in &pools {
+            let balance = params.token_in.balance_of(pool.address, params.client.clone()).await?;
+            if balance > liquidity {
+                liquidity = balance;
+                selected_pool = pool.clone();
+            }
+        }
 
-    if !res.is_success() {
-        let err = revert_msg(&res.output().unwrap_or_default());
-        return Err(anyhow!(err));
-    }
+        // approve the contract to spend token_in
+        evm.tx_mut().caller = caller.address;
+        evm.tx_mut().transact_to = TransactTo::Call(params.token_in.address);
+        evm.tx_mut().value = U256::ZERO;
+        evm.tx_mut().data = params.token_in
+            .encode_approve(contract.address, amount_in)
+            .into();
 
-    evm.tx_mut().transact_to = TransactTo::Call(*SWAP_ROUTER_ADDR);
+        evm.transact_commit()?;
 
-    for pool in pools {
-        let mut router_params = Params {
+        let router_params = Params {
             input_token: params.token_in.address,
             output_token: params.token_out.address,
-            amount_in: params.amount_in,
-            pool: pool.address,
-            pool_variant: pool.variant(),
+            amount_in: amount_in,
+            pool: selected_pool.address,
+            pool_variant: selected_pool.variant(),
             minimum_received: U256::ZERO,
         };
 
         let data = encode_swap(router_params.clone());
 
+        evm.tx_mut().transact_to = TransactTo::Call(contract.address);
         evm.tx_mut().data = data.clone();
+
         let res = evm.transact()?.result;
         let output = res.clone().into_output().unwrap_or_default();
-        let amount_out = decode_swap(output);
 
-        if res.is_success() && amount_out > highest_amount_out {
-            highest_amount_out = amount_out;
-            gas_used = res.gas_used();
-            success = res.is_success();
+        let amount_out = if res.is_success() {
+            println!("Sim Success");
+            decode_swap(output).unwrap_or_default()
+        } else {
+            let err = revert_msg(&output);
+            return Err(anyhow!("Sim Failed: {}", err));
+        };
 
-            let minimum_received =
-                amount_out - (amount_out * U256::from(slippage)) / U256::from(100);
+        let minimum_received = amount_out - (amount_out * U256::from(slippage)) / U256::from(100);
 
-            // update the calldata
-            router_params.minimum_received = minimum_received;
-            call_data = encode_swap(router_params);
-        }
-
-        if !res.is_success() {
-            let err = revert_msg(&res.output().unwrap_or_default());
-            evm_err.push(err);
-        }
+        Ok(QuoteResult {
+            block_number: params.block.header.number.unwrap(),
+            input_token_usd_worth: "TODO".to_string(),
+            output_token_usd_worth: "TODO".to_string(),
+            price_impact: "TODO".to_string(),
+            slippage: "TODO".to_string(),
+            real_amount: amount_out.to_string(),
+            minimum_received: minimum_received.to_string(),
+            token_tax: "TODO".to_string(),
+            pool_fee: "TODO".to_string(),
+            gas_cost: "TODO".to_string(),
+            data: data,
+        })
     }
 
-    // no swaps were successful
-    if highest_amount_out == U256::ZERO {
-        return Ok(SwapResult {
-            token_in: params.token_in,
-            token_out: params.token_out,
-            amount_in: params.amount_in,
-            amount_out: U256::ZERO,
-            minimum_received: U256::ZERO,
-            success: false,
-            evm_err,
-            error: "".to_string(),
-            gas_used,
-            data: call_data,
-        });
+    async fn collect_pools(&self, params: SwapParams) -> Result<Vec<Pool>, anyhow::Error> {
+        let pools = Arc::new(Mutex::new(Vec::new()));
+
+        let v2_pool = if
+            let Ok(pool) = self.db.get_pool(
+                params.token_in.clone(),
+                params.token_out.clone(),
+                params.chain_id.id().clone(),
+                PoolVariant::UniswapV2,
+                3000
+            )
+        {
+            Some(pool)
+        } else {
+            if
+                let Ok(pool) = get_v2_pool(
+                    params.token_in.clone(),
+                    params.token_out.clone(),
+                    params.chain_id.clone(),
+                    params.client.clone()
+                ).await
+            {
+                Some(pool)
+            } else {
+                None
+            }
+        };
+
+        for fee in V3_FEES {
+            let params = params.clone();
+            let pools = pools.clone();
+            let db = self.db.clone();
+            tokio::spawn(async move {
+                // check db first
+                if
+                    let Ok(pool) = db.get_pool(
+                        params.token_in.clone(),
+                        params.token_out.clone(),
+                        params.chain_id.id().clone(),
+                        PoolVariant::UniswapV3,
+                        fee
+                    )
+                {
+                    let mut pools = pools.lock().await;
+                    pools.push(pool);
+                } else {
+                    // not in db fetch from rpc
+                    if
+                        let Ok(pool) = get_v3_pool(
+                            params.token_in.clone(),
+                            params.token_out.clone(),
+                            fee,
+                            params.chain_id.clone(),
+                            params.client.clone()
+                        ).await
+                    {
+                        let mut pools = pools.lock().await;
+                        pools.push(pool);
+                    }
+                }
+            });
+        }
+
+        let mut pools = pools.lock().await;
+        if v2_pool.is_some() {
+            pools.push(v2_pool.unwrap());
+        }
+        if pools.is_empty() {
+            return Err(anyhow!("No pools found"));
+        }
+        let all_pools = pools.iter().cloned().collect::<Vec<Pool>>();
+        Ok(all_pools)
     }
-
-    // TODO avoid calculating this twice
-    let minimum_received =
-        highest_amount_out - (highest_amount_out * U256::from(slippage)) / U256::from(100);
-
-    return Ok(SwapResult {
-        token_in: params.token_in,
-        token_out: params.token_out,
-        amount_in: params.amount_in,
-        amount_out: highest_amount_out,
-        minimum_received,
-        success,
-        evm_err,
-        error: "".to_string(),
-        gas_used,
-        data: call_data,
-    });
-}
-
 }

@@ -12,6 +12,7 @@ use eyre::Result;
 use futures::{ channel::mpsc::Receiver, task::{ Context, Poll }, Future, FutureExt, Stream };
 use hashbrown::{ hash_map::Entry, HashMap };
 use revm::{ db::{ CacheDB, EmptyDB }, primitives::{ AccountInfo, Bytecode, B256, KECCAK_EMPTY } };
+use std::future::IntoFuture;
 use std::{ collections::VecDeque, pin::Pin, sync::{ mpsc::Sender as OneshotSender, Arc } };
 
 use super::database_error::{ DatabaseError, DatabaseResult };
@@ -134,18 +135,13 @@ impl GlobalBackend {
             Entry::Vacant(entry) => {
                 entry.insert(vec![listener]);
                 let provider = self.provider.clone();
-               // let block_num = self.block_num.unwrap();
+                let block_num = self.block_num.unwrap();
                 let fut = Box::pin(async move {
-                    // ! temporary fix
-                    let balance = provider
-                        .get_balance(address).await
-                        .expect("Failed to get balance");
-                    let nonce = provider
-                        .get_transaction_count(address).await
-                        .expect("Failed to get nonce");
-                    let code = provider.get_code_at(address).await.expect("Failed to get code");
-                    // let resp = tokio::try_join!(balance, nonce, code);
-                    let resp = Ok((balance, nonce, code));
+                   
+                    let balance = provider.get_balance(address).block_id(block_num).into_future();
+                    let nonce = provider.get_transaction_count(address).block_id(block_num).into_future();
+                    let code = provider.get_code_at(address).block_id(block_num).into_future();
+                    let resp = tokio::try_join!(balance, nonce, code);
 
                     (resp, address)
                 });
@@ -163,9 +159,9 @@ impl GlobalBackend {
             Entry::Vacant(entry) => {
                 entry.insert(vec![listener]);
                 let provider = self.provider.clone();
-               // let block_num = self.block_num;
+                 let block_num = self.block_num.unwrap();
                 let fut = Box::pin(async move {
-                    let storage = provider.get_storage_at(address, idx).await;
+                    let storage = provider.get_storage_at(address, idx).block_id(block_num).await;
 
                     (storage, address, idx)
                 });

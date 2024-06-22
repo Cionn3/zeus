@@ -33,7 +33,9 @@ revm = { version = "9.0.0", features = [
     "optional_gas_refund",
 ] }
 
-rusqlite = { version = "0.31.0", features = ["bundled"] }
+
+r2d2_sqlite = "0.24.0"
+r2d2 = "0.8.10"
 
 tokio = { version = "1.35.1", features = ["full"] }
 crossbeam = "0.8.4"

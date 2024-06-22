@@ -6,6 +6,7 @@ use crossbeam::channel::{ unbounded, Receiver, Sender };
 use zeus_types::defi::erc20::ERC20Token;
 use alloy::primitives::U256;
 use zeus_types::app_state::{AppData, state::*};
+use zeus_utils::parse_ether;
 
 use crate::{
     fonts::get_fonts,
@@ -17,7 +18,7 @@ use crate::{
     },
 };
 
-use zeus_backend::{ Backend, types::{ Request, Response }, db::ZeusDB };
+use zeus_backend::{ db::ZeusDB, types::{ Request, Response, SwapParams }, Backend };
 
 
 pub mod gui;
@@ -43,6 +44,8 @@ pub struct ZeusApp {
     pub last_eth_request: Instant,
 
     pub last_erc20_request: Instant,
+
+    pub last_quote_request: Instant,
 }
 
 impl Default for ZeusApp {
@@ -54,6 +57,7 @@ impl Default for ZeusApp {
             data: AppData::default(),
             last_eth_request: Instant::now(),
             last_erc20_request: Instant::now(),
+            last_quote_request: Instant::now(),
         }
     }
 }
@@ -144,6 +148,32 @@ impl ZeusApp {
     fn update_block(&mut self) {
         self.send_request(Request::GetBlockInfo);
 
+    }
+
+    fn request_quote_result(&mut self) {
+        let swap_state = SWAP_UI_STATE.read().unwrap();
+
+        if swap_state.input_token.amount_to_swap.is_empty() {
+            return;
+        }
+
+        let time = Instant::now();
+        if time.duration_since(self.last_quote_request) > Duration::from_secs(TIME_OUT) {
+            let amount_in = parse_ether(&swap_state.input_token.amount_to_swap).unwrap();
+        self.send_request(Request::GetQuoteResult {
+            params: SwapParams {
+                token_in: swap_state.input_token.token.clone(),
+                token_out: swap_state.output_token.token.clone(),
+                amount_in: swap_state.input_token.amount_to_swap.clone(),
+                slippage: self.data.tx_settings.slippage.clone(),
+                chain_id: self.data.chain_id.clone(),
+                block: self.data.block_info.0.full_block.clone().unwrap(),
+                client: self.data.ws_client.get(&self.data.chain_id.id()).unwrap().clone(),
+                caller: self.data.wallet_address(),
+                },
+            });
+            self.last_quote_request = time;
+        }
     }
 
     fn request_eth_balance(&mut self) {
@@ -337,7 +367,7 @@ impl eframe::App for ZeusApp {
                             self.data.block_info = block_info;
                         }
 
-                        Response::SimSwap { result } => {
+                        Response::GetQuoteResult(result) => {
                             println!("Swap Response: {:?}", result);
                         }
 
@@ -365,6 +395,7 @@ impl eframe::App for ZeusApp {
         self.update_block();
         self.request_eth_balance();
         self.request_erc20_balance();
+        self.request_quote_result();
 
         // Draw the UI that belongs to the Top Panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {

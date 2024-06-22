@@ -1,8 +1,7 @@
 use lazy_static::lazy_static;
 use std::sync::{ Arc, RwLock };
 use std::collections::HashMap;
-use std::path::Path;
-use crate::profile::Credentials;
+use alloy::primitives::Bytes;
 
 use crate::defi::erc20::ERC20Token;
 
@@ -94,6 +93,44 @@ impl Default for SharedUiState {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct QuoteResult {
+
+    /// Block Number
+    pub block_number: u64,
+
+    /// USD worth of the input token
+    pub input_token_usd_worth: String,
+
+    /// USD worth of the output token
+    pub output_token_usd_worth: String,
+
+    /// The price impact of the swap
+    pub price_impact: String,
+
+    /// Selected slippage
+    pub slippage: String,
+
+    /// The real amount of tokens we will receive, after considering the pool fee and token tax if any
+    pub real_amount: String,
+
+    /// Minimum amount we may receive depending on the slippage
+    pub minimum_received: String,
+
+    /// Token Tax (If any)
+    pub token_tax: String,
+
+    /// Pool Fee
+    pub pool_fee: String,
+
+    /// Gas Cost of the swap in USD
+    pub gas_cost: String,
+
+    /// Call Data to be used for the transaction
+    pub data: Bytes,
+
+}
+
 /// A token that its currently selected in the SwapUI
 #[derive(Clone, PartialEq)]
 pub struct SelectedToken {
@@ -128,6 +165,8 @@ pub struct SwapUIState {
 
     /// A HashMap that holds a list of [ERC20Token] with their corrsponing `chain_id` as key
     pub tokens: HashMap<u64, Vec<ERC20Token>>,
+
+    pub quote_result: QuoteResult,
 }
 
 impl SwapUIState {
@@ -243,6 +282,7 @@ impl Default for SwapUIState {
             output_token: SelectedToken::eth_default_output(),
             search_token: String::new(),
             tokens: HashMap::new(),
+            quote_result: QuoteResult::default(),
         }
     }
 }
