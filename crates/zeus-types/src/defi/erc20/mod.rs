@@ -74,6 +74,16 @@ impl ERC20Token {
         format!("{:.4}", readable)
     }
 
+    /// Parse to wei
+    pub fn parse(&self, amount: &str) -> Result<U256, anyhow::Error> {
+        let amount = BigDecimal::from_str(amount)?;
+        let wei_amount = amount * 10_u64.pow(self.decimals as u32);
+        let wei_str = wei_amount.to_string();
+        let wei_str = wei_str.split('.').next().unwrap_or_default();
+        let wei = U256::from_str(wei_str)?;
+        Ok(wei)
+    }
+
     async fn symbol(address: Address, client: Arc<RootProvider<PubSubFrontend>>) -> Result<String, anyhow::Error> {
         let contract = ERC20::new(address, client);
         let symbol = contract.symbol().call().await?._0;

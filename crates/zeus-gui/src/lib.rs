@@ -1,4 +1,4 @@
-use std::{ collections::HashMap, time::{ Instant, Duration } };
+use std::{ collections::HashMap, time::{ Instant, Duration }, panic::set_hook };
 use eframe::{ egui, CreationContext };
 use egui::{ vec2, Align2, ComboBox, Context, Style, Ui };
 
@@ -6,7 +6,7 @@ use crossbeam::channel::{ unbounded, Receiver, Sender };
 use zeus_types::defi::erc20::ERC20Token;
 use alloy::primitives::U256;
 use zeus_types::app_state::{AppData, state::*};
-use zeus_utils::parse_ether;
+
 
 use crate::{
     fonts::get_fonts,
@@ -20,12 +20,20 @@ use crate::{
 
 use zeus_backend::{ db::ZeusDB, types::{ Request, Response, SwapParams }, Backend };
 
+use tracing_subscriber::{ fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::filter::EnvFilter;
+
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_appender::non_blocking::WorkerGuard;
+
+use tracing::info;
+
 
 pub mod gui;
 pub mod fonts;
 
 /// Rate Limit
-const TIME_OUT: u64 = 2;
+const TIME_OUT: u64 = 8;
 
 /// The main application struct
 pub struct ZeusApp {
@@ -62,8 +70,27 @@ impl Default for ZeusApp {
     }
 }
 
+fn setup_logging() -> WorkerGuard {
+    let file_appender = tracing_appender::rolling::daily("logs", "output.txt");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+    // Set up the filter
+    let filter_layer = EnvFilter::try_from_default_env().unwrap_or_else(|_|
+        EnvFilter::new("info, warn, error")
+    );
+
+    let fmt_layer = fmt::layer().with_writer(std::io::stdout).with_span_events(FmtSpan::CLOSE);
+
+    let file_layer = fmt::layer().with_writer(non_blocking).with_span_events(FmtSpan::CLOSE);
+
+    tracing_subscriber::registry().with(filter_layer).with(fmt_layer).with(file_layer).init();
+
+    guard
+}
+
 impl ZeusApp {
     pub fn new(cc: &CreationContext) -> Self {
+        let _guard = setup_logging();
         let mut app = Self::default();
         app.config_style(&cc.egui_ctx);
 
@@ -157,13 +184,17 @@ impl ZeusApp {
             return;
         }
 
+        if self.data.block_info.0.number <= swap_state.quote_result.block_number {
+            return;
+        }
+
         let time = Instant::now();
         if time.duration_since(self.last_quote_request) > Duration::from_secs(TIME_OUT) {
-            let amount_in = parse_ether(&swap_state.input_token.amount_to_swap).unwrap();
+            info!("Requesting Quote Result");
         self.send_request(Request::GetQuoteResult {
             params: SwapParams {
-                token_in: swap_state.input_token.token.clone(),
-                token_out: swap_state.output_token.token.clone(),
+                token_in: swap_state.input_token.clone(),
+                token_out: swap_state.output_token.clone(),
                 amount_in: swap_state.input_token.amount_to_swap.clone(),
                 slippage: self.data.tx_settings.slippage.clone(),
                 chain_id: self.data.chain_id.clone(),
@@ -368,7 +399,7 @@ impl eframe::App for ZeusApp {
                         }
 
                         Response::GetQuoteResult(result) => {
-                            println!("Swap Response: {:?}", result);
+                           // println!("Swap Response: {:?}", result);
                         }
 
                         Response::EthBalance(balance) => {
@@ -395,7 +426,7 @@ impl eframe::App for ZeusApp {
         self.update_block();
         self.request_eth_balance();
         self.request_erc20_balance();
-        self.request_quote_result();
+        
 
         // Draw the UI that belongs to the Top Panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -409,13 +440,13 @@ impl eframe::App for ZeusApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered_justified(|ui| {
                 self.err_msg(ui);
-                self.draw_login(ui);
+               // self.draw_login(ui);
             });
 
-            
+            /* 
             if !self.data.logged_in || self.data.new_profile_screen {
                 return;
-            } 
+            } */
             
 
             ui.vertical_centered_justified(|ui| {

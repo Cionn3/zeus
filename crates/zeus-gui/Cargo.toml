@@ -12,6 +12,11 @@ zeus-types = {path = "../zeus-types"}
 
 alloy = { git = "https://github.com/alloy-rs/alloy", rev = "4000b77" }
 
+# Tracing
+tracing = "0.1.40"
+tracing-subscriber = {version = "0.3.18", features = ["env-filter", "fmt"]}
+tracing-appender = "0.2.3"
+
 # GUI
 egui = "0.27.2"
 eframe = "0.27.2"

@@ -1,5 +1,5 @@
 use alloy::{
-    primitives::U256,
+    primitives::{U256, Address},
     providers::{ Provider, ProviderBuilder, RootProvider },
     pubsub::PubSubFrontend,
     rpc::types::eth::{ BlockId, BlockNumberOrTag, Block },
@@ -23,6 +23,25 @@ pub mod oracles;
 pub async fn get_client(url: &str) -> Result<Arc<RootProvider<PubSubFrontend>>, anyhow::Error> {
     let client = ProviderBuilder::new().on_ws(WsConnect::new(url)).await?;
     Ok(Arc::new(client))
+}
+
+pub fn get_weth(chain_id: ChainId) -> Address {
+    match chain_id {
+        ChainId::Ethereum(_) => Address::from_str("0xC02aaA39b223FE8D0A0e5C4F27ead9083C756Cc2").unwrap(),
+        // WBNB
+        ChainId::BinanceSmartChain(_) => Address::from_str("0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c").unwrap(),
+        ChainId::Base(_) => Address::from_str("0x4200000000000000000000000000000000000006").unwrap(),
+        ChainId::Arbitrum(_) => Address::from_str("0x82af49447d8a07e3bd95bd0d56f35241523fbab1").unwrap(),
+    }
+}
+
+pub fn get_usdc(chain_id: ChainId) -> Address {
+    match chain_id {
+        ChainId::Ethereum(_) => Address::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap(),
+        ChainId::BinanceSmartChain(_) => Address::from_str("0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d").unwrap(),
+        ChainId::Base(_) => Address::from_str("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913").unwrap(),
+        ChainId::Arbitrum(_) => Address::from_str("0xaf88d065e77c8cc2239327c5edb3a432268e5831").unwrap(),
+    }
 }
 
 /// Creates a new Fork Enviroment

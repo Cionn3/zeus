@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 zeus-types = {path = "../zeus-types"}
+
 alloy = { git = "https://github.com/alloy-rs/alloy", rev = "4000b77", features = [
     "contract",
     "network",
@@ -19,6 +20,7 @@ alloy = { git = "https://github.com/alloy-rs/alloy", rev = "4000b77", features =
     "signers",
     "signer-wallet",
 ] }
+
 revm = { version = "9.0.0", features = [
     "serde",
     "std",
@@ -28,6 +30,8 @@ revm = { version = "9.0.0", features = [
     "optional_eip3607",
     "optional_gas_refund",
 ] }
+
+tracing = "0.1.40"
 tokio = { version = "1.35.1", features = ["full"] }
 thiserror = "1.0.37"
 tiny-keccak = "2.0.2"

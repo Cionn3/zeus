@@ -93,11 +93,15 @@ impl Default for SharedUiState {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct QuoteResult {
 
     /// Block Number
     pub block_number: u64,
+
+    pub input_token: SelectedToken,
+
+    pub output_token: SelectedToken,
 
     /// USD worth of the input token
     pub input_token_usd_worth: String,
@@ -131,8 +135,21 @@ pub struct QuoteResult {
 
 }
 
+impl QuoteResult {
+    /// Get Output token amount in readable format
+    pub fn output_token_amount(&self) -> String {
+        format!("{} {}", self.output_token.token.readable(self.real_amount.clone()), self.output_token.token.symbol)
+    }
+
+    /// Get Minimum received amount in readable format
+    pub fn minimum_received_amount(&self) -> String {
+        format!("{} {}", self.output_token.token.readable(self.minimum_received.clone()), self.output_token.token.symbol)
+    }
+
+}
+
 /// A token that its currently selected in the SwapUI
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Default)]
 pub struct SelectedToken {
     pub token: ERC20Token,
 

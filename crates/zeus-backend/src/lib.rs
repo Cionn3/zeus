@@ -10,15 +10,17 @@ use tokio::{ runtime::Runtime, sync::{ RwLock as tokioRwLock, Mutex } };
 use crossbeam::channel::{ Sender, Receiver };
 use revm::{ primitives::{ Bytes, TransactTo }, Evm, db::{ CacheDB, EmptyDB } };
 use anyhow::{ anyhow, Context };
+use tracing::{ info, error, trace };
 
 use zeus_types::{
     app_state::state::*,
     defi::{
-        dex::uniswap::pool::{ get_v2_pool, get_v3_pool, V3_FEES, PoolVariant, Pool },
+        dex::uniswap::
+            pool::{ get_v2_pool, get_v3_pool, V3_FEES, PoolVariant, Pool },
         erc20::ERC20Token,
         zeus_router::{ decode_swap, encode_swap, SwapRouter::Params, swap_router_bytecode },
     },
-    forked_db::{ fork_db::ForkDB, fork_factory::ForkFactory, revert_msg },
+    forked_db::{ fork_db::ForkDB, fork_factory::ForkFactory },
     profile::Profile,
     ChainId,
     Rpc,
@@ -382,8 +384,7 @@ impl Backend {
         }
         let fork_db = fork_factory.new_sandbox_fork();
 
-        let mut evm = new_evm(fork_db, params.block.clone(), params.chain_id.clone());
-        let result = self.swap(dummy_contract, dummy_caller, params, &mut evm).await?;
+        let result = self.swap(dummy_contract, dummy_caller, params, fork_db).await?;
         Ok(result)
     }
 
@@ -395,64 +396,74 @@ impl Backend {
         contract: DummyAccount,
         caller: DummyAccount,
         params: SwapParams,
-        evm: &mut Evm<'static, (), ForkDB>
+        fork_db: ForkDB
     ) -> Result<QuoteResult, anyhow::Error> {
         let slippage: f32 = params.slippage.parse().unwrap_or(1.0);
-        let amount_in = params.amount_in.parse::<U256>()?;
+        let amount_in = params.token_in.token.parse(&params.amount_in)?;
 
         let pools = self.collect_pools(params.clone()).await?;
 
-        let mut liquidity = U256::ZERO;
-        let mut selected_pool = pools[0].clone();
+        let best_pool = Arc::new(Mutex::new(pools[0].clone()));
+        let best_amount_out = Arc::new(Mutex::new(U256::ZERO));
 
-        // seleect the pool with the highest liquidity
-        for pool in &pools {
-            let balance = params.token_in.balance_of(pool.address, params.client.clone()).await?;
-            if balance > liquidity {
-                liquidity = balance;
-                selected_pool = pool.clone();
-            }
-        }
+        let mut evm = new_evm(fork_db, params.block.clone(), params.chain_id.clone());
 
         // approve the contract to spend token_in
         evm.tx_mut().caller = caller.address;
-        evm.tx_mut().transact_to = TransactTo::Call(params.token_in.address);
+        evm.tx_mut().transact_to = TransactTo::Call(params.token_in.token.address);
         evm.tx_mut().value = U256::ZERO;
-        evm.tx_mut().data = params.token_in
-            .encode_approve(contract.address, amount_in)
-            .into();
+        evm.tx_mut().data = params.token_in.token.encode_approve(contract.address, amount_in).into();
 
         evm.transact_commit()?;
 
-        let router_params = Params {
-            input_token: params.token_in.address,
-            output_token: params.token_out.address,
-            amount_in: amount_in,
-            pool: selected_pool.address,
-            pool_variant: selected_pool.variant(),
-            minimum_received: U256::ZERO,
-        };
+        let fork_db = evm.db().clone();
 
-        let data = encode_swap(router_params.clone());
+        let time = std::time::Instant::now();
+        let mut handles = Vec::new();
+        for pool in pools {
+            let pool = pool.clone();
+            let params = params.clone();
+            let fork_db = fork_db.clone();
+            let contract = contract.clone();
+            let caller = caller.clone();
+            let best_pool = best_pool.clone();
+            let best_amount_out = best_amount_out.clone();
 
-        evm.tx_mut().transact_to = TransactTo::Call(contract.address);
-        evm.tx_mut().data = data.clone();
+            handles.push(tokio::spawn(async move {
 
-        let res = evm.transact()?.result;
-        let output = res.clone().into_output().unwrap_or_default();
+                let amount_out;
+                {
+                let mut evm = new_evm(fork_db, params.block.clone(), params.chain_id.clone());
+                amount_out = sim_swap(pool.clone(), contract, caller, params, &mut evm).unwrap();
+                }
+                let mut best_pool = best_pool.lock().await;
+                let mut best_amount_out = best_amount_out.lock().await;
+                if amount_out > *best_amount_out {
+                    *best_amount_out = amount_out;
+                    *best_pool = pool;
+                }
+            }));
+        }
 
-        let amount_out = if res.is_success() {
-            println!("Sim Success");
-            decode_swap(output).unwrap_or_default()
-        } else {
-            let err = revert_msg(&output);
-            return Err(anyhow!("Sim Failed: {}", err));
-        };
+        for handle in handles {
+            handle.await?;
+        }
+    
+        info!("Time to swap: {:?}ms", time.elapsed().as_millis());
+
+        let best_pool = best_pool.lock().await;
+        let best_amount_out = best_amount_out.lock().await;
+        let pool_to_swap = best_pool.clone();
+        let amount_out = best_amount_out.clone();
+
+        
 
         let minimum_received = amount_out - (amount_out * U256::from(slippage)) / U256::from(100);
 
         Ok(QuoteResult {
             block_number: params.block.header.number.unwrap(),
+            input_token: params.token_in.clone(),
+            output_token: params.token_out.clone(),
             input_token_usd_worth: "TODO".to_string(),
             output_token_usd_worth: "TODO".to_string(),
             price_impact: "TODO".to_string(),
@@ -462,17 +473,19 @@ impl Backend {
             token_tax: "TODO".to_string(),
             pool_fee: "TODO".to_string(),
             gas_cost: "TODO".to_string(),
-            data: data,
+            data: Bytes::default(),
         })
     }
+
+    
 
     async fn collect_pools(&self, params: SwapParams) -> Result<Vec<Pool>, anyhow::Error> {
         let pools = Arc::new(Mutex::new(Vec::new()));
 
         let v2_pool = if
             let Ok(pool) = self.db.get_pool(
-                params.token_in.clone(),
-                params.token_out.clone(),
+                params.token_in.token.clone(),
+                params.token_out.token.clone(),
                 params.chain_id.id().clone(),
                 PoolVariant::UniswapV2,
                 3000
@@ -482,12 +495,15 @@ impl Backend {
         } else {
             if
                 let Ok(pool) = get_v2_pool(
-                    params.token_in.clone(),
-                    params.token_out.clone(),
+                    params.token_in.token.clone(),
+                    params.token_out.token.clone(),
                     params.chain_id.clone(),
                     params.client.clone()
                 ).await
             {
+                if let Err(e) = self.db.insert_pool(pool.clone(), params.chain_id.id()) {
+                    trace!("Failed to insert pool into db {}", e);
+                }
                 Some(pool)
             } else {
                 None
@@ -502,8 +518,8 @@ impl Backend {
                 // check db first
                 if
                     let Ok(pool) = db.get_pool(
-                        params.token_in.clone(),
-                        params.token_out.clone(),
+                        params.token_in.token.clone(),
+                        params.token_out.token.clone(),
                         params.chain_id.id().clone(),
                         PoolVariant::UniswapV3,
                         fee
@@ -515,13 +531,16 @@ impl Backend {
                     // not in db fetch from rpc
                     if
                         let Ok(pool) = get_v3_pool(
-                            params.token_in.clone(),
-                            params.token_out.clone(),
+                            params.token_in.token.clone(),
+                            params.token_out.token.clone(),
                             fee,
                             params.chain_id.clone(),
                             params.client.clone()
                         ).await
                     {
+                        if let Err(e) = db.insert_pool(pool.clone(), params.chain_id.id()) {
+                            error!("Failed to insert pool into db {}", e);
+                        }
                         let mut pools = pools.lock().await;
                         pools.push(pool);
                     }
@@ -530,13 +549,59 @@ impl Backend {
         }
 
         let mut pools = pools.lock().await;
+
         if v2_pool.is_some() {
             pools.push(v2_pool.unwrap());
         }
+
         if pools.is_empty() {
             return Err(anyhow!("No pools found"));
         }
+
         let all_pools = pools.iter().cloned().collect::<Vec<Pool>>();
         Ok(all_pools)
     }
+}
+
+fn sim_swap(
+    pool: Pool,
+    contract: DummyAccount,
+    caller: DummyAccount,
+    params: SwapParams,
+    evm: &mut Evm<'static, (), ForkDB>
+) -> Result<U256, anyhow::Error> {
+    let amount_in = params.token_in.token.parse(&params.amount_in)?;
+
+    // approve the contract to spend token_in
+    evm.tx_mut().caller = caller.address;
+    evm.tx_mut().transact_to = TransactTo::Call(params.token_in.token.address);
+    evm.tx_mut().value = U256::ZERO;
+    evm.tx_mut().transact_to = TransactTo::Call(contract.address);
+
+    let router_params = Params {
+        input_token: params.token_in.token.address,
+        output_token: params.token_out.token.address,
+        amount_in,
+        pool: pool.address,
+        pool_variant: pool.variant(),
+        minimum_received: U256::ZERO,
+    };
+
+    let data = encode_swap(router_params);
+    evm.tx_mut().data = data;
+
+    let amount_out;
+
+    let res = evm.transact().unwrap().result;
+    let output = res.clone().into_output().unwrap_or_default();
+
+    amount_out = if res.is_success() {
+        info!("Sim Success");
+        decode_swap(output).unwrap()
+    } else {
+        U256::ZERO
+    };
+
+    
+    Ok(amount_out)
 }

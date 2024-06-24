@@ -5,7 +5,7 @@ use zeus_types::{BlockInfo, defi::erc20::ERC20Token, app_state::state::QuoteResu
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use zeus_types::{ChainId, profile::Profile, WsClient, Rpc};
+use zeus_types::{ChainId, profile::Profile, WsClient, Rpc, app_state::state::SelectedToken};
 
 
 
@@ -61,7 +61,7 @@ pub enum Response {
 }
 
 /// Parameters needed to simulate a swap
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SwapParams {
     /// The target Chain id
     pub chain_id: ChainId,
@@ -72,9 +72,9 @@ pub struct SwapParams {
     /// Client to make rpc calls
     pub client: Arc<RootProvider<PubSubFrontend>>,
 
-    pub token_in: ERC20Token,
+    pub token_in: SelectedToken,
 
-    pub token_out: ERC20Token,
+    pub token_out: SelectedToken,
 
     /// Amount of tokens we want to swap
     pub amount_in: String,

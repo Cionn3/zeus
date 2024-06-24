@@ -5,6 +5,7 @@ use alloy::primitives::{Address, U256};
 use zeus_types::defi::{erc20::ERC20Token, dex::uniswap::pool::{Pool, PoolVariant}};
 use std::{collections::HashMap, path::PathBuf};
 use anyhow::anyhow;
+use tracing::{info, trace};
 
 #[derive(Clone)]
 pub struct ZeusDB {
@@ -175,8 +176,9 @@ impl ZeusDB {
             PoolVariant::UniswapV3 => U256::from(1).to_string(),
         };
 
+        let time = std::time::Instant::now();
         let conn = self.get_pools_conn()?;
-        let mut stmt = conn.prepare("SELECT * FROM Pool WHERE chain_id, token0_addr, token1_addr = ?1, ?3, ?4, ?5, ?6")?;
+        let mut stmt = conn.prepare("SELECT * FROM Pool WHERE chain_id = ?1 AND token0 = ?2 AND token1 = ?3 AND variant = ?4 AND fee = ?5")?;
         let mut rows = stmt.query(params![chain_id, token0_addr, token1_addr, pool_variant, fee])?;
     
         if let Some(row) = rows.next()? {
@@ -192,7 +194,7 @@ impl ZeusDB {
                 variant: PoolVariant::from_u256(variant.parse().unwrap()),
                 fee: pool_fee
             };
-            
+            trace!("Time to get pool from db: {:?}ms", time.elapsed().as_millis());
             Ok(pool)
         } else {
             Err(anyhow!("Pool not found"))

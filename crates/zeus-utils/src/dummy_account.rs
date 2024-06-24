@@ -5,6 +5,7 @@ use std::str::FromStr;
 
 use zeus_types::{ChainId, forked_db::{fork_factory::ForkFactory, keccak256}};
 
+#[derive(Clone)]
 pub enum AccountType {
     /// Externally Owned Account
     EOA,
@@ -14,6 +15,7 @@ pub enum AccountType {
 }
 
 /// Represents a dummy account we want to insert into the fork enviroment
+#[derive(Clone)]
 pub struct DummyAccount {
     pub account_type: AccountType,
 
@@ -83,7 +85,7 @@ pub fn insert_dummy_account(
     Ok(())
 }
 
-fn get_native_coin(chain_id: ChainId) -> Address {
+pub fn get_native_coin(chain_id: ChainId) -> Address {
     match chain_id {
         ChainId::Ethereum(_) => Address::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap(),
         ChainId::BinanceSmartChain(_) => Address::from_str("0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c").unwrap(),

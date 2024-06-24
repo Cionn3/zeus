@@ -3,9 +3,10 @@ use tokio::sync::RwLock;
 use zeus_types::{ChainId, WsClient, BlockInfo};
 
 use crossbeam::channel::{ Sender, Receiver, bounded };
-use crate::oracles::block::{start_block_oracle, BlockOracle};
+use crate::oracles::block::{start_block_oracle, BlockOracle, PriceOracle};
 
 pub mod block;
+
 pub mod fork;
 
 pub enum OracleAction {
@@ -13,7 +14,7 @@ pub enum OracleAction {
 }
 
 /// Manage any oracles based on the provided chain_id
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OracleManager {
 
     pub chain_id: ChainId,
@@ -25,6 +26,9 @@ pub struct OracleManager {
     pub action_receiver: Receiver<OracleAction>,
 
     pub block_oracle: Arc<RwLock<BlockOracle>>,
+
+    pub price_oracle: Arc<RwLock<PriceOracle>>,
+
 }
 
 impl OracleManager {
@@ -32,13 +36,20 @@ impl OracleManager {
         let (action_sender, action_receiver) = bounded(10);
 
         let block_oracle = Arc::new(RwLock::new(BlockOracle::new(client.clone(), chain_id.clone()).await?));
+        let block;
+        {
+            let block_oracle = block_oracle.read().await;
+            block = block_oracle.latest_block.full_block.clone();
+        }
+        let price_oracle = Arc::new(RwLock::new(PriceOracle::new(client.clone(), chain_id.clone(), block.unwrap()).await?));
 
         Ok(Self {
             chain_id,
             client,
             action_sender,
             action_receiver,
-            block_oracle
+            block_oracle,
+            price_oracle
         })
     }
 
@@ -51,9 +62,12 @@ impl OracleManager {
         let client = self.client.clone();
         let block_oracle = self.block_oracle.clone();
         let action_receiver = self.action_receiver.clone();
+        let action_receiver_2 = self.action_receiver.clone();
+        let price_oracle = self.price_oracle.clone();
+        let chain_id = self.chain_id.clone();
 
         tokio::spawn(async move {
-            start_block_oracle(client, block_oracle, action_receiver).await;
+            start_block_oracle(client, chain_id, block_oracle, price_oracle, action_receiver).await;
         });
     }
 

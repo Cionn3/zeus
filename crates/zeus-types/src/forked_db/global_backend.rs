@@ -137,11 +137,13 @@ impl GlobalBackend {
                 let provider = self.provider.clone();
                 let block_num = self.block_num.unwrap();
                 let fut = Box::pin(async move {
-                   
+                   tracing::trace!("Requesting Account Info for {}", address);
+                   let time = std::time::Instant::now();
                     let balance = provider.get_balance(address).block_id(block_num).into_future();
                     let nonce = provider.get_transaction_count(address).block_id(block_num).into_future();
                     let code = provider.get_code_at(address).block_id(block_num).into_future();
                     let resp = tokio::try_join!(balance, nonce, code);
+                    tracing::trace!("Time to get account info: {:?}ms", time.elapsed().as_millis());
 
                     (resp, address)
                 });
@@ -161,7 +163,10 @@ impl GlobalBackend {
                 let provider = self.provider.clone();
                  let block_num = self.block_num.unwrap();
                 let fut = Box::pin(async move {
+                    tracing::trace!("Requesting Storage for {} at {}", address, idx);
+                    let time = std::time::Instant::now();
                     let storage = provider.get_storage_at(address, idx).block_id(block_num).await;
+                    tracing::trace!("Time to get storage: {:?}ms", time.elapsed().as_millis());
 
                     (storage, address, idx)
                 });
@@ -182,7 +187,10 @@ impl GlobalBackend {
                 let block_id = self.block_num.unwrap();
 
                 let fut = Box::pin(async move {
+                    tracing::trace!("Requesting Block Hash for {}", number);
+                    let time = std::time::Instant::now();
                     let block = provider.get_block(block_id, true).await;
+                    tracing::trace!("Time to get block hash: {:?}ms", time.elapsed().as_millis());
 
                     let block_hash = match block {
                         Ok(Some(block)) =>
