@@ -1,6 +1,8 @@
 use tokio::sync::RwLock;
 use zeus_types::defi::dex::uniswap::pool::Pool;
 use zeus_types::defi::erc20::ERC20Token;
+use zeus_types::defi::zeus_router::encode_swap;
+use zeus_types::forked_db::revert_msg;
 use std::sync::Arc;
 use std::str::FromStr;
 use futures_util::StreamExt;
@@ -161,19 +163,21 @@ pub async fn start_block_oracle(
                 last_request = price_oracle.last_request;
             }
 
+            
             let time = Instant::now();
             if time.duration_since(last_request) > Duration::from_secs(TIME_OUT) {
                 let weth_price = match get_price(client.clone(), chain_id.clone(), block, weth, stable_coin).await {
                     Ok(weth_price) => weth_price,
                     Err(e) => {
                         error!("Error getting weth price: {}", e);
-                        continue;
+                        U256::ZERO
                     }
                 };
                 let mut price_oracle = price_oracle.write().await;
                 price_oracle.weth_usdc = weth_price;
                 price_oracle.last_request = time;
             }
+            
     }
 }
 }
@@ -234,6 +238,8 @@ async fn get_price(
         minimum_received: U256::from(0),
     };
 
+    let swap_data = encode_swap(params.clone());
+
     // approve the contract to spend token_in
     evm.tx_mut().caller = dummy_caller.address;
     evm.tx_mut().transact_to = TransactTo::Call(token_in.address);
@@ -242,13 +248,16 @@ async fn get_price(
 
     evm.transact_commit()?;
     evm.tx_mut().transact_to = TransactTo::Call(dummy_contract.address);
+    evm.tx_mut().data = swap_data;
 
     let res = evm.transact()?.result;
 
     let weth_price = if res.is_success() {
         decode_swap(res.into_output().unwrap())?
     } else {
-        return Err(anyhow::anyhow!("Failed to get weth price"));
+        let err = revert_msg(&res.into_output().unwrap());
+        error!("Error getting weth price: {}", err);
+        U256::ZERO
     };
 
 
