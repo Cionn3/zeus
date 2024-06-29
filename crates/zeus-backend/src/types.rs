@@ -1,6 +1,6 @@
-use alloy::primitives::{ Address, U256, Bytes };
+use alloy::primitives::{ Address, U256};
 use alloy::{ providers::RootProvider, pubsub::PubSubFrontend, rpc::types::eth::Block };
-use zeus_types::{BlockInfo, defi::erc20::ERC20Token, app_state::state::QuoteResult};
+use zeus_types::defi::erc20::ERC20Token;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -39,25 +39,15 @@ pub enum Request {
 
     GetERC20Token { id: String, address: Address, client: Arc<WsClient>, chain_id: u64 },
 
-    /// Get the `latest_block` & `next_block` Info from the [crate::OracleManager]
-    /// 
-    /// No need to specify chain_id, since we update it every time we change a chain
-    GetBlockInfo,
-
 }
 
 /// The response from the backend
 pub enum Response {
 
-    GetQuoteResult(QuoteResult),
-
     EthBalance(U256),
 
     GetClient(Arc<WsClient>, ChainId),
 
-   // GetERC20Token(ERC20Token, String),
-
-    GetBlockInfo((BlockInfo, BlockInfo)),
 }
 
 /// Parameters needed to simulate a swap

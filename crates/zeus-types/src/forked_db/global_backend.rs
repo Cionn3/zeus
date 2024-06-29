@@ -189,7 +189,7 @@ impl GlobalBackend {
                 let fut = Box::pin(async move {
                     tracing::trace!("Requesting Block Hash for {}", number);
                     let time = std::time::Instant::now();
-                    let block = provider.get_block(block_id, true).await;
+                    let block = provider.get_block(block_id, true.into()).await;
                     tracing::trace!("Time to get block hash: {:?}ms", time.elapsed().as_millis());
 
                     let block_hash = match block {

@@ -1,10 +1,11 @@
 use eframe::{
     egui::{
         style::{Selection, WidgetVisuals, Widgets}, Color32, Frame, RichText, Rounding, Stroke, Ui, Visuals,
+        FontId, TextEdit, vec2
     },
     epaint::Margin,
 };
-use egui::{FontId, TextEdit};
+
 use misc::frame;
 use crate::{fonts::roboto_regular, AppData};
 use wallet_ui::wallet_ui;
@@ -108,7 +109,7 @@ impl GUI {
 
 
         frame().show(ui, |ui| {
-            ui.set_max_size(egui::vec2(400.0, 500.0));
+            ui.set_max_size(vec2(400.0, 500.0));
 
             ui.vertical_centered(|ui| {
                 ui.label(description);

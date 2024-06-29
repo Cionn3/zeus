@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::collections::HashMap;
 use alloy::primitives::U256;
-use alloy::signers::wallet::{LocalWallet, Wallet as AlloyWallet};
+use alloy::signers::local::{PrivateKeySigner, LocalSigner};
 use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::core::hex::encode;
 use serde::{Serialize, Deserialize};
@@ -79,7 +79,7 @@ pub struct Wallet {
     pub balance: HashMap<u64, WalletBalance>,
     
     /// The key of the wallet
-    pub key: AlloyWallet<SigningKey>,
+    pub key: LocalSigner<SigningKey>,
 }
 
 impl Wallet {
@@ -108,13 +108,13 @@ impl Wallet {
 
     /// Get wallet's key in string format
     pub fn get_key(&self) -> String {
-        let key_vec = self.key.signer().to_bytes().to_vec();
+        let key_vec = self.key.to_bytes().to_vec();
         encode(key_vec)
     }
 
     /// Create a new wallet with a random private key
     pub fn new_rng(name: String) -> Self {
-        let key = LocalWallet::random();
+        let key = PrivateKeySigner::random();
 
         let name = if name.is_empty() {
             key.address().to_string()
@@ -131,7 +131,7 @@ impl Wallet {
 
     /// Create a new wallet from a given private key
     pub fn new_from_key(name: String, key_str: String) -> Result<Self, anyhow::Error> {
-        let key = LocalWallet::from_str(&key_str)?;  
+        let key = PrivateKeySigner::from_str(&key_str)?;  
 
         let name = if name.is_empty() {
             key.address().to_string()
@@ -235,7 +235,7 @@ impl Profile {
     pub fn serialize_to_json(&self) -> Result<String, anyhow::Error> {
         let mut wallet_data = Vec::new();
         for wallet in self.wallets.iter() {
-            let key_vec = wallet.key.signer().to_bytes().to_vec();
+            let key_vec = wallet.key.to_bytes().to_vec();
             let key = encode(&key_vec);
             let data = WalletData {
                 name: wallet.name.clone(),

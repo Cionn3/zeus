@@ -1,4 +1,4 @@
-use egui::{ include_image, Image, Sense };
+use eframe::egui::{ include_image, Image, Sense, Color32 };
 
 /// Get the chain icon from the given chain_id
 pub fn get_chain_icon(id: u64) -> Image<'static> {
@@ -16,7 +16,7 @@ pub fn tx_settings_icon() -> Image<'static> {
         .max_width(24.0)
         .rounding(20.0)
         .sense(Sense::click())
-        .bg_fill(egui::Color32::WHITE)
+        .bg_fill(Color32::WHITE)
 }
 
 pub fn green_circle() -> Image<'static> {

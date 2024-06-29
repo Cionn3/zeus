@@ -1,4 +1,4 @@
-use alloy::signers::wallet::LocalWallet;
+use alloy::signers::local::LocalSigner;
 use alloy::primitives::{Address, U256};
 use revm::primitives::{Bytecode, AccountInfo, B256};
 use std::str::FromStr;
@@ -34,7 +34,7 @@ impl DummyAccount {
             account_type,
             balance,
             weth_balance,
-            address: LocalWallet::random().address()
+            address: LocalSigner::random().address()
         }
     }
 }

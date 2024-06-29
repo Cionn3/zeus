@@ -1,69 +1,63 @@
-use tokio::sync::RwLock;
-use zeus_types::defi::dex::uniswap::pool::Pool;
-use zeus_types::defi::erc20::ERC20Token;
-use zeus_types::defi::zeus_router::encode_swap;
-use zeus_types::forked_db::revert_msg;
-use std::sync::Arc;
-use std::str::FromStr;
+use std::sync::{ Arc, RwLock };
 use futures_util::StreamExt;
 use crossbeam::channel::Receiver;
-use alloy::providers::Provider;
+use alloy::{
+    primitives::{ address, utils::format_units, Address, U256 },
+    providers::Provider,
+    rpc::types::eth::{ Block, BlockId, BlockNumberOrTag },
+    sol,
+};
 
-use alloy::rpc::types::eth::{ Block, BlockId, BlockNumberOrTag };
-use alloy::primitives::U256;
-use zeus_types::{ WsClient, BlockInfo, defi::zeus_router::{SwapRouter, decode_swap, swap_router_bytecode} };
-use crate::{dummy_account::*, ChainId, new_evm, parse_ether};
-use revm::{db::{EmptyDB, CacheDB}, primitives::{TransactTo, Address}};
-use zeus_types::forked_db::fork_factory::ForkFactory;
+use zeus_types::{ WsClient, BlockInfo };
+use crate::ChainId;
 use tracing::{ info, error };
 use super::OracleAction;
 
-use std::time::{Instant, Duration};
+use std::time::{ Instant, Duration };
 
-const TIME_OUT: u64 = 60;
+const ETH_USD_FEED: Address = address!("5f4eC3Df9cbd43714FE2740f5E3616155c5b8419");
+const ETH_USD_FEED_DECIMALS: u8 = 8;
 
+const BNB_USD_FEED: Address = address!("0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE");
+const BASE_ETH_USD_FEED: Address = address!("71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70");
+const ARB_ETH_USD_FEED: Address = address!("639Fe6ab55C921f74e7fac1ee960C0B6293ba612");
+
+/// Time out for querying the gas price
+const TIME_OUT: u64 = 30;
+
+sol!(
+    #[sol(rpc)]
+    contract ChainLinkOracle {
+        function latestAnswer() external view returns (int256);
+    }
+);
+
+
+
+/// Gas Price in USD
 #[derive(Clone)]
-pub struct PriceOracle {
-    /// Weth price in USD
-    pub weth_usdc: U256,
-
-    pub chain_id: ChainId,
-
-    pub weth: ERC20Token,
-
-    pub stable_coin: ERC20Token,
-
-    /// Time of last request
-    pub last_request: Instant,
+struct GasPrice {
+    price: f64,
+    eth_usd: U256,
+    last_request: Instant,
 }
 
-impl PriceOracle {
-    pub async fn new(
+impl GasPrice {
+    async fn new(
         client: Arc<WsClient>,
-        chain_id: ChainId,
-        block: Block
+        chain_id: u64,
+        base_fee: U256
     ) -> Result<Self, anyhow::Error> {
-        let weth = ERC20Token::new(get_native_coin(chain_id.clone()), client.clone(), chain_id.id()).await?;
-        let stable_coin = match chain_id {
-            // USDC
-            ChainId::Ethereum(_) => Address::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap(),
-            // USDT
-            ChainId::BinanceSmartChain(_) => Address::from_str("0x55d398326f99059ff77548524499027b3197955").unwrap(),
-            // USDC
-            ChainId::Base(_) => Address::from_str("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913").unwrap(),
-            // USDC
-            ChainId::Arbitrum(_) => Address::from_str("0xaf88d065e77c8cc2239327c5edb3a432268e5831").unwrap(),
-        };
-        let stable_coin = ERC20Token::new(stable_coin, client.clone(), chain_id.id()).await?;
-        let weth_price = get_price(client.clone(), chain_id.clone(), block, weth.clone(), stable_coin.clone()).await?;
+        let eth_usd = get_eth_price(client.clone(), chain_id).await?;
+        let price = get_usd_value(eth_usd.clone(), base_fee)?;
 
-        Ok(Self {
-            weth_usdc: weth_price,
-            chain_id,
-            weth,
-            stable_coin,
-            last_request: Instant::now(),
-        })
+        Ok(Self { price, eth_usd, last_request: Instant::now() })
+    }
+
+    fn update(&mut self, price: f64, eth_usd: U256) {
+        self.price = price;
+        self.eth_usd = eth_usd;
+        self.last_request = Instant::now();
     }
 }
 
@@ -72,12 +66,15 @@ pub struct BlockOracle {
     pub latest_block: BlockInfo,
     pub next_block: BlockInfo,
     pub chain_id: ChainId,
+    gas_price: GasPrice,
 }
 
 impl BlockOracle {
     pub async fn new(client: Arc<WsClient>, chain_id: ChainId) -> Result<Self, anyhow::Error> {
+        let time = Instant::now();
+
         let block = client
-            .get_block(BlockId::Number(BlockNumberOrTag::Latest), true).await?
+            .get_block(BlockId::Number(BlockNumberOrTag::Latest), true.into()).await?
             .expect("Block is missing");
 
         let next_block = next_block(chain_id.clone(), block.clone())?;
@@ -88,13 +85,43 @@ impl BlockOracle {
             block.header.timestamp,
             U256::from(block.header.base_fee_per_gas.unwrap_or_default())
         );
-        
+
+        let gas_price = GasPrice::new(client.clone(), chain_id.id(), next_block.base_fee).await?;
+
+        info!("Block Oracle initialized in: {:?}ms", time.elapsed().as_millis());
 
         Ok(Self {
             latest_block,
             next_block,
             chain_id,
+            gas_price,
         })
+    }
+
+    pub fn default() -> Arc<RwLock<Self>> {
+        let latest_block = BlockInfo {
+            full_block: None,
+            number: 0,
+            timestamp: 0,
+            base_fee: U256::from(0),
+        };
+
+        let next_block = BlockInfo::new(None, 1, 1, U256::from(0));
+
+        let gas_price = GasPrice {
+            price: 0.0,
+            eth_usd: U256::from(0),
+            last_request: Instant::now(),
+        };
+
+        Arc::new(
+            RwLock::new(Self {
+                latest_block,
+                next_block,
+                chain_id: ChainId::Ethereum(1),
+                gas_price,
+            })
+        )
     }
 
     fn update_block(&mut self, block: Block) -> Result<(), anyhow::Error> {
@@ -109,13 +136,24 @@ impl BlockOracle {
 
         Ok(())
     }
+
+    pub fn get_block_info(&self) -> (BlockInfo, BlockInfo) {
+        (self.latest_block.clone(), self.next_block.clone())
+    }
+
+    pub fn get_gas_price(&self) -> f64 {
+        self.gas_price.price.clone()
+    }
+
+    pub fn get_eth_usd(&self) -> U256 {
+        self.gas_price.eth_usd.clone()
+    }
 }
 
 pub async fn start_block_oracle(
     client: Arc<WsClient>,
     chain_id: ChainId,
     oracle: Arc<RwLock<BlockOracle>>,
-    price_oracle: Arc<RwLock<PriceOracle>>,
     receiver: Receiver<OracleAction>
 ) {
     loop {
@@ -129,22 +167,21 @@ pub async fn start_block_oracle(
             }
         };
 
-        info!("Subscribed to new blocks for the: {:?} Chain", oracle.read().await.chain_id.name());
-
+        let chain_name = chain_id.name();
         while let Some(block) = stream.next().await {
-            info!("Received new block for the: {:?} Chain", oracle.read().await.chain_id.name());
+            info!("Received new block for the: {:?} Chain", chain_name);
             info!("Block Number: {}", block.header.number.expect("Block number is missing"));
 
             match receiver.try_recv() {
                 Ok(OracleAction::STOP) => {
-                    info!("Received stop signal, stopping block oracle");
+                    info!("Received stop signal, stopping block oracle for: {:?}", chain_name);
                     return;
                 }
                 _ => {}
             }
 
             {
-                let mut guard = oracle.write().await;
+                let mut guard = oracle.write().unwrap();
                 match guard.update_block(block.clone()) {
                     Ok(_) => {}
                     Err(e) => {
@@ -153,122 +190,72 @@ pub async fn start_block_oracle(
                 }
             }
 
-            let weth;
-            let stable_coin;
             let last_request;
+            let base_fee;
+
             {
-                let price_oracle = price_oracle.read().await;
-                weth = price_oracle.weth.clone();
-                stable_coin = price_oracle.stable_coin.clone();
-                last_request = price_oracle.last_request;
+                let oracle = oracle.read().unwrap();
+                last_request = oracle.gas_price.last_request;
+                base_fee = oracle.next_block.base_fee;
             }
 
-            
-            let time = Instant::now();
-            if time.duration_since(last_request) > Duration::from_secs(TIME_OUT) {
-                let weth_price = match get_price(client.clone(), chain_id.clone(), block, weth, stable_coin).await {
-                    Ok(weth_price) => weth_price,
+            let now = Instant::now();
+            if now.duration_since(last_request) > Duration::from_secs(TIME_OUT) {
+                let (gas_price, eth_usd) = match
+                    get_gas_price(client.clone(), chain_id.id(), base_fee).await
+                {
+                    Ok((price, eth_usd)) => (price, eth_usd),
                     Err(e) => {
-                        error!("Error getting weth price: {}", e);
-                        U256::ZERO
+                        error!("Error getting gas price: {}", e);
+                        continue;
                     }
                 };
-                let mut price_oracle = price_oracle.write().await;
-                price_oracle.weth_usdc = weth_price;
-                price_oracle.last_request = time;
+
+                let mut oracle = oracle.write().unwrap();
+                oracle.gas_price.update(gas_price, eth_usd);
+                info!("Gas Price updated: ${}", oracle.gas_price.price.clone());
             }
-            
+        }
     }
 }
-}
 
-async fn get_price(
+async fn get_gas_price(
     client: Arc<WsClient>,
-    chain_id: ChainId,
-    block: Block,
-    token_in: ERC20Token,
-    token_out: ERC20Token
-) -> Result<U256, anyhow::Error> {
-    let block_id = BlockId::Number(BlockNumberOrTag::Number(block.header.number.unwrap()));
+    chain_id: u64,
+    base_fee: U256
+) -> Result<(f64, U256), anyhow::Error> {
+    let eth_usd = get_eth_price(client.clone(), chain_id).await?;
+    let price = get_usd_value(eth_usd.clone(), base_fee)?;
 
-    let cache_db = CacheDB::new(EmptyDB::default());
-
-    let mut fork_factory = ForkFactory::new_sandbox_factory(
-        client.clone(),
-        cache_db,
-        Some(block_id)
-    );
-
-    let eoa = AccountType::EOA;
-    let contract = AccountType::Contract(swap_router_bytecode());
-
-    let dummy_caller = DummyAccount::new(eoa, parse_ether("10")?, parse_ether("10")?);
-    let dummy_contract = DummyAccount::new(contract, U256::ZERO, U256::ZERO);
-
-    if let Err(e) = insert_dummy_account(&dummy_caller, chain_id.clone(), &mut fork_factory) {
-        return Err(e);
-    }
-
-    if let Err(e) = insert_dummy_account(&dummy_contract, chain_id.clone(), &mut fork_factory) {
-        return Err(e);
-    }
-
-    let fork_db = fork_factory.new_sandbox_fork();
-
-    let mut evm = new_evm(fork_db, block, chain_id.clone());
-
-    let pool_address = match chain_id {
-
-        // WETH/USDC V3 
-        ChainId::Ethereum(_) => Address::from_str("0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640").unwrap(),
-        // WBNB/USDT Pancake V3
-        ChainId::BinanceSmartChain(_) => Address::from_str("0x36696169c63e42cd08ce11f5deebbcebae652050").unwrap(),
-        // WETH/USDC V3
-        ChainId::Base(_) => Address::from_str("0xd0b53d9277642d899df5c87a3966a349a798f224").unwrap(),
-        // WETH/USDC V3
-        ChainId::Arbitrum(_) => Address::from_str("0xc6962004f452be9203591991d15f6b388e09e8d0").unwrap(),
-    };
-
-    let params = SwapRouter::Params {
-        input_token: token_in.address,
-        output_token: token_out.address,
-        amount_in: parse_ether("1")?,
-        pool: pool_address,
-        pool_variant: U256::from(1),
-        minimum_received: U256::from(0),
-    };
-
-    let swap_data = encode_swap(params.clone());
-
-    // approve the contract to spend token_in
-    evm.tx_mut().caller = dummy_caller.address;
-    evm.tx_mut().transact_to = TransactTo::Call(token_in.address);
-    evm.tx_mut().value = U256::ZERO;
-    evm.tx_mut().data = token_in.encode_approve(dummy_contract.address, params.amount_in).into();
-
-    evm.transact_commit()?;
-    evm.tx_mut().transact_to = TransactTo::Call(dummy_contract.address);
-    evm.tx_mut().data = swap_data;
-
-    let res = evm.transact()?.result;
-
-    let weth_price = if res.is_success() {
-        decode_swap(res.into_output().unwrap())?
-    } else {
-        let err = revert_msg(&res.into_output().unwrap());
-        error!("Error getting weth price: {}", err);
-        U256::ZERO
-    };
-
-
-    Ok(weth_price)
-
+    Ok((price, eth_usd))
 }
 
+fn get_usd_value(eth_usd: U256, base_fee: U256) -> Result<f64, anyhow::Error> {
+    let base = U256::from(10).pow(U256::from(18));
+    let value = (U256::from(base_fee) * eth_usd) / base;
+    let formatted = format_units(value, ETH_USD_FEED_DECIMALS)?.parse::<f64>()?;
+    Ok(formatted)
+}
 
+async fn get_eth_price(
+    client: Arc<WsClient>,
+    chain_id: u64
+) -> Result<U256, anyhow::Error> {
+    let feed = match chain_id {
+        1 => ETH_USD_FEED,
+        56 => BNB_USD_FEED,
+        8453 => BASE_ETH_USD_FEED,
+        42161 => ARB_ETH_USD_FEED,
+        _ => ETH_USD_FEED,
+    };
 
+    let oracle = ChainLinkOracle::new(feed, client.clone());
+    let eth_usd = oracle.latestAnswer().call().await?._0;
 
-
+    // convert i256 to U256
+    let eth_usd = eth_usd.to_string().parse::<U256>()?;
+    Ok(eth_usd)
+}
 
 /// Calculate the next block
 fn next_block(chain_id: ChainId, block: Block) -> Result<BlockInfo, anyhow::Error> {

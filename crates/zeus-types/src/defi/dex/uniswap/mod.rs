@@ -1,6 +1,5 @@
 use alloy::{
     primitives::{ Address, Bytes, U256 },
-    providers::RootProvider,
     sol,
 };
 use std::{sync::Arc, str::FromStr};

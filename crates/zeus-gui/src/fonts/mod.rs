@@ -1,4 +1,4 @@
-use egui::{epaint::text::FontDefinitions, FontData, FontFamily, FontTweak};
+use eframe::egui::{epaint::text::FontDefinitions, FontData, FontFamily, FontTweak};
 use std::borrow::Cow;
 
 

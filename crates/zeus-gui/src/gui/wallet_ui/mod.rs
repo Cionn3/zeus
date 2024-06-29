@@ -1,4 +1,4 @@
-use eframe::{ egui::{ Ui, TextEdit, Align2, ComboBox }, epaint::vec2 };
+use eframe::{ egui::{ Ui, TextEdit, Align2, ComboBox, Window }, epaint::vec2 };
 
 use super::{ misc::{ frame, rich_text }, GUI };
 use crate::AppData;
@@ -99,7 +99,7 @@ fn create_or_import_wallet(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
         }
     }
 
-    egui::Window
+    Window
         ::new(wallet_action)
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
@@ -190,7 +190,7 @@ pub fn export_key_ui(ui: &mut Ui, data: &mut AppData) {
     let password = rich_text("Password", 15.0);
     let confirm_password = rich_text("Confirm Password", 15.0);
 
-    egui::Window
+    Window
         ::new("Export Key")
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
@@ -263,7 +263,7 @@ pub fn show_exported_key(ui: &mut Ui) {
         }
     }
 
-    egui::Window
+    Window
         ::new("Exported Key")
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))

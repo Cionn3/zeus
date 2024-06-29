@@ -5,12 +5,14 @@ use alloy::{
     rpc::types::eth::{ BlockId, BlockNumberOrTag },
 };
 
+
 use std::sync::Arc;
-use tokio::{ runtime::Runtime, sync::{ RwLock as tokioRwLock, Mutex } };
-use crossbeam::channel::{ Sender, Receiver };
-use revm::{ primitives::{ Bytes, TransactTo }, Evm, db::{ CacheDB, EmptyDB } };
+use tokio::{ runtime::Runtime, sync::Mutex};
+use crossbeam::channel::{ Sender, Receiver, bounded };
+use revm::{ primitives::TransactTo, Evm, db::{ CacheDB, EmptyDB } };
 use anyhow::{ anyhow, Context };
 use tracing::{ info, error, trace };
+use bigdecimal::BigDecimal;
 
 use zeus_types::{
     app_state::state::*,
@@ -29,7 +31,7 @@ use zeus_types::{
 
 use zeus_utils::{
     new_evm,
-    oracles::{ OracleManager, OracleAction },
+    oracles::{ *, block::start_block_oracle, OracleAction },
     dummy_account::*,
     parse_ether,
 };
@@ -53,8 +55,7 @@ pub struct Backend {
 
     pub db: ZeusDB,
 
-    /// The oracle manager
-    pub oracle_manager: Option<Arc<tokioRwLock<OracleManager>>>,
+    pub oracle_sender: Option<Sender<OracleAction>>,
 }
 
 impl Backend {
@@ -63,7 +64,7 @@ impl Backend {
             back_sender,
             front_receiver,
             db: ZeusDB::new().unwrap(),
-            oracle_manager: None,
+            oracle_sender: None,
         }
     }
 
@@ -89,17 +90,13 @@ impl Backend {
                             }
 
                             Request::InitOracles { client, chain_id } => {
-                                match self.init_oracle_manager(client, chain_id).await {
+                                match self.init_oracles(client, chain_id).await {
                                     Ok(_) => {}
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
                                         state.err_msg = ErrorMsg::new(true, e);
                                     }
                                 }
-                            }
-
-                            Request::GetBlockInfo {} => {
-                                self.get_block_info().await;
                             }
 
                             Request::GetERC20Balance {
@@ -198,46 +195,47 @@ impl Backend {
         })
     }
 
-    async fn init_oracle_manager(
+    async fn init_oracles(
         &mut self,
         client: Arc<WsClient>,
         id: ChainId
     ) -> Result<(), anyhow::Error> {
-        println!("Initializing Oracle Manager for Chain: {}", id.name());
+        info!("Initializing Oracles for Chain: {}", id.name());
+        self.stop_previous_oracles().await;
 
-        let oracle_manager = OracleManager::new(client, id.clone()).await?;
-        self.handle_oracle().await;
-        self.oracle_manager = Some(Arc::new(tokioRwLock::new(oracle_manager)));
-        self.start_oracles().await;
+        let new_block_oracle = block::BlockOracle::new(client.clone(), id.clone()).await?;
+        
+        {
+            let mut block_oracle_1 = BLOCK_ORACLE.write().unwrap();
+            *block_oracle_1 = new_block_oracle;
+        }
+
+
+        let (action_sender, action_receiver) = bounded(10);
+        self.oracle_sender = Some(action_sender);
+
+        let client_clone = client.clone();
+        let chain_id_clone = id.clone();
+        let action_receiver_1 = action_receiver.clone();
+
+        tokio::spawn(async move {
+            start_block_oracle(client_clone, chain_id_clone, BLOCK_ORACLE.clone(), action_receiver_1).await;
+            info!("Block Oracle started");
+        });
+     
         Ok(())
     }
 
     /// If we already run an oracle stop it so we can start a new one
-    async fn handle_oracle(&mut self) {
-        if let Some(oracle_manager) = &self.oracle_manager {
-            let oracle_manager = oracle_manager.write().await;
-            oracle_manager.action_sender.send(OracleAction::STOP).unwrap();
-        }
-    }
-
-    async fn start_oracles(&mut self) {
-        if let Some(oracle_manager) = &self.oracle_manager {
-            let oracle_manager = oracle_manager.write().await;
-            oracle_manager.start_oracles().await;
-            println!("Oracles Started");
-        }
-    }
-
-    async fn get_block_info(&self) {
-        if let Some(oracle_manager) = &self.oracle_manager {
-            let oracle = oracle_manager.read().await;
-            let (latest_block, next_block) = oracle.get_block_info().await;
-            match self.back_sender.send(Response::GetBlockInfo((latest_block, next_block))) {
+    async fn stop_previous_oracles(&mut self) {
+        if let Some(oracle_sender) = &self.oracle_sender {
+            match oracle_sender.send(OracleAction::STOP) {
                 Ok(_) => {}
-                Err(e) => println!("Error Sending Response: {}", e),
+                Err(e) => error!("Error sending stop action: {}", e),
             }
         }
     }
+
 
     async fn get_eth_balance(
         &mut self,
@@ -449,16 +447,29 @@ impl Backend {
             handle.await?;
         }
     
-        info!("Time to swap: {:?}ms", time.elapsed().as_millis());
+        info!("Time to simulate swap: {:?}ms", time.elapsed().as_millis());
 
         let best_pool = best_pool.lock().await;
         let best_amount_out = best_amount_out.lock().await;
         let pool_to_swap = best_pool.clone();
         let amount_out = best_amount_out.clone();
 
+        let minimum_received = amount_out - (amount_out * U256::from(slippage)) / U256::from(100);
+
+
+        let router_params = Params {
+            input_token: params.token_in.token.address,
+            output_token: params.token_out.token.address,
+            amount_in,
+            pool: pool_to_swap.address,
+            pool_variant: pool_to_swap.variant(),
+            minimum_received
+        };
+    
+        let call_data = encode_swap(router_params);
+
         
 
-        let minimum_received = amount_out - (amount_out * U256::from(slippage)) / U256::from(100);
 
         Ok(QuoteResult {
             block_number: params.block.header.number.unwrap(),
@@ -467,13 +478,13 @@ impl Backend {
             input_token_usd_worth: "TODO".to_string(),
             output_token_usd_worth: "TODO".to_string(),
             price_impact: "TODO".to_string(),
-            slippage: "TODO".to_string(),
+            slippage: slippage.to_string(),
             real_amount: amount_out.to_string(),
             minimum_received: minimum_received.to_string(),
             token_tax: "TODO".to_string(),
             pool_fee: "TODO".to_string(),
             gas_cost: "TODO".to_string(),
-            data: Bytes::default(),
+            data: call_data,
         })
     }
 
@@ -604,4 +615,54 @@ fn sim_swap(
 
     
     Ok(amount_out)
+}
+
+
+
+/// Calculate token out price in usd
+/// 
+/// This only works if `base_token` is WETH and `quote_token` is anything except of a stable coin
+/// 
+/// ## Arguments
+/// 
+/// `base_token` - ([ERC20Token], amount_in, price_in_usd)
+/// 
+/// `quote_token` - ([ERC20Token], amount_out)
+pub fn calc_quote_token_price(
+    base_token: (ERC20Token, U256, BigDecimal),
+    quote_token: (ERC20Token, U256),
+) -> BigDecimal {
+
+    let base_token_erc20 = base_token.0;
+    let base_token_amount = base_token.1;
+    let base_token_usd_price = base_token.2;
+
+    let quote_token_erc20 = quote_token.0;
+    let quote_token_amount = quote_token.1;
+
+    // convert amount_in to BigDecimal
+    let amount_in_str = base_token_erc20.big_dec(base_token_amount.to_string());
+    info!("Amount in str: {}", amount_in_str);
+
+    // Convert amount_out to BigDecimal
+    let amount_out_str = quote_token_erc20.big_dec(quote_token_amount.to_string());
+    info!("Amount out str: {}", amount_out_str);
+
+
+    // Quote price in base token
+    let quote_price_in_base = amount_in_str.clone() / amount_out_str.clone();
+    info!("Quote price in base: {}", quote_price_in_base);
+
+    // Calculate the price of the quote token in USD
+    let quote_price_usd = quote_price_in_base * base_token_usd_price.clone();
+
+    // quote total worth in usd
+    let quote_total_worth_usd = quote_price_usd.clone() * amount_out_str.clone();
+    info!("Quote total worth usd: {}", quote_total_worth_usd);
+
+    let base_total_worth = base_token_usd_price * amount_in_str;
+    info!("Base total worth: {}", base_total_worth);
+
+
+    quote_price_usd
 }

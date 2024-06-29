@@ -8,20 +8,9 @@ edition = "2021"
 [dependencies]
 zeus-types = {path = "../zeus-types"}
 
-alloy = { git = "https://github.com/alloy-rs/alloy", rev = "4000b77", features = [
-    "contract",
-    "network",
-    "node-bindings",
-    "providers",
-    "provider-ws",
-    "rpc-client",
-    "rpc-client-ws",
-    "rpc-types-eth",
-    "signers",
-    "signer-wallet",
-] }
+alloy = { version = "0.1", features = ["full"] }
 
-revm = { version = "9.0.0", features = [
+revm = { version = "10.0.0", features = [
     "serde",
     "std",
     "optional_block_gas_limit",
@@ -42,3 +31,4 @@ hashbrown = "0.14.0"
 anyhow = "1.0.44"
 bigdecimal = "0.4.1"
 crossbeam = "0.8.4"
+lazy_static = "1.5.0"

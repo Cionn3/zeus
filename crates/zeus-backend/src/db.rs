@@ -5,7 +5,7 @@ use alloy::primitives::{Address, U256};
 use zeus_types::defi::{erc20::ERC20Token, dex::uniswap::pool::{Pool, PoolVariant}};
 use std::{collections::HashMap, path::PathBuf};
 use anyhow::anyhow;
-use tracing::{info, trace};
+use tracing::trace;
 
 #[derive(Clone)]
 pub struct ZeusDB {

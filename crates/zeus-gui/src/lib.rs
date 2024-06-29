@@ -1,4 +1,4 @@
-use std::{ collections::HashMap, time::{ Instant, Duration }, panic::set_hook };
+use std::{ collections::HashMap, time::{ Instant, Duration } };
 use eframe::{ egui, CreationContext };
 use egui::{ vec2, Align2, ComboBox, Context, Style, Ui };
 
@@ -18,22 +18,27 @@ use crate::{
     },
 };
 
-use zeus_backend::{ db::ZeusDB, types::{ Request, Response, SwapParams }, Backend };
+use zeus_backend::{ db::ZeusDB, types::{ Request, Response }, Backend };
+use zeus_utils::oracles::BLOCK_ORACLE;
 
-use tracing_subscriber::{ fmt, layer::SubscriberExt, util::SubscriberInitExt};
-use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::{
+    fmt,
+    layer::SubscriberExt,
+    prelude::*,
+    util::SubscriberInitExt,
+    EnvFilter,
+};
 
-use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::Registry;
 
-use tracing::info;
 
 
 pub mod gui;
 pub mod fonts;
 
 /// Rate Limit
-const TIME_OUT: u64 = 8;
+const TIME_OUT: u64 = 2;
 
 /// The main application struct
 pub struct ZeusApp {
@@ -70,22 +75,29 @@ impl Default for ZeusApp {
     }
 }
 
-fn setup_logging() -> WorkerGuard {
-    let file_appender = tracing_appender::rolling::daily("logs", "output.txt");
-    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+fn setup_logging() -> (WorkerGuard, WorkerGuard) {
+    // Setup for file appenders
+    let trace_appender = tracing_appender::rolling::daily("./logs", "trace.log");
+    let output_appender = tracing_appender::rolling::daily("./logs", "output.log");
 
-    // Set up the filter
-    let filter_layer = EnvFilter::try_from_default_env().unwrap_or_else(|_|
-        EnvFilter::new("info, warn, error")
-    );
+    // Creating non-blocking writers
+    let (trace_writer, trace_guard) = tracing_appender::non_blocking(trace_appender);
+    let (output_writer, output_guard) = tracing_appender::non_blocking(output_appender);
 
-    let fmt_layer = fmt::layer().with_writer(std::io::stdout).with_span_events(FmtSpan::CLOSE);
+    // Defining filters
+    let console_filter = EnvFilter::new("zeus=info,error,warn");
+    let trace_filter = EnvFilter::new("zeus=trace");
+    let output_filter = EnvFilter::new("zeus=info,error,warn");
 
-    let file_layer = fmt::layer().with_writer(non_blocking).with_span_events(FmtSpan::CLOSE);
+    // Setting up layers
+    let console_layer = fmt::layer().with_writer(std::io::stdout).with_filter(console_filter);
+    let trace_layer = fmt::layer().with_writer(trace_writer).with_filter(trace_filter);
+    let output_layer = fmt::layer().with_writer(output_writer).with_filter(output_filter);
 
-    tracing_subscriber::registry().with(filter_layer).with(fmt_layer).with(file_layer).init();
+    // Applying configuration
+    Registry::default().with(trace_layer).with(console_layer).with(output_layer).init();
 
-    guard
+    (trace_guard, output_guard)
 }
 
 impl ZeusApp {
@@ -172,40 +184,7 @@ impl ZeusApp {
         }
     }
 
-    fn update_block(&mut self) {
-        self.send_request(Request::GetBlockInfo);
-
-    }
-
-    fn request_quote_result(&mut self) {
-        let swap_state = SWAP_UI_STATE.read().unwrap();
-
-        if swap_state.input_token.amount_to_swap.is_empty() {
-            return;
-        }
-
-        if self.data.block_info.0.number <= swap_state.quote_result.block_number {
-            return;
-        }
-
-        let time = Instant::now();
-        if time.duration_since(self.last_quote_request) > Duration::from_secs(TIME_OUT) {
-            info!("Requesting Quote Result");
-        self.send_request(Request::GetQuoteResult {
-            params: SwapParams {
-                token_in: swap_state.input_token.clone(),
-                token_out: swap_state.output_token.clone(),
-                amount_in: swap_state.input_token.amount_to_swap.clone(),
-                slippage: self.data.tx_settings.slippage.clone(),
-                chain_id: self.data.chain_id.clone(),
-                block: self.data.block_info.0.full_block.clone().unwrap(),
-                client: self.data.ws_client.get(&self.data.chain_id.id()).unwrap().clone(),
-                caller: self.data.wallet_address(),
-                },
-            });
-            self.last_quote_request = time;
-        }
-    }
+    
 
     fn request_eth_balance(&mut self) {
         if self.data.wallet_address().is_zero() {
@@ -243,9 +222,17 @@ impl ZeusApp {
 
         let now = Instant::now();
         if now.duration_since(self.last_erc20_request) > Duration::from_secs(TIME_OUT) {
-        let swap_state = SWAP_UI_STATE.read().unwrap();
+
+        let swap_state_block;
+        {
+            let swap_state = SWAP_UI_STATE.read().unwrap();
+            swap_state_block = swap_state.block;
+        }
         let latest_block = self.data.block_info.0.number;
-        if latest_block > swap_state.block {
+
+        if latest_block > swap_state_block {
+            let mut swap_state = SWAP_UI_STATE.write().unwrap();
+
             let req = Request::GetERC20Balance {
                 id: "input".to_string(),
                 token: swap_state.input_token.token.clone(),
@@ -267,6 +254,9 @@ impl ZeusApp {
 
             self.send_request(req);
             self.last_erc20_request = now;
+
+            // update the swap state block
+            swap_state.block = latest_block;
         }
         
     }
@@ -394,13 +384,6 @@ impl eframe::App for ZeusApp {
             match receive.try_recv() {
                 Ok(response) => {
                     match response {
-                        Response::GetBlockInfo(block_info) => {
-                            self.data.block_info = block_info;
-                        }
-
-                        Response::GetQuoteResult(result) => {
-                           // println!("Swap Response: {:?}", result);
-                        }
 
                         Response::EthBalance(balance) => {
                             self.update_eth_balance(balance);
@@ -423,7 +406,13 @@ impl eframe::App for ZeusApp {
             }
         }
 
-        self.update_block();
+        // update to latest block
+        {
+            let oracle = BLOCK_ORACLE.read().unwrap();
+            self.data.block_info = oracle.get_block_info();
+           // info!("Latest Block: {:?}", self.data.block_info.0.number);
+        }
+
         self.request_eth_balance();
         self.request_erc20_balance();
         

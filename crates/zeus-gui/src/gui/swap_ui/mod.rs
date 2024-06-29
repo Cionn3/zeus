@@ -12,14 +12,11 @@ use egui::{
     RichText,
     TextEdit,
     Ui,
-    Response,
-    collapsing_header::CollapsingState,
+    Response
 };
 
 use crate::fonts::roboto_regular;
-use super::icons::tx_settings_icon;
-use super::misc::{ frame, rich_text };
-use super::ErrorMsg;
+use super::{icons::tx_settings_icon, misc::{ frame, rich_text }, ErrorMsg};
 use zeus_types::defi::erc20::ERC20Token;
 use zeus_types::app_state::{ AppData, state::SHARED_UI_STATE };
 use zeus_backend::types::SwapParams;

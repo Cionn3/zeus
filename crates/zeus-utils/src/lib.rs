@@ -12,8 +12,7 @@ use std::str::FromStr;
 use anyhow::anyhow;
 use bigdecimal::BigDecimal;
 
-use zeus_types::forked_db::{fork_db::ForkDB, fork_factory::ForkFactory};
-use zeus_types::ChainId;
+use zeus_types::{forked_db::{fork_db::ForkDB, fork_factory::ForkFactory}, ChainId};
 
 
 pub mod dummy_account;

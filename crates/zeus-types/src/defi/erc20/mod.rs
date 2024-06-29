@@ -74,6 +74,14 @@ impl ERC20Token {
         format!("{:.4}", readable)
     }
 
+    /// Return the amount in BigDecimal
+    pub fn big_dec(&self, amount: String) -> BigDecimal {
+        let divisor_str = format!("1{:0>width$}", "", width = self.decimals as usize);
+        let divisor = BigDecimal::from_str(&divisor_str).unwrap_or_default();
+        let amount = BigDecimal::from_str(&amount).unwrap_or_default();
+        amount / divisor
+    }
+
     /// Parse to wei
     pub fn parse(&self, amount: &str) -> Result<U256, anyhow::Error> {
         let amount = BigDecimal::from_str(amount)?;

@@ -8,7 +8,8 @@ use eframe::{
         Rounding,
         vec2,
         Align2,
-        Checkbox
+        Checkbox,
+        Window
     },
     epaint::{ Margin, Shadow },
     emath::Vec2,
@@ -169,7 +170,7 @@ pub fn tx_settings_window(ui: &mut Ui, data: &mut AppData) {
     }
 }
 
-    egui::Window::new("Transaction Settings")
+    Window::new("Transaction Settings")
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
         .collapsible(false)
