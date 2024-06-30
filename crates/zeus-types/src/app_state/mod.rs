@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use crate::{ WsClient, BlockInfo };
 use alloy::primitives::{ U256, Address };
-use bigdecimal::BigDecimal;
+
 use crate::{ profile::{ Credentials, Profile }, ChainId, Rpc };
 
 pub mod state;
@@ -135,18 +135,13 @@ impl AppData {
     }
 
     /// Get eth balance of the current wallet for a specific chain
-    pub fn eth_balance(&self, chain_id: u64) -> String {
+    pub fn eth_balance(&self, chain_id: u64) -> U256 {
         let balance = if let Some(wallet) = &self.profile.current_wallet {
             wallet.get_balance(chain_id)
         } else {
             U256::ZERO
         };
-        // convert to human readable format
-        let divisor_str = format!("1{:0>width$}", "", width = 18_usize);
-        let divisor = BigDecimal::from_str(&divisor_str).unwrap();
-        let amount_as_decimal = BigDecimal::from_str(&balance.to_string()).unwrap();
-        let amount = amount_as_decimal / divisor;
-        format!("{} {:.4}", self.native_coin(), amount)
+        balance
     }
 
 

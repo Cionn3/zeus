@@ -3,7 +3,7 @@ use eframe::{ egui, CreationContext };
 use egui::{ vec2, Align2, ComboBox, Context, Style, Ui };
 
 use crossbeam::channel::{ unbounded, Receiver, Sender };
-use zeus_types::defi::erc20::ERC20Token;
+use zeus_types::defi::currency::Currency;
 use alloy::primitives::U256;
 use zeus_types::app_state::{AppData, state::*};
 
@@ -31,7 +31,7 @@ use tracing_subscriber::{
 
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::Registry;
-
+use tracing::{error, info};
 
 
 pub mod gui;
@@ -113,7 +113,7 @@ impl ZeusApp {
             }
         }
 
-        let tokens: HashMap<u64, Vec<ERC20Token>>;
+        let currencies: HashMap<u64, Vec<Currency>>;
 
         {
             let zeus_db = ZeusDB::new().unwrap();
@@ -125,17 +125,17 @@ impl ZeusApp {
                 }
             }
 
-            tokens = match zeus_db.load_tokens(app.data.supported_networks()) {
-                Ok(tokens) => tokens,
+            currencies = match zeus_db.load_currencies(app.data.supported_networks()) {
+                Ok(currencies) => currencies,
                 Err(e) => {
-                    println!("Error Loading Tokens: {}", e);
+                    println!("Error Loading Currencies: {}", e);
                     HashMap::new()
                 }
             };
         }
 
         let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
-        swap_ui_state.tokens = tokens;
+        swap_ui_state.currencies = currencies;
 
         let (front_sender, front_receiver) = unbounded();
         let (back_sender, back_receiver) = unbounded();
@@ -157,7 +157,6 @@ impl ZeusApp {
             });
         }
 
-        let _state = SHARED_UI_STATE.write().unwrap();
 
         app
     }
@@ -233,19 +232,36 @@ impl ZeusApp {
         if latest_block > swap_state_block {
             let mut swap_state = SWAP_UI_STATE.write().unwrap();
 
+            if !swap_state.input_token.is_native() {
+
+            let token = swap_state.input_token.get_erc20();
+            
+            if token.is_some() {
             let req = Request::GetERC20Balance {
                 id: "input".to_string(),
-                token: swap_state.input_token.token.clone(),
+                token: token.unwrap(),
                 owner: self.data.wallet_address(),
                 chain_id: self.data.chain_id.id(),
                 block: latest_block,
                 client: self.data.ws_client.get(&self.data.chain_id.id()).unwrap().clone(),
             };
             self.send_request(req);
+        } else {
+            error!("Token is None, this should not happen!");
+            info!("Selected Currency: {:?}", swap_state.input_token.clone());
 
+        }
+    }
+        
+
+        if !swap_state.output_token.is_native() {
+
+            let token = swap_state.output_token.get_erc20();
+
+            if token.is_some() {
             let req = Request::GetERC20Balance {
                 id: "output".to_string(),
-                token: swap_state.output_token.token.clone(),
+                token: token.unwrap(),
                 owner: self.data.wallet_address(),
                 chain_id: self.data.chain_id.id(),
                 block: latest_block,
@@ -253,6 +269,12 @@ impl ZeusApp {
             };
 
             self.send_request(req);
+        } else {
+            error!("Token is None, this should not happen!");
+            info!("Selected Currency: {:?}", swap_state.output_token.clone());
+
+        }
+        }
             self.last_erc20_request = now;
 
             // update the swap state block
@@ -429,13 +451,13 @@ impl eframe::App for ZeusApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered_justified(|ui| {
                 self.err_msg(ui);
-               // self.draw_login(ui);
+                self.draw_login(ui);
             });
 
-            /* 
+             
             if !self.data.logged_in || self.data.new_profile_screen {
                 return;
-            } */
+            } 
             
 
             ui.vertical_centered_justified(|ui| {

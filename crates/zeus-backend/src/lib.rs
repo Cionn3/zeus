@@ -17,10 +17,8 @@ use bigdecimal::BigDecimal;
 use zeus_types::{
     app_state::state::*,
     defi::{
-        dex::uniswap::
-            pool::{ get_v2_pool, get_v3_pool, V3_FEES, PoolVariant, Pool },
-        erc20::ERC20Token,
-        zeus_router::{ decode_swap, encode_swap, SwapRouter::Params, swap_router_bytecode },
+        currency::Currency, dex::uniswap::
+            pool::{ get_v2_pool, get_v3_pool, Pool, PoolVariant, V3_FEES }, erc20::ERC20Token, zeus_router::{ decode_swap, encode_swap, swap_router_bytecode, SwapRouter::Params }
     },
     forked_db::{ fork_db::ForkDB, fork_factory::ForkFactory },
     profile::Profile,
@@ -220,9 +218,9 @@ impl Backend {
 
         tokio::spawn(async move {
             start_block_oracle(client_clone, chain_id_clone, BLOCK_ORACLE.clone(), action_receiver_1).await;
-            info!("Block Oracle started");
         });
-     
+
+        info!("Block Oracle started");
         Ok(())
     }
 
@@ -270,23 +268,25 @@ impl Backend {
         let token = if let Ok(token) = self.db.get_erc20(address, chain_id) {
             token
         } else {
-            let token = ERC20Token::new(address, client, chain_id).await?;
+            let token = ERC20Token::new(address, client, chain_id, None).await?;
             self.db.insert_erc20(token.clone(), chain_id)?;
             token
         };
         let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
+        let selected_currency = SelectedCurrency::new_from_erc(token.clone());
+        let currency = Currency::new_erc20(token.clone());
 
         // replace with the new token
-        swap_ui_state.replace_token(&id, SelectedToken::new(token.clone()));
+        swap_ui_state.replace_token(&id, selected_currency);
 
         // close the token list window
         swap_ui_state.update_token_list_status(&id, false);
 
         // update the token list HashMap
-        if let Some(tokens) = swap_ui_state.tokens.get_mut(&chain_id) {
-            tokens.push(token);
+        if let Some(currencies) = swap_ui_state.currencies.get_mut(&chain_id) {
+            currencies.push(currency);
         } else {
-            swap_ui_state.tokens.insert(chain_id, vec![token]);
+            swap_ui_state.currencies.insert(chain_id, vec![currency]);
         }
         Ok(())
     }
@@ -308,10 +308,10 @@ impl Backend {
             balance
         } else {
             let balance = token.balance_of(owner, client.clone()).await?;
-            if let Err(_) = self.db.insert_erc20_balance(token.address, balance, chain_id, block) {
+            if let Err(e) = self.db.insert_erc20_balance(token.address, balance, chain_id, block) {
+                error!("Failed to insert balance into db: {}", e);
             }
-            if let Err(_) = self.db.remove_erc20_balance(block, chain_id) {
-            }
+            
             balance
         };
         // update the balance
@@ -397,7 +397,7 @@ impl Backend {
         fork_db: ForkDB
     ) -> Result<QuoteResult, anyhow::Error> {
         let slippage: f32 = params.slippage.parse().unwrap_or(1.0);
-        let amount_in = params.token_in.token.parse(&params.amount_in)?;
+        let amount_in = params.token_in.token.parse_wei(&params.amount_in)?;
 
         let pools = self.collect_pools(params.clone()).await?;
 
@@ -581,7 +581,7 @@ fn sim_swap(
     params: SwapParams,
     evm: &mut Evm<'static, (), ForkDB>
 ) -> Result<U256, anyhow::Error> {
-    let amount_in = params.token_in.token.parse(&params.amount_in)?;
+    let amount_in = params.token_in.token.parse_wei(&params.amount_in)?;
 
     // approve the contract to spend token_in
     evm.tx_mut().caller = caller.address;

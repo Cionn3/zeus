@@ -3,7 +3,8 @@ use std::sync::{ Arc, RwLock };
 use std::collections::HashMap;
 use alloy::primitives::Bytes;
 
-use crate::defi::erc20::ERC20Token;
+use crate::defi::currency::NativeCurrency;
+use crate::defi::{erc20::ERC20Token, currency::Currency};
 
 lazy_static! {
     pub static ref SHARED_UI_STATE: Arc<RwLock<SharedUiState>> = Arc::new(
@@ -149,6 +150,7 @@ impl QuoteResult {
 }
 
 /// A token that its currently selected in the SwapUI
+#[deprecated]
 #[derive(Clone, PartialEq, Default)]
 pub struct SelectedToken {
     pub token: ERC20Token,
@@ -159,6 +161,21 @@ pub struct SelectedToken {
     /// The balance the owner has for this token
     pub balance: String,
 }
+
+
+/// A currency that its currently selected in the SwapUI
+#[derive(Debug, Clone, PartialEq)]
+pub struct SelectedCurrency {
+    pub currency: Currency,
+
+    /// The amount of currency to swap
+    pub amount_to_swap: String,
+
+    /// The balance the owner has for this currency
+    pub balance: String,
+}
+
+
 
 /// The state of the SwapUI
 pub struct SwapUIState {
@@ -172,32 +189,33 @@ pub struct SwapUIState {
     pub output_token_list_on: bool,
 
     /// The input token
-    pub input_token: SelectedToken,
+    pub input_token: SelectedCurrency,
 
     /// The output token
-    pub output_token: SelectedToken,
+    pub output_token: SelectedCurrency,
 
     /// The search query for a token
     pub search_token: String,
 
-    /// A HashMap that holds a list of [ERC20Token] with their corrsponing `chain_id` as key
-    pub tokens: HashMap<u64, Vec<ERC20Token>>,
+    /// A HashMap that holds a list of [Currency] with their corrsponing `chain_id` as key
+    pub currencies: HashMap<u64, Vec<Currency>>,
 
     pub quote_result: QuoteResult,
 }
 
 impl SwapUIState {
     /// Get the input or output token by an id
-    pub fn get_token(&self, id: &str) -> SelectedToken {
+    pub fn get_token(&self, id: &str) -> SelectedCurrency {
         match id {
             "input" => self.input_token.clone(),
             "output" => self.output_token.clone(),
-            _ => SelectedToken::eth_default_input(),
+            // * This should not happen
+            _ => SelectedCurrency::default(),
         }
     }
 
     /// Replace the input or output token by an id
-    pub fn replace_token(&mut self, id: &str, token: SelectedToken) {
+    pub fn replace_token(&mut self, id: &str, token: SelectedCurrency) {
         match id {
             "input" => {
                 self.input_token = token;
@@ -250,42 +268,14 @@ impl SwapUIState {
         }
     }
 
-    /// Update input_token based on the selected chain id
+    /// Give a default input currency based on the selected chain id
     pub fn default_input(&mut self, id: u64) {
-        match id {
-            1 => {
-                self.input_token = SelectedToken::eth_default_input();
-            }
-            56 => {
-                self.input_token = SelectedToken::bsc_default_input();
-            }
-            8453 => {
-                self.input_token = SelectedToken::base_default_input();
-            }
-            42161 => {
-                self.input_token = SelectedToken::arbitrum_default_input();
-            }
-            _ => {}
-        }
-    }
+       self.input_token = SelectedCurrency::default_input(id);
+}
 
-    /// Update output_token based on the selected chain id
+    /// Give a default output currency based on the selected chain id
     pub fn default_output(&mut self, id: u64) {
-        match id {
-            1 => {
-                self.output_token = SelectedToken::eth_default_output();
-            }
-            56 => {
-                self.output_token = SelectedToken::bsc_default_output();
-            }
-            8453 => {
-                self.output_token = SelectedToken::base_default_output();
-            }
-            42161 => {
-                self.output_token = SelectedToken::arbitrum_default_output();
-            }
-            _ => {}
-        }
+        self.output_token = SelectedCurrency::default_output(id);
     }
 }
 
@@ -295,11 +285,74 @@ impl Default for SwapUIState {
             block: 0,
             input_token_list_on: false,
             output_token_list_on: false,
-            input_token: SelectedToken::eth_default_input(),
-            output_token: SelectedToken::eth_default_output(),
+            input_token: SelectedCurrency::default_input(1),
+            output_token: SelectedCurrency::default_output(1),
             search_token: String::new(),
-            tokens: HashMap::new(),
+            currencies: HashMap::new(),
             quote_result: QuoteResult::default(),
+        }
+    }
+}
+
+impl SelectedCurrency {
+    /// Create a new selected currency from an ERC20Token
+    pub fn new_from_erc(token: ERC20Token) -> Self {
+        Self {
+            currency: Currency::new_erc20(token),
+            amount_to_swap: String::new(),
+            balance: "0".to_string(),
+        }  
+    }
+
+    /// Create a new selected currency from a native currency
+    pub fn new_from_native(currency: NativeCurrency) -> Self {
+        Self {
+            currency: Currency::new_from_native(currency),
+            amount_to_swap: String::new(),
+            balance: "0".to_string(),
+        }
+    }
+
+    /// Create a default input currency based on the chain_id
+    pub fn default_input(id: u64) -> Self {
+        Self {
+            currency: Currency::new_native(id),
+            amount_to_swap: String::new(),
+            balance: "0".to_string(),
+        }
+    }
+
+    /// Creates a default output currency based on the chain_id
+    pub fn default_output(id: u64) -> Self {
+        Self {
+            currency: Currency::default_erc20(id),
+            amount_to_swap: String::new(),
+            balance: "0".to_string(),
+        }
+    }
+
+    pub fn is_native(&self) -> bool {
+        self.currency.is_native()
+    }
+
+    /// Gets the erc20 inside the selected currency
+    pub fn get_erc20(&self) -> Option<ERC20Token> {
+        match &self.currency {
+            Currency::ERC20(erc20) => Some(erc20.clone()),
+            _ => None,
+        
+    }
+}
+
+    
+}
+
+impl Default for SelectedCurrency {
+    fn default() -> Self {
+        Self {
+            currency: Currency::default(),
+            amount_to_swap: String::new(),
+            balance: "0".to_string(),
         }
     }
 }

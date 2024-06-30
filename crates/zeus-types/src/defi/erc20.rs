@@ -31,6 +31,7 @@ sol! {
 
 
 
+
 /// Struct that holds ERC20 token information
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ERC20Token {
@@ -40,6 +41,7 @@ pub struct ERC20Token {
     pub name: String,
     pub decimals: u8,
     pub total_supply: U256,
+    pub icon: Option<Vec<u8>>,
 }
 
 
@@ -48,6 +50,7 @@ impl ERC20Token {
         address: Address,
         client: Arc<RootProvider<PubSubFrontend>>,
         chain_id: u64,
+        icon: Option<Vec<u8>>,
     ) -> Result<Self, anyhow::Error> {
         
         let symbol = Self::symbol(address, client.clone());
@@ -63,9 +66,11 @@ impl ERC20Token {
             name,
             decimals,
             total_supply,
+            icon,
         })
     }
 
+    /// Format the amount to readable format
     pub fn readable(&self, amount: String) -> String {
         let divisor_str = format!("1{:0>width$}", "", width = self.decimals as usize);
         let divisor = BigDecimal::from_str(&divisor_str).unwrap_or_default();
@@ -82,8 +87,8 @@ impl ERC20Token {
         amount / divisor
     }
 
-    /// Parse to wei
-    pub fn parse(&self, amount: &str) -> Result<U256, anyhow::Error> {
+    /// Parse from readable units to wei
+    pub fn parse_wei(&self, amount: &str) -> Result<U256, anyhow::Error> {
         let amount = BigDecimal::from_str(amount)?;
         let wei_amount = amount * 10_u64.pow(self.decimals as u32);
         let wei_str = wei_amount.to_string();
@@ -183,17 +188,19 @@ impl ERC20Token {
             decimals: 18,
             symbol: "WETH".to_string(),
             total_supply: U256::ZERO,
+            icon: None
         }
     }
 
     pub fn eth_default_output() -> Self {
         Self {
             chain_id: 1,
-            name: "USC Coin".to_string(),
+            name: "USDC Coin".to_string(),
             address: Address::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap(),
             decimals: 6,
             symbol: "USDC".to_string(),
             total_supply: U256::ZERO,
+            icon: None
         }
     }
 
@@ -205,17 +212,19 @@ impl ERC20Token {
             decimals: 18,
             symbol: "WBNB".to_string(),
             total_supply: U256::ZERO,
+            icon: None
         }
     }
 
     pub fn bsc_default_output() -> Self {
         Self {
             chain_id: 56,
-            name: "USC Coin".to_string(),
+            name: "USDC Coin".to_string(),
             address: Address::from_str("0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d").unwrap(),
             decimals: 18,
             symbol: "USDC".to_string(),
             total_supply: U256::ZERO,
+            icon: None
         }
     }
 
@@ -227,17 +236,19 @@ impl ERC20Token {
             decimals: 18,
             symbol: "WETH".to_string(),
             total_supply: U256::ZERO,
+            icon: None
         }
     }
 
     pub fn base_default_output() -> Self {
         Self {
             chain_id: 8453,
-            name: "USC Coin".to_string(),
+            name: "USDC Coin".to_string(),
             address: Address::from_str("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913").unwrap(),
             decimals: 6,
             symbol: "USDC".to_string(),
             total_supply: U256::ZERO,
+            icon: None
         }
     }
 
@@ -249,17 +260,19 @@ impl ERC20Token {
                 decimals: 18,
                 symbol: "WETH".to_string(),
                 total_supply: U256::ZERO,
+                icon: None
             }
         }
 
         pub fn arbitrum_default_output() -> Self {
             Self {
                 chain_id: 42161,
-                name: "USC Coin".to_string(),
+                name: "USDC Coin".to_string(),
                 address: Address::from_str("0xaf88d065e77c8cc2239327c5edb3a432268e5831").unwrap(),
                 decimals: 6,
                 symbol: "USDC".to_string(),
                 total_supply: U256::ZERO,
+                icon: None
             }
         }
 
@@ -275,6 +288,7 @@ impl Default for ERC20Token {
             decimals: 18,
             symbol: "WETH".to_string(),
             total_supply: U256::ZERO,
+            icon: None
         }
     }
 }

@@ -1,4 +1,5 @@
 use eframe::egui;
+use zeus_types::defi::currency::Currency;
 use std::str::FromStr;
 use std::sync::{ Arc, RwLock };
 use egui::{
@@ -17,7 +18,6 @@ use egui::{
 
 use crate::fonts::roboto_regular;
 use super::{icons::tx_settings_icon, misc::{ frame, rich_text }, ErrorMsg};
-use zeus_types::defi::erc20::ERC20Token;
 use zeus_types::app_state::{ AppData, state::SHARED_UI_STATE };
 use zeus_backend::types::SwapParams;
 
@@ -25,7 +25,7 @@ use crossbeam::channel::Sender;
 use alloy::primitives::Address;
 
 use zeus_backend::types::Request;
-use zeus_types::app_state::state::{ SelectedToken, SwapUIState, SWAP_UI_STATE };
+use zeus_types::app_state::state::{ SelectedCurrency, SwapUIState, SWAP_UI_STATE };
 
 /// Manages the state of the swap UI
 pub struct SwapUI {
@@ -54,17 +54,17 @@ impl SwapUI {
 
     /// Renders the swap panel
     pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData) {
-        let tokens;
+        let currencies;
+        
         {
-            let state = SWAP_UI_STATE.read().unwrap();
             let shared = SHARED_UI_STATE.read().unwrap();
-            tokens = state.tokens
-                .get(&data.chain_id.id())
-                .unwrap_or(&vec![])
-                .clone();
             if !shared.swap_ui_on {
                 return;
             }
+            
+            let state = SWAP_UI_STATE.read().unwrap();
+
+            currencies = state.currencies.get(&data.chain_id.id()).unwrap_or(&vec![]).clone();
         }
 
         let swap = rich_text("Swap", 20.0);
@@ -94,7 +94,7 @@ impl SwapUI {
                     self.input_amount_field(ui);
                     ui.add_space(10.0);
                     ui.vertical(|ui| {
-                        self.token_select_button(ui, "input", tokens.clone(), data);
+                        self.token_select_button(ui, "input", currencies.clone(), data);
                         self.token_balance(ui, "input");
                     });
                 });
@@ -108,7 +108,7 @@ impl SwapUI {
                     self.output_amount_field(ui);
                     ui.add_space(10.0);
                     ui.vertical(|ui| {
-                        self.token_select_button(ui, "output", tokens.clone(), data);
+                        self.token_select_button(ui, "output", currencies.clone(), data);
                         self.token_balance(ui, "output");
                     });
                 });
@@ -198,7 +198,7 @@ impl SwapUI {
         &mut self,
         ui: &mut Ui,
         id: &str,
-        tokens: Vec<ERC20Token>,
+        currencies: Vec<Currency>,
         data: &mut AppData
     ) {
         {
@@ -214,6 +214,7 @@ impl SwapUI {
             .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .collapsible(false)
             .show(ui.ctx(), |ui| {
+                // ! Lock here maybe held too much
                 let mut state = SWAP_UI_STATE.write().unwrap();
 
                 ui.add(
@@ -223,25 +224,40 @@ impl SwapUI {
                 );
 
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    for (index, token) in tokens.iter().enumerate() {
-                        // show tokens that match or contain the search text
-                        if token.symbol.to_lowercase().contains(&state.search_token.to_lowercase()) {
-                            ui.push_id(index, |ui| {
-                                if
-                                    ui
-                                        .selectable_label(
-                                            state.get_token(id).token == token.clone(),
-                                            token.symbol.clone()
-                                        )
-                                        .clicked()
-                                {
-                                    state.replace_token(id, SelectedToken::new(token.clone()));
+                    for (index, currency) in currencies.iter().enumerate() {
+                        // show currencies/tokens that match or contain the search text
 
-                                    // close the token list
-                                    state.update_token_list_status(id, false);
+                        match currency {
+                            // Currency is an ERC20 token
+                            Currency::ERC20(token) => {
+                                if token.symbol.to_lowercase().contains(&state.search_token.to_lowercase()) {
+                                    ui.push_id(index, |ui| {
+
+                                        // bool check, if true the token is selected
+                                        let selected_token = state.get_token(id).currency.symbol() == token.symbol.clone();
+                                        
+                                        if ui.selectable_label(selected_token, token.symbol.clone()).clicked() {
+                                            state.replace_token(id, SelectedCurrency::new_from_erc(token.clone()));
+                                            state.update_token_list_status(id, false); 
+                                        }
+
+                                    });
                                 }
-                            });
-                        }
+                            }
+                            // Currency is a native token
+                            Currency::Native(native) => {
+                                if native.symbol.to_lowercase().contains(&state.search_token.to_lowercase()) {
+                                    ui.push_id(index, |ui| {
+                                        let selected_currency = state.get_token(id).currency.symbol() == native.symbol.clone();
+                                        
+                                        if ui.selectable_label(selected_currency, native.symbol.clone()).clicked() {
+                                            state.replace_token(id, SelectedCurrency::new_from_native(native.clone()));
+                                            state.update_token_list_status(id, false);
+                                        }
+                                    });
+                                }
+                            }
+                        };
                     }
 
                     // if search string is a valid ethereum address
@@ -267,6 +283,8 @@ impl SwapUI {
                             });
                         }
                     }
+                    
+
                 });
             });
     }
@@ -276,14 +294,14 @@ impl SwapUI {
         &mut self,
         ui: &mut Ui,
         id: &str,
-        tokens: Vec<ERC20Token>,
+        currencies: Vec<Currency>,
         data: &mut AppData
     ) {
         if self.token_button(id, ui).clicked() {
             let mut state = SWAP_UI_STATE.write().unwrap();
             state.update_token_list_status(id, true);
         }
-        self.token_list_window(ui, id, tokens, data);
+        self.token_list_window(ui, id, currencies, data);
     }
 
     /// Render the balance of the token
@@ -302,8 +320,9 @@ impl SwapUI {
         ui.horizontal(|ui| {
             ui.label(balance_text);
             ui.add_space(1.0);
-            ui.label(token.token.readable(token.balance));
+            ui.label(token.balance);
         });
+
     }
 
     /// Creates the field for the input amount
@@ -345,7 +364,7 @@ impl SwapUI {
     /// Create the token button
     fn token_button(&mut self, id: &str, ui: &mut Ui) -> Response {
         let state = SWAP_UI_STATE.read().unwrap();
-        let token_symbol = RichText::new(state.get_token(id).token.symbol.clone())
+        let token_symbol = RichText::new(state.get_token(id).currency.symbol().clone())
             .size(15.0)
             .family(roboto_regular())
             .color(Color32::WHITE);
@@ -366,6 +385,7 @@ impl SwapUI {
             .rounding(10.0)
             .stroke((0.3, Color32::WHITE));
         if ui.add(button).clicked() {
+            // TODO
             println!("Swapping...");
         }
     }
@@ -388,6 +408,8 @@ impl SwapUI {
             }
             let swap_state = SWAP_UI_STATE.read().unwrap();
 
+            // TODO
+            /* 
             self.send_request(Request::GetQuoteResult {
                 params: SwapParams {
                     token_in: swap_state.input_token.clone(),
@@ -399,7 +421,7 @@ impl SwapUI {
                     client: data.client().unwrap().clone(),
                     caller: data.wallet_address(),
                 },
-            });
+            });*/
         }
     }
 }

@@ -2,7 +2,7 @@ use eframe::{ egui::{ Ui, TextEdit, Align2, ComboBox, Window }, epaint::vec2 };
 
 use super::{ misc::{ frame, rich_text }, GUI };
 use crate::AppData;
-
+use alloy::primitives::utils::format_ether;
 use zeus_backend::types::Request;
 
 use crate::gui::THEME;
@@ -27,7 +27,9 @@ fn wallet_selection(ui: &mut Ui, data: &mut AppData) {
         ui.horizontal(|ui| {
             frame().show(ui, |ui| {
                 let current_wallet = data.profile.current_wallet_name();
-                let balance = rich_text(&data.eth_balance(data.chain_id.id()), 15.0);
+                let balance = data.eth_balance(data.chain_id.id());
+                let formated = format!("{} {:.4}",data.native_coin(), format_ether(balance));
+                let balance_text = rich_text(&formated, 15.0);
 
                 ComboBox::from_label("")
                     .selected_text(current_wallet)
@@ -40,7 +42,7 @@ fn wallet_selection(ui: &mut Ui, data: &mut AppData) {
                             );
                         }
                     });
-                ui.label(balance);
+                ui.label(balance_text);
             });
         });
 

@@ -2,16 +2,17 @@ use r2d2_sqlite::{SqliteConnectionManager, rusqlite::params};
 use r2d2::{Pool as connPool, PooledConnection};
 
 use alloy::primitives::{Address, U256};
-use zeus_types::defi::{erc20::ERC20Token, dex::uniswap::pool::{Pool, PoolVariant}};
-use std::{collections::HashMap, path::PathBuf};
+use zeus_types::defi::{erc20::ERC20Token, currency::Currency, dex::uniswap::pool::{Pool, PoolVariant}};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 use anyhow::anyhow;
-use tracing::trace;
+use tracing::{error, info, trace};
 
 #[derive(Clone)]
 pub struct ZeusDB {
     pub erc20_tokens: connPool<SqliteConnectionManager>,
     pub pools: connPool<SqliteConnectionManager>,
     pub erc20_balance: connPool<SqliteConnectionManager>,
+    pub eth_balance: connPool<SqliteConnectionManager>,
 }
 
 impl ZeusDB {
@@ -77,11 +78,30 @@ impl ZeusDB {
                     [],
                 )?;
             }
+
+            let eth_balance_manager = SqliteConnectionManager::file(db_path.join("eth_balance.db"));
+            let eth_balance_pool = connPool::builder().build(eth_balance_manager)?;
+    
+            {
+                let conn = eth_balance_pool.get()?;
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS ETHBalance (
+                          id              INTEGER PRIMARY KEY,
+                          chain_id         INTEGER NOT NULL,
+                          block_number         INTEGER NOT NULL,
+                          address            TEXT NOT NULL,
+                          balance             TEXT NOT NULL,
+                          UNIQUE(address, block_number, chain_id)
+                          )",
+                    [],
+                )?;
+            }
     
             Ok(Self {
                 erc20_tokens: erc20_pool,
                 pools: pools_pool,
                 erc20_balance: erc20_balance_pool,
+                eth_balance: eth_balance_pool,
             })
         }
     
@@ -97,7 +117,44 @@ impl ZeusDB {
             self.erc20_balance.get().map_err(|e| anyhow::anyhow!(e.to_string()))
         }
     
-    
+    /// Get the eth balance of a given address at a given block for a given chain
+    pub fn get_eth_balance(&self, address: Address, chain_id: u64, block: u64) -> Result<U256, anyhow::Error> {
+        let conn = self.eth_balance.get()?;
+        let mut stmt = conn.prepare("SELECT * FROM ETHBalance WHERE address = ?1, ?2, ?3")?;
+        let mut rows = stmt.query(params![chain_id, block, address.to_string()])?;
+       
+       let eth_balance;
+        if let Some(row) = rows.next()? {
+            let balance: String = row.get(4)?;
+            eth_balance = U256::from_str(&balance)?;
+            Ok(eth_balance)
+        } else {
+            Ok(U256::ZERO)
+        }
+    }
+
+    /// Insert the eth balance of a given address at a given block for a given chain
+    pub fn insert_eth_balance(&self, address: Address, balance: U256, chain_id: u64, block: u64) -> Result<(), anyhow::Error> {
+        let conn = self.eth_balance.get()?;
+        conn.execute(
+            "INSERT INTO ETHBalance (chain_id, block_number, address, balance) VALUES (?1, ?2, ?3, ?4)",
+            params![chain_id, block, address.to_string(), balance.to_string()],
+        )?;
+
+        // remove any old balances < block
+        if let Err(e) = self.remove_eth_balance(block, chain_id) {
+            error!("Error removing old eth balances: {:?}", e);
+        }
+
+        Ok(())
+    }
+
+    /// Remove old eth balances from a given block for a given chain
+    pub fn remove_eth_balance(&self, block: u64, chain_id: u64) -> Result<(), anyhow::Error> {
+        let conn = self.eth_balance.get()?;
+        conn.execute("DELETE FROM ETHBalance WHERE block_number < ?1 AND chain_id = ?2", params![block, chain_id])?;
+        Ok(())
+    }
 
 
     /// Insert a new [ERC20Token] into the database
@@ -115,7 +172,7 @@ impl ZeusDB {
                 token.total_supply.to_string()
             ],
         )?;
-        println!("Time to insert: {:?}ms", time.elapsed().as_millis());
+        info!("Time to insert: {:?}ms", time.elapsed().as_millis());
         Ok(())
     }
 
@@ -157,6 +214,7 @@ impl ZeusDB {
                 name,
                 decimals: decimals as u8,
                 total_supply: total_supply.parse().unwrap(),
+                icon: None
             };
             
             Ok(token)
@@ -223,6 +281,7 @@ impl ZeusDB {
                 name,
                 decimals: decimals as u8,
                 total_supply: total_supply.parse().unwrap(),
+                icon: None
             };
             
             tokens.push(token);
@@ -238,6 +297,12 @@ impl ZeusDB {
             "INSERT INTO ERC20Balance (chain_id, block_number, address, balance) VALUES (?1, ?2, ?3, ?4)",
             params![chain_id, block, address.to_string(), balance.to_string()],
         )?;
+
+        // remove any old balances < block
+        if let Err(e) = self.remove_erc20_balance(block, chain_id) {
+            error!("Error removing old erc20 balances: {:?}", e);
+        }
+
         Ok(())
     }
 
@@ -249,13 +314,14 @@ impl ZeusDB {
        
         if let Some(row) = rows.next()? {
             let balance: String = row.get(4)?;
-            Ok(balance.parse().unwrap())
+            let erc_balance = U256::from_str(&balance)?;
+            Ok(erc_balance)
         } else {
-            Ok(U256::ZERO)
+            return Err(anyhow!("Balance not found"));
         }
     }
 
-    /// Remove old erc20 balances from a given block for a specific chain
+    /// Remove old erc20 balances from a given block for a given chain
     pub fn remove_erc20_balance(&self, block: u64, chain_id: u64) -> Result<(), anyhow::Error> {
         let conn = self.get_erc20_balance_conn()?;
         conn.execute("DELETE FROM ERC20Balance WHERE block_number < ?1 AND chain_id = ?2", params![block, chain_id])?;
@@ -270,6 +336,27 @@ impl ZeusDB {
             tokens.insert(chain_id, chain_tokens);
         }
         Ok(tokens)
+    }
+
+    /// Load all tokens to a hashmap
+    pub fn load_currencies(&self, id: Vec<u64>) -> Result<HashMap<u64, Vec<Currency>>, anyhow::Error>{
+        let mut currencies_map = HashMap::new();
+        let mut currencies = Vec::new();
+        for chain_id in id {
+
+            let erc20_tokens = self.get_all_erc20(chain_id)?;
+            let native_currency = Currency::new_native(chain_id);
+            currencies.push(native_currency);
+
+            for token in erc20_tokens {
+                let erc20_currency = Currency::new_erc20(token);
+                currencies.push(erc20_currency);
+            }
+            
+            currencies_map.insert(chain_id, currencies.clone());
+        }
+
+        Ok(currencies_map)
     }
 
     /// insert some default tokens
