@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use std::sync::{ Arc, RwLock };
 use std::collections::HashMap;
-use alloy::primitives::Bytes;
+use alloy::primitives::{Bytes, U256};
 
 use crate::defi::currency::NativeCurrency;
 use crate::defi::{erc20::ERC20Token, currency::Currency};
@@ -227,7 +227,7 @@ impl SwapUIState {
         }
     }
 
-    /// Update the balance of a [SelectedToken]
+    /// Update the balance of a [SelectedCurrency]
     pub fn update_balance(&mut self, id: &str, balance: String) {
         match id {
             "input" => {
@@ -296,11 +296,11 @@ impl Default for SwapUIState {
 
 impl SelectedCurrency {
     /// Create a new selected currency from an ERC20Token
-    pub fn new_from_erc(token: ERC20Token) -> Self {
+    pub fn new_from_erc(token: ERC20Token, balance: U256) -> Self {
         Self {
             currency: Currency::new_erc20(token),
             amount_to_swap: String::new(),
-            balance: "0".to_string(),
+            balance: balance.to_string(),
         }  
     }
 
@@ -340,12 +340,21 @@ impl SelectedCurrency {
         match &self.currency {
             Currency::ERC20(erc20) => Some(erc20.clone()),
             _ => None,
-        
     }
 }
 
-    
+    /// Gets the decimals of the selected currency
+    pub fn decimals(&self) -> u8 {
+        match &self.currency {
+            Currency::Native(currency) => currency.decimals,
+            Currency::ERC20(erc20) => erc20.decimals,
+        }
+    }
 }
+
+
+    
+
 
 impl Default for SelectedCurrency {
     fn default() -> Self {

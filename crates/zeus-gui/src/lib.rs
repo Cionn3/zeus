@@ -121,14 +121,14 @@ impl ZeusApp {
             match zeus_db.insert_default() {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("Error Inserting Default Tokens: {}", e);
+                    error!("Error Inserting Default Tokens: {}", e);
                 }
             }
 
             currencies = match zeus_db.load_currencies(app.data.supported_networks()) {
                 Ok(currencies) => currencies,
                 Err(e) => {
-                    println!("Error Loading Currencies: {}", e);
+                    error!("Error Loading Currencies: {}", e);
                     HashMap::new()
                 }
             };
@@ -290,6 +290,16 @@ impl ZeusApp {
             let block = self.data.block_info.0.number;
             let chain_id = self.data.chain_id.id();
             wallet.update_balance(chain_id, balance, block);
+
+            // * update the balance in the swap ui if a native currency is selected
+            let mut swap_state = SWAP_UI_STATE.write().unwrap();
+            if swap_state.input_token.is_native() {
+                swap_state.input_token.balance = balance.to_string();
+            }
+
+            if swap_state.output_token.is_native() {
+                swap_state.output_token.balance = balance.to_string();
+            }
         }
     }
 

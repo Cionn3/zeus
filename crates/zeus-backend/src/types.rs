@@ -37,7 +37,7 @@ pub enum Request {
 
     GetClient { chain_id: ChainId, rpcs: Vec<Rpc>, clients: HashMap<u64, Arc<WsClient>> },
 
-    GetERC20Token { id: String, address: Address, client: Arc<WsClient>, chain_id: u64 },
+    GetERC20Token { id: String, owner: Address, address: Address, client: Arc<WsClient>, chain_id: u64 },
 
 }
 

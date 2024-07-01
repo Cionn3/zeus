@@ -176,8 +176,8 @@ impl Backend {
                                 }
                             }
 
-                            Request::GetERC20Token { id, address, client, chain_id } => {
-                                match self.get_erc20_token(id, address, client, chain_id).await {
+                            Request::GetERC20Token { id, owner, address, client, chain_id } => {
+                                match self.get_erc20_token(id, owner, address, client, chain_id).await {
                                     Ok(_) => {}
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
@@ -261,19 +261,28 @@ impl Backend {
     async fn get_erc20_token(
         &self,
         id: String,
-        address: Address,
+        owner: Address,
+        token_address: Address,
         client: Arc<WsClient>,
         chain_id: u64
     ) -> Result<(), anyhow::Error> {
-        let token = if let Ok(token) = self.db.get_erc20(address, chain_id) {
+        let token = if let Ok(token) = self.db.get_erc20(token_address, chain_id) {
             token
         } else {
-            let token = ERC20Token::new(address, client, chain_id, None).await?;
+            let token = ERC20Token::new(token_address, client, chain_id, None).await?;
             self.db.insert_erc20(token.clone(), chain_id)?;
             token
         };
+
+        let balance = if let Ok(balance) = self.db.get_latest_erc20_balance(owner, token_address, chain_id) {
+            balance
+        } else {
+            U256::ZERO
+        };
+
+
         let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
-        let selected_currency = SelectedCurrency::new_from_erc(token.clone());
+        let selected_currency = SelectedCurrency::new_from_erc(token.clone(), balance);
         let currency = Currency::new_erc20(token.clone());
 
         // replace with the new token
@@ -303,7 +312,7 @@ impl Backend {
     ) -> Result<(), anyhow::Error> {
         // check if the balance is in the database
         let balance = if
-            let Ok(balance) = self.db.get_erc20_balance(token.address, chain_id, block)
+            let Ok(balance) = self.db.get_erc20_balance_at_block(owner, token.address, chain_id, block)
         {
             balance
         } else {

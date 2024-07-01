@@ -71,9 +71,10 @@ impl ZeusDB {
                           id              INTEGER PRIMARY KEY,
                           chain_id         INTEGER NOT NULL,
                           block_number         INTEGER NOT NULL,
-                          address            TEXT NOT NULL,
+                          owner            TEXT NOT NULL,
+                          token            TEXT NOT NULL,
                           balance             TEXT NOT NULL,
-                          UNIQUE(address, block_number)
+                          UNIQUE(owner, address, block_number)
                           )",
                     [],
                 )?;
@@ -307,10 +308,10 @@ impl ZeusDB {
     }
 
     /// Get the balance of a token at a given block for a given chain
-    pub fn get_erc20_balance(&self, address: Address, chain_id: u64, block: u64) -> Result<U256, anyhow::Error> {
+    pub fn get_erc20_balance_at_block(&self, owner: Address, token: Address, chain_id: u64, block: u64) -> Result<U256, anyhow::Error> {
         let conn = self.get_erc20_balance_conn()?;
-        let mut stmt = conn.prepare("SELECT * FROM ERC20Balance WHERE address = ?1, ?2, ?3")?;
-        let mut rows = stmt.query(params![chain_id, block, address.to_string()])?;
+        let mut stmt = conn.prepare("SELECT * FROM ERC20Balance WHERE owner = ?1 AND token = ?2 AND chain_id = ?3 AND block_number = ?4")?;
+        let mut rows = stmt.query(params![owner.to_string(), token.to_string(), chain_id, block])?;
        
         if let Some(row) = rows.next()? {
             let balance: String = row.get(4)?;
@@ -321,6 +322,22 @@ impl ZeusDB {
         }
     }
 
+/// Get the latest balance of token for a given chain
+pub fn get_latest_erc20_balance(&self, owner: Address, token: Address, chain_id: u64) -> Result<U256, anyhow::Error> {
+    let conn = self.get_erc20_balance_conn()?;
+    let mut stmt = conn.prepare("SELECT * FROM ERC20Balance WHERE owner = ?1 AND token = ?2 AND chain_id = ?3 ORDER BY block_number DESC LIMIT 1")?;
+    let mut rows = stmt.query(params![owner.to_string(), token.to_string(), chain_id])?;
+   
+    if let Some(row) = rows.next()? {
+        let balance: String = row.get(4)?;
+        let erc_balance = U256::from_str(&balance)?;
+        Ok(erc_balance)
+    } else {
+        return Err(anyhow!("Balance not found"));
+    }
+}
+
+
     /// Remove old erc20 balances from a given block for a given chain
     pub fn remove_erc20_balance(&self, block: u64, chain_id: u64) -> Result<(), anyhow::Error> {
         let conn = self.get_erc20_balance_conn()?;
@@ -328,21 +345,12 @@ impl ZeusDB {
         Ok(())
     }
     
-    /// Load all tokens to a hashmap
-    pub fn load_tokens(&self, id: Vec<u64>) -> Result<HashMap<u64, Vec<ERC20Token>>, anyhow::Error>{
-        let mut tokens = HashMap::new();
-        for chain_id in id {
-            let chain_tokens = self.get_all_erc20(chain_id)?;
-            tokens.insert(chain_id, chain_tokens);
-        }
-        Ok(tokens)
-    }
 
     /// Load all tokens to a hashmap
     pub fn load_currencies(&self, id: Vec<u64>) -> Result<HashMap<u64, Vec<Currency>>, anyhow::Error>{
         let mut currencies_map = HashMap::new();
-        let mut currencies = Vec::new();
         for chain_id in id {
+            let mut currencies = Vec::new();
 
             let erc20_tokens = self.get_all_erc20(chain_id)?;
             let native_currency = Currency::new_native(chain_id);
@@ -355,6 +363,7 @@ impl ZeusDB {
             
             currencies_map.insert(chain_id, currencies.clone());
         }
+
 
         Ok(currencies_map)
     }

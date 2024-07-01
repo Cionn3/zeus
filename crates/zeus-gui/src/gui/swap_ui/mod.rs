@@ -1,5 +1,4 @@
-use eframe::egui;
-use zeus_types::defi::currency::Currency;
+use eframe::egui::{self, SelectableLabel};
 use std::str::FromStr;
 use std::sync::{ Arc, RwLock };
 use egui::{
@@ -19,13 +18,16 @@ use egui::{
 use crate::fonts::roboto_regular;
 use super::{icons::tx_settings_icon, misc::{ frame, rich_text }, ErrorMsg};
 use zeus_types::app_state::{ AppData, state::SHARED_UI_STATE };
+use zeus_types::defi::{currency::Currency, utils::{parse_wei, format_wei}};
+use zeus_backend::types::Request;
+use zeus_types::app_state::state::{ SelectedCurrency, SwapUIState, SWAP_UI_STATE };
 use zeus_backend::types::SwapParams;
 
 use crossbeam::channel::Sender;
-use alloy::primitives::Address;
+use alloy::primitives::{Address, U256};
 
-use zeus_backend::types::Request;
-use zeus_types::app_state::state::{ SelectedCurrency, SwapUIState, SWAP_UI_STATE };
+use tracing::{info, error};
+
 
 /// Manages the state of the swap UI
 pub struct SwapUI {
@@ -235,9 +237,13 @@ impl SwapUI {
 
                                         // bool check, if true the token is selected
                                         let selected_token = state.get_token(id).currency.symbol() == token.symbol.clone();
-                                        
-                                        if ui.selectable_label(selected_token, token.symbol.clone()).clicked() {
-                                            state.replace_token(id, SelectedCurrency::new_from_erc(token.clone()));
+
+
+                                        let selectable_label = SelectableLabel::new(selected_token, token.symbol.clone());
+                                        let res = ui.add(selectable_label);
+
+                                        if res.clicked() {
+                                            state.replace_token(id, SelectedCurrency::new_from_erc(token.clone(), U256::ZERO));
                                             state.update_token_list_status(id, false); 
                                         }
 
@@ -248,9 +254,13 @@ impl SwapUI {
                             Currency::Native(native) => {
                                 if native.symbol.to_lowercase().contains(&state.search_token.to_lowercase()) {
                                     ui.push_id(index, |ui| {
+
                                         let selected_currency = state.get_token(id).currency.symbol() == native.symbol.clone();
+
+                                        let selectable_label = SelectableLabel::new(selected_currency, native.symbol.clone());
+                                        let res = ui.add(selectable_label);
                                         
-                                        if ui.selectable_label(selected_currency, native.symbol.clone()).clicked() {
+                                        if res.clicked() {
                                             state.replace_token(id, SelectedCurrency::new_from_native(native.clone()));
                                             state.update_token_list_status(id, false);
                                         }
@@ -277,6 +287,7 @@ impl SwapUI {
                             };
                             self.send_request(Request::GetERC20Token {
                                 id: id.to_string(),
+                                owner: data.wallet_address(),
                                 address,
                                 client,
                                 chain_id: data.chain_id.id(),
@@ -306,10 +317,10 @@ impl SwapUI {
 
     /// Render the balance of the token
     fn token_balance(&mut self, ui: &mut Ui, id: &str) {
-        let token;
+        let currency;
         {
             let state = SWAP_UI_STATE.read().unwrap();
-            token = state.get_token(id).clone();
+            currency = state.get_token(id).clone();
         }
 
         let balance_text = RichText::new("Balance:")
@@ -317,10 +328,13 @@ impl SwapUI {
             .family(roboto_regular())
             .color(Color32::WHITE);
 
+        let balance = format_wei(&currency.balance, currency.decimals());
+        let formated_balance = format!("{:.4}", balance);
+
         ui.horizontal(|ui| {
             ui.label(balance_text);
             ui.add_space(1.0);
-            ui.label(token.balance);
+            ui.label(formated_balance);
         });
 
     }
