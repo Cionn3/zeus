@@ -6,21 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zeus-types = { path = "../zeus-types" }
-zeus-utils = {path = "../zeus-utils"}
+zeus-chain = { path = "../zeus-chain" }
+zeus-core = {path = "../zeus-core"}
+zeus-shared-types = { path = "../zeus-shared-types" }
 
 
-alloy = { version = "0.1", features = ["full"] }
-
-revm = { version = "10.0.0", features = [
-    "serde",
-    "std",
-    "optional_block_gas_limit",
-    "optional_no_base_fee",
-    "optional_balance_check",
-    "optional_eip3607",
-    "optional_gas_refund",
-] }
 
 rusqlite = { version = "0.31.0", features = ["bundled"] }
 r2d2_sqlite = "0.24.0"

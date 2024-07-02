@@ -1,11 +1,17 @@
-use alloy::primitives::{ Address, U256};
-use alloy::{ providers::RootProvider, pubsub::PubSubFrontend, rpc::types::eth::Block };
-use zeus_types::defi::erc20::ERC20Token;
+
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use zeus_types::{ChainId, profile::Profile, WsClient, Rpc, app_state::state::SelectedToken};
+use zeus_chain::{ChainId, Rpc, WsClient, defi_types::currency::erc20::ERC20Token, alloy::{
+    primitives::{U256, Address},
+    providers::RootProvider,
+    pubsub::PubSubFrontend,
+    rpc::types::eth::Block,
+}};
+use zeus_core::Profile;
+use zeus_shared_types::SelectedCurrency;
+
 
 
 
@@ -29,7 +35,7 @@ pub enum Request {
     /// Get the eth balance of an address
     EthBalance { address: Address, client: Arc<WsClient>},
 
-    /// Get ERC20 Balance
+    /// Get the ERC20 Balance
     GetERC20Balance { id: String, token: ERC20Token, owner: Address, chain_id: u64, block: u64, client: Arc<WsClient> },
 
     /// Encrypt and save the profile
@@ -62,9 +68,9 @@ pub struct SwapParams {
     /// Client to make rpc calls
     pub client: Arc<RootProvider<PubSubFrontend>>,
 
-    pub token_in: SelectedToken,
+    pub token_in: SelectedCurrency,
 
-    pub token_out: SelectedToken,
+    pub token_out: SelectedCurrency,
 
     /// Amount of tokens we want to swap
     pub amount_in: String,

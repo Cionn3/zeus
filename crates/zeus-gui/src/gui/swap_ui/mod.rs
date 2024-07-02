@@ -1,4 +1,4 @@
-use eframe::egui::{self, SelectableLabel};
+use eframe::egui::{ self, SelectableLabel };
 use std::str::FromStr;
 use std::sync::{ Arc, RwLock };
 use egui::{
@@ -12,22 +12,30 @@ use egui::{
     RichText,
     TextEdit,
     Ui,
-    Response
+    Response,
 };
 
-use crate::fonts::roboto_regular;
-use super::{icons::tx_settings_icon, misc::{ frame, rich_text }, ErrorMsg};
-use zeus_types::app_state::{ AppData, state::SHARED_UI_STATE };
-use zeus_types::defi::{currency::Currency, utils::{parse_wei, format_wei}};
-use zeus_backend::types::Request;
-use zeus_types::app_state::state::{ SelectedCurrency, SwapUIState, SWAP_UI_STATE };
-use zeus_backend::types::SwapParams;
-
 use crossbeam::channel::Sender;
-use alloy::primitives::{Address, U256};
 
-use tracing::{info, error};
+use crate::fonts::roboto_regular;
+use super::{ icons::tx_settings_icon, misc::{ frame, rich_text } };
 
+use zeus_backend::types::Request;
+use zeus_shared_types::{
+    SWAP_UI_STATE,
+    SHARED_UI_STATE,
+    ErrorMsg,
+    AppData,
+    SwapUIState,
+    SelectedCurrency,
+};
+use zeus_chain::{
+    defi_types::currency::Currency,
+    utils::format_wei,
+    alloy::primitives::{ U256, Address },
+};
+
+use tracing::{ info, error };
 
 /// Manages the state of the swap UI
 pub struct SwapUI {
@@ -57,16 +65,19 @@ impl SwapUI {
     /// Renders the swap panel
     pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData) {
         let currencies;
-        
+
         {
             let shared = SHARED_UI_STATE.read().unwrap();
             if !shared.swap_ui_on {
                 return;
             }
-            
+
             let state = SWAP_UI_STATE.read().unwrap();
 
-            currencies = state.currencies.get(&data.chain_id.id()).unwrap_or(&vec![]).clone();
+            currencies = state.currencies
+                .get(&data.chain_id.id())
+                .unwrap_or(&vec![])
+                .clone();
         }
 
         let swap = rich_text("Swap", 20.0);
@@ -205,7 +216,7 @@ impl SwapUI {
     ) {
         {
             let state = SWAP_UI_STATE.read().unwrap();
-            if !state.get_token_list_status(id) {
+            if !state.get_currency_list_status(id) {
                 return;
             }
         }
@@ -220,7 +231,7 @@ impl SwapUI {
                 let mut state = SWAP_UI_STATE.write().unwrap();
 
                 ui.add(
-                    TextEdit::singleline(&mut state.search_token)
+                    TextEdit::singleline(&mut state.search_currency)
                         .hint_text("Search tokens by symbol or address")
                         .min_size((200.0, 30.0).into())
                 );
@@ -232,46 +243,69 @@ impl SwapUI {
                         match currency {
                             // Currency is an ERC20 token
                             Currency::ERC20(token) => {
-                                if token.symbol.to_lowercase().contains(&state.search_token.to_lowercase()) {
+                                if
+                                    token.symbol
+                                        .to_lowercase()
+                                        .contains(&state.search_currency.to_lowercase())
+                                {
                                     ui.push_id(index, |ui| {
-
                                         // bool check, if true the token is selected
-                                        let selected_token = state.get_token(id).currency.symbol() == token.symbol.clone();
+                                        let selected_token =
+                                            state.get_selected_currency(id).currency.symbol() ==
+                                            token.symbol.clone();
 
-
-                                        let selectable_label = SelectableLabel::new(selected_token, token.symbol.clone());
+                                        let selectable_label = SelectableLabel::new(
+                                            selected_token,
+                                            token.symbol.clone()
+                                        );
                                         let res = ui.add(selectable_label);
 
                                         if res.clicked() {
-                                            state.replace_token(id, SelectedCurrency::new_from_erc(token.clone(), U256::ZERO));
-                                            state.update_token_list_status(id, false); 
-                                        }
-
-                                    });
-                                }
-                            }
-                            // Currency is a native token
-                            Currency::Native(native) => {
-                                if native.symbol.to_lowercase().contains(&state.search_token.to_lowercase()) {
-                                    ui.push_id(index, |ui| {
-
-                                        let selected_currency = state.get_token(id).currency.symbol() == native.symbol.clone();
-
-                                        let selectable_label = SelectableLabel::new(selected_currency, native.symbol.clone());
-                                        let res = ui.add(selectable_label);
-                                        
-                                        if res.clicked() {
-                                            state.replace_token(id, SelectedCurrency::new_from_native(native.clone()));
+                                            state.replace_currency(
+                                                id,
+                                                SelectedCurrency::new_from_erc(
+                                                    token.clone(),
+                                                    U256::ZERO
+                                                )
+                                            );
                                             state.update_token_list_status(id, false);
                                         }
                                     });
                                 }
                             }
-                        };
+                            // Currency is a native token
+                            Currency::Native(native) => {
+                                if
+                                    native.symbol
+                                        .to_lowercase()
+                                        .contains(&state.search_currency.to_lowercase())
+                                {
+                                    ui.push_id(index, |ui| {
+                                        let selected_currency =
+                                            state.get_selected_currency(id).currency.symbol() ==
+                                            native.symbol.clone();
+
+                                        let selectable_label = SelectableLabel::new(
+                                            selected_currency,
+                                            native.symbol.clone()
+                                        );
+                                        let res = ui.add(selectable_label);
+
+                                        if res.clicked() {
+                                            state.replace_currency(
+                                                id,
+                                                SelectedCurrency::new_from_native(native.clone())
+                                            );
+                                            state.update_token_list_status(id, false);
+                                        }
+                                    });
+                                }
+                            }
+                        }
                     }
 
                     // if search string is a valid ethereum address
-                    if let Ok(address) = Address::from_str(&state.search_token) {
+                    if let Ok(address) = Address::from_str(&state.search_currency) {
                         if ui.button("Add Token").clicked() {
                             println!("Adding Token: {:?}", address);
                             let client = match data.client() {
@@ -294,8 +328,6 @@ impl SwapUI {
                             });
                         }
                     }
-                    
-
                 });
             });
     }
@@ -320,7 +352,7 @@ impl SwapUI {
         let currency;
         {
             let state = SWAP_UI_STATE.read().unwrap();
-            currency = state.get_token(id).clone();
+            currency = state.get_selected_currency(id).clone();
         }
 
         let balance_text = RichText::new("Balance:")
@@ -336,7 +368,6 @@ impl SwapUI {
             ui.add_space(1.0);
             ui.label(formated_balance);
         });
-
     }
 
     /// Creates the field for the input amount
@@ -344,7 +375,7 @@ impl SwapUI {
         let font = FontId { size: 23.0, family: roboto_regular() };
         let mut state = SWAP_UI_STATE.write().unwrap();
 
-        let field = TextEdit::singleline(&mut state.input_token.amount_to_swap)
+        let field = TextEdit::singleline(&mut state.currency_in.amount_to_swap)
             .font(font.clone())
             .min_size((100.0, 30.0).into())
             .hint_text(
@@ -362,7 +393,7 @@ impl SwapUI {
         let font = FontId { size: 23.0, family: roboto_regular() };
         let mut state = SWAP_UI_STATE.write().unwrap();
 
-        let field = TextEdit::singleline(&mut state.output_token.amount_to_swap)
+        let field = TextEdit::singleline(&mut state.currency_out.amount_to_swap)
             .font(font.clone())
             .min_size((100.0, 30.0).into())
             .hint_text(
@@ -378,7 +409,7 @@ impl SwapUI {
     /// Create the token button
     fn token_button(&mut self, id: &str, ui: &mut Ui) -> Response {
         let state = SWAP_UI_STATE.read().unwrap();
-        let token_symbol = RichText::new(state.get_token(id).currency.symbol().clone())
+        let token_symbol = RichText::new(state.get_selected_currency(id).currency.symbol().clone())
             .size(15.0)
             .family(roboto_regular())
             .color(Color32::WHITE);

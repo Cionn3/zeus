@@ -6846,25 +6846,61 @@ dependencies = [
 name = "zeus-backend"
 version = "0.1.0"
 dependencies = [
- "alloy",
  "anyhow",
  "bigdecimal",
  "crossbeam",
  "r2d2",
  "r2d2_sqlite",
- "revm",
  "rusqlite",
  "tokio",
  "tracing",
- "zeus-types",
- "zeus-utils",
+ "zeus-chain",
+ "zeus-core",
+ "zeus-shared-types",
+]
+
+[[package]]
+name = "zeus-chain"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "bigdecimal",
+ "crossbeam",
+ "eyre",
+ "futures",
+ "futures-util",
+ "hashbrown",
+ "lazy_static",
+ "revm",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tiny-keccak",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "zeus-core"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "alloy",
+ "anyhow",
+ "argon2",
+ "chacha20poly1305",
+ "lazy_static",
+ "password-hash",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
 name = "zeus-gui"
 version = "0.1.0"
 dependencies = [
- "alloy",
  "anyhow",
  "crossbeam",
  "eframe",
@@ -6873,55 +6909,17 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "zeus-backend",
- "zeus-types",
- "zeus-utils",
+ "zeus-chain",
+ "zeus-core",
+ "zeus-shared-types",
 ]
 
 [[package]]
-name = "zeus-types"
+name = "zeus-shared-types"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
- "alloy",
- "anyhow",
- "argon2",
- "bigdecimal",
- "chacha20poly1305",
- "eyre",
- "futures",
- "futures-util",
- "hashbrown",
- "lazy_static",
- "password-hash",
- "revm",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "tiny-keccak",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "zeus-utils"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "bigdecimal",
- "crossbeam",
- "eyre",
- "futures",
- "futures-util",
- "hashbrown",
- "lazy_static",
- "revm",
- "thiserror",
- "tiny-keccak",
- "tokio",
- "tracing",
- "zeus-types",
+ "zeus-chain",
+ "zeus-core",
 ]
 
 [[package]]

@@ -1,0 +1,8 @@
+[package]
+name = "zeus-shared-types"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+zeus-core = { path = "../zeus-core" }
+zeus-chain = { path = "../zeus-chain" }

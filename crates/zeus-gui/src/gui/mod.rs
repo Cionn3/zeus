@@ -7,12 +7,15 @@ use eframe::{
 };
 
 use misc::frame;
-use crate::{fonts::roboto_regular, AppData};
+use crate::fonts::roboto_regular;
+use crate::gui::swap_ui::SwapUI;
+
 use wallet_ui::wallet_ui;
 
 use zeus_backend::types::Request;
-use crate::gui::swap_ui::SwapUI;
-use zeus_types::app_state::state::*;
+use zeus_shared_types::{SHARED_UI_STATE, ErrorMsg, AppData};
+
+
 use lazy_static::lazy_static;
 use crossbeam::channel::Sender;
 

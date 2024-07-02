@@ -8,11 +8,11 @@ edition = "2021"
 [dependencies]
 
 # Local Crates
-zeus-utils = { path = "../zeus-utils" }
+zeus-core = { path = "../zeus-core" }
 zeus-backend = {path = "../zeus-backend"}
-zeus-types = {path = "../zeus-types"}
+zeus-chain = {path = "../zeus-chain"}
+zeus-shared-types = { path = "../zeus-shared-types" }
 
-alloy = { version = "0.1", features = ["full"] }
 
 # Tracing
 tracing = "0.1.40"

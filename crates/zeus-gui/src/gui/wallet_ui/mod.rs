@@ -1,12 +1,11 @@
 use eframe::{ egui::{ Ui, TextEdit, Align2, ComboBox, Window }, epaint::vec2 };
 
 use super::{ misc::{ frame, rich_text }, GUI };
-use crate::AppData;
-use alloy::primitives::utils::format_ether;
 use zeus_backend::types::Request;
+use zeus_shared_types::{AppData, ErrorMsg, SHARED_UI_STATE};
+use zeus_chain::alloy::primitives::utils::format_ether;
 
 use crate::gui::THEME;
-use zeus_types::app_state::state::*;
 
 /// Render the UI repsonsible for managing the wallets
 pub fn wallet_ui(ui: &mut Ui, data: &mut AppData, gui: &GUI) {

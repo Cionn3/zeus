@@ -1,8 +1,8 @@
 use r2d2_sqlite::{SqliteConnectionManager, rusqlite::params};
 use r2d2::{Pool as connPool, PooledConnection};
 
-use alloy::primitives::{Address, U256};
-use zeus_types::defi::{erc20::ERC20Token, currency::Currency, dex::uniswap::pool::{Pool, PoolVariant}};
+
+use zeus_chain::{ERC20Token, Currency, Pool, PoolVariant, alloy::primitives::{Address, U256}};
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 use anyhow::anyhow;
 use tracing::{error, info, trace};
@@ -22,10 +22,10 @@ impl ZeusDB {
             std::fs::create_dir_all(&db_path)?;
     
             let erc20_manager = SqliteConnectionManager::file(db_path.join("erc20.db"));
-            let erc20_pool = connPool::builder().build(erc20_manager)?;
+            let erc20_conn = connPool::builder().build(erc20_manager)?;
     
             {
-                let conn = erc20_pool.get()?;
+                let conn = erc20_conn.get()?;
                 conn.execute(
                     "CREATE TABLE IF NOT EXISTS ERC20Token (
                           id              INTEGER PRIMARY KEY,
@@ -42,10 +42,10 @@ impl ZeusDB {
             }
     
             let pools_manager = SqliteConnectionManager::file(db_path.join("pools.db"));
-            let pools_pool = connPool::builder().build(pools_manager)?;
+            let pools_conn = connPool::builder().build(pools_manager)?;
     
             {
-                let conn = pools_pool.get()?;
+                let conn = pools_conn.get()?;
                 conn.execute(
                     "CREATE TABLE IF NOT EXISTS Pool (
                           id              INTEGER PRIMARY KEY,
@@ -62,10 +62,10 @@ impl ZeusDB {
             }
     
             let erc20_balance_manager = SqliteConnectionManager::file(db_path.join("erc20_balance.db"));
-            let erc20_balance_pool = connPool::builder().build(erc20_balance_manager)?;
+            let erc20_balance_conn = connPool::builder().build(erc20_balance_manager)?;
     
             {
-                let conn = erc20_balance_pool.get()?;
+                let conn = erc20_balance_conn.get()?;
                 conn.execute(
                     "CREATE TABLE IF NOT EXISTS ERC20Balance (
                           id              INTEGER PRIMARY KEY,
@@ -81,10 +81,10 @@ impl ZeusDB {
             }
 
             let eth_balance_manager = SqliteConnectionManager::file(db_path.join("eth_balance.db"));
-            let eth_balance_pool = connPool::builder().build(eth_balance_manager)?;
+            let eth_balance_conn = connPool::builder().build(eth_balance_manager)?;
     
             {
-                let conn = eth_balance_pool.get()?;
+                let conn = eth_balance_conn.get()?;
                 conn.execute(
                     "CREATE TABLE IF NOT EXISTS ETHBalance (
                           id              INTEGER PRIMARY KEY,
@@ -99,10 +99,10 @@ impl ZeusDB {
             }
     
             Ok(Self {
-                erc20_tokens: erc20_pool,
-                pools: pools_pool,
-                erc20_balance: erc20_balance_pool,
-                eth_balance: eth_balance_pool,
+                erc20_tokens: erc20_conn,
+                pools: pools_conn,
+                erc20_balance: erc20_balance_conn,
+                eth_balance: eth_balance_conn,
             })
         }
     
@@ -292,15 +292,15 @@ impl ZeusDB {
     }
 
     /// Insert the balance of a token at a given block for a given chain
-    pub fn insert_erc20_balance(&self, address: Address, balance: U256, chain_id: u64, block: u64) -> Result<(), anyhow::Error> {
+    pub fn insert_erc20_balance(&self, owner: Address, token: Address, balance: U256, chain_id: u64, block: u64) -> Result<(), anyhow::Error> {
         let conn = self.get_erc20_balance_conn()?;
         conn.execute(
-            "INSERT INTO ERC20Balance (chain_id, block_number, address, balance) VALUES (?1, ?2, ?3, ?4)",
-            params![chain_id, block, address.to_string(), balance.to_string()],
+            "INSERT INTO ERC20Balance (chain_id, block_number, owner, token, balance) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![chain_id, block, owner.to_string(), token.to_string(), balance.to_string()],
         )?;
 
         // remove any old balances < block
-        if let Err(e) = self.remove_erc20_balance(block, chain_id) {
+        if let Err(e) = self.remove_erc20_balance(owner, token, block, chain_id) {
             error!("Error removing old erc20 balances: {:?}", e);
         }
 
@@ -339,9 +339,9 @@ pub fn get_latest_erc20_balance(&self, owner: Address, token: Address, chain_id:
 
 
     /// Remove old erc20 balances from a given block for a given chain
-    pub fn remove_erc20_balance(&self, block: u64, chain_id: u64) -> Result<(), anyhow::Error> {
+    pub fn remove_erc20_balance(&self, owner: Address, token: Address, block: u64, chain_id: u64) -> Result<(), anyhow::Error> {
         let conn = self.get_erc20_balance_conn()?;
-        conn.execute("DELETE FROM ERC20Balance WHERE block_number < ?1 AND chain_id = ?2", params![block, chain_id])?;
+        conn.execute("DELETE FROM ERC20Balance WHERE block_number < ?1 AND owner = ?2 AND token = ?3 AND chain_id = ?4", params![block, owner.to_string(), token.to_string(), chain_id])?;
         Ok(())
     }
     

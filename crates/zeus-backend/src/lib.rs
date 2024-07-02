@@ -1,38 +1,28 @@
-use alloy::{
-    primitives::{ U256, Address },
-    providers::{ Provider, ProviderBuilder },
-    transports::ws::WsConnect,
-    rpc::types::eth::{ BlockId, BlockNumberOrTag },
-};
-
-
 use std::sync::Arc;
-use tokio::{ runtime::Runtime, sync::Mutex};
+use tokio::runtime::Runtime;
 use crossbeam::channel::{ Sender, Receiver, bounded };
-use revm::{ primitives::TransactTo, Evm, db::{ CacheDB, EmptyDB } };
-use anyhow::{ anyhow, Context };
-use tracing::{ info, error, trace };
-use bigdecimal::BigDecimal;
+use anyhow::Context;
+use tracing::{ info, error };
 
-use zeus_types::{
-    app_state::state::*,
-    defi::{
-        currency::Currency, dex::uniswap::
-            pool::{ get_v2_pool, get_v3_pool, Pool, PoolVariant, V3_FEES }, erc20::ERC20Token, zeus_router::{ decode_swap, encode_swap, swap_router_bytecode, SwapRouter::Params }
-    },
-    forked_db::{ fork_db::ForkDB, fork_factory::ForkFactory },
-    profile::Profile,
+use zeus_chain::{
     ChainId,
     Rpc,
     WsClient,
+    start_block_oracle,
+    BlockOracle,
+    BLOCK_ORACLE,
+    OracleAction,
+    defi_types::currency::{ Currency, erc20::ERC20Token },
+    alloy::{
+        primitives::{ U256, Address },
+        providers::{ Provider, ProviderBuilder },
+        transports::ws::WsConnect,
+        rpc::types::eth::{ BlockId, BlockNumberOrTag },
+    },
 };
 
-use zeus_utils::{
-    new_evm,
-    oracles::{ *, block::start_block_oracle, OracleAction },
-    dummy_account::*,
-    parse_ether,
-};
+use zeus_core::Profile;
+use zeus_shared_types::{ SWAP_UI_STATE, SHARED_UI_STATE, ErrorMsg, SelectedCurrency };
 
 use crate::{ types::{ Request, Response, SwapParams }, db::ZeusDB };
 
@@ -124,16 +114,8 @@ impl Backend {
                             }
 
                             Request::GetQuoteResult { params } => {
-                                match self.get_swap_result(params).await {
-                                    Ok(result) => {
-                                        let mut swap_state = SWAP_UI_STATE.write().unwrap();
-                                        swap_state.quote_result = result;
-                                    }
-                                    Err(e) => {
-                                        let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg = ErrorMsg::new(true, e);
-                                    }
-                                }
+                                let mut state = SHARED_UI_STATE.write().unwrap();
+                                state.err_msg = ErrorMsg::new(true, "TODO!");
                             }
 
                             Request::EthBalance { address, client } => {
@@ -177,7 +159,9 @@ impl Backend {
                             }
 
                             Request::GetERC20Token { id, owner, address, client, chain_id } => {
-                                match self.get_erc20_token(id, owner, address, client, chain_id).await {
+                                match
+                                    self.get_erc20_token(id, owner, address, client, chain_id).await
+                                {
                                     Ok(_) => {}
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
@@ -196,28 +180,31 @@ impl Backend {
     async fn init_oracles(
         &mut self,
         client: Arc<WsClient>,
-        id: ChainId
+        chain_id: ChainId
     ) -> Result<(), anyhow::Error> {
-        info!("Initializing Oracles for Chain: {}", id.name());
+        info!("Initializing Oracles for Chain: {}", chain_id.name());
         self.stop_previous_oracles().await;
 
-        let new_block_oracle = block::BlockOracle::new(client.clone(), id.clone()).await?;
-        
+        let new_block_oracle = BlockOracle::new(client.clone(), chain_id.id().clone()).await?;
+
         {
             let mut block_oracle_1 = BLOCK_ORACLE.write().unwrap();
             *block_oracle_1 = new_block_oracle;
         }
 
-
         let (action_sender, action_receiver) = bounded(10);
         self.oracle_sender = Some(action_sender);
 
         let client_clone = client.clone();
-        let chain_id_clone = id.clone();
         let action_receiver_1 = action_receiver.clone();
 
         tokio::spawn(async move {
-            start_block_oracle(client_clone, chain_id_clone, BLOCK_ORACLE.clone(), action_receiver_1).await;
+            start_block_oracle(
+                client_clone,
+                chain_id.id(),
+                BLOCK_ORACLE.clone(),
+                action_receiver_1
+            ).await;
         });
 
         info!("Block Oracle started");
@@ -233,7 +220,6 @@ impl Backend {
             }
         }
     }
-
 
     async fn get_eth_balance(
         &mut self,
@@ -274,19 +260,20 @@ impl Backend {
             token
         };
 
-        let balance = if let Ok(balance) = self.db.get_latest_erc20_balance(owner, token_address, chain_id) {
+        let balance = if
+            let Ok(balance) = self.db.get_latest_erc20_balance(owner, token_address, chain_id)
+        {
             balance
         } else {
             U256::ZERO
         };
-
 
         let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
         let selected_currency = SelectedCurrency::new_from_erc(token.clone(), balance);
         let currency = Currency::new_erc20(token.clone());
 
         // replace with the new token
-        swap_ui_state.replace_token(&id, selected_currency);
+        swap_ui_state.replace_currency(&id, selected_currency);
 
         // close the token list window
         swap_ui_state.update_token_list_status(&id, false);
@@ -312,15 +299,28 @@ impl Backend {
     ) -> Result<(), anyhow::Error> {
         // check if the balance is in the database
         let balance = if
-            let Ok(balance) = self.db.get_erc20_balance_at_block(owner, token.address, chain_id, block)
+            let Ok(balance) = self.db.get_erc20_balance_at_block(
+                owner,
+                token.address,
+                chain_id,
+                block
+            )
         {
             balance
         } else {
             let balance = token.balance_of(owner, client.clone()).await?;
-            if let Err(e) = self.db.insert_erc20_balance(token.address, balance, chain_id, block) {
+            if
+                let Err(e) = self.db.insert_erc20_balance(
+                    owner,
+                    token.address,
+                    balance,
+                    chain_id,
+                    block
+                )
+            {
                 error!("Failed to insert balance into db: {}", e);
             }
-            
+
             balance
         };
         // update the balance
@@ -347,6 +347,9 @@ impl Backend {
         self.back_sender.send(Response::GetClient(client, id))?;
         Ok(())
     }
+}
+
+/* 
 
     /// Dummy implementation
     async fn get_swap_result(&self, params: SwapParams) -> Result<QuoteResult, anyhow::Error> {
@@ -394,7 +397,9 @@ impl Backend {
         let result = self.swap(dummy_contract, dummy_caller, params, fork_db).await?;
         Ok(result)
     }
+    */
 
+/* 
     /// Simulate a swap on Uniswap V2/V3
     ///
     /// The pool with the highest output is selected
@@ -406,7 +411,7 @@ impl Backend {
         fork_db: ForkDB
     ) -> Result<QuoteResult, anyhow::Error> {
         let slippage: f32 = params.slippage.parse().unwrap_or(1.0);
-        let amount_in = params.token_in.token.parse_wei(&params.amount_in)?;
+        let amount_in = parse_wei(&params.amount_in, params.token_in.token.decimals)?;
 
         let pools = self.collect_pools(params.clone()).await?;
 
@@ -419,7 +424,9 @@ impl Backend {
         evm.tx_mut().caller = caller.address;
         evm.tx_mut().transact_to = TransactTo::Call(params.token_in.token.address);
         evm.tx_mut().value = U256::ZERO;
-        evm.tx_mut().data = params.token_in.token.encode_approve(contract.address, amount_in).into();
+        evm.tx_mut().data = params.token_in.token
+            .encode_approve(contract.address, amount_in)
+            .into();
 
         evm.transact_commit()?;
 
@@ -436,26 +443,37 @@ impl Backend {
             let best_pool = best_pool.clone();
             let best_amount_out = best_amount_out.clone();
 
-            handles.push(tokio::spawn(async move {
-
-                let amount_out;
-                {
-                let mut evm = new_evm(fork_db, params.block.clone(), params.chain_id.clone());
-                amount_out = sim_swap(pool.clone(), contract, caller, params, &mut evm).unwrap();
-                }
-                let mut best_pool = best_pool.lock().await;
-                let mut best_amount_out = best_amount_out.lock().await;
-                if amount_out > *best_amount_out {
-                    *best_amount_out = amount_out;
-                    *best_pool = pool;
-                }
-            }));
+            handles.push(
+                tokio::spawn(async move {
+                    let amount_out;
+                    {
+                        let mut evm = new_evm(
+                            fork_db,
+                            params.block.clone(),
+                            params.chain_id.clone()
+                        );
+                        amount_out = sim_swap(
+                            pool.clone(),
+                            contract,
+                            caller,
+                            params,
+                            &mut evm
+                        ).unwrap();
+                    }
+                    let mut best_pool = best_pool.lock().await;
+                    let mut best_amount_out = best_amount_out.lock().await;
+                    if amount_out > *best_amount_out {
+                        *best_amount_out = amount_out;
+                        *best_pool = pool;
+                    }
+                })
+            );
         }
 
         for handle in handles {
             handle.await?;
         }
-    
+
         info!("Time to simulate swap: {:?}ms", time.elapsed().as_millis());
 
         let best_pool = best_pool.lock().await;
@@ -465,20 +483,16 @@ impl Backend {
 
         let minimum_received = amount_out - (amount_out * U256::from(slippage)) / U256::from(100);
 
-
         let router_params = Params {
             input_token: params.token_in.token.address,
             output_token: params.token_out.token.address,
             amount_in,
             pool: pool_to_swap.address,
             pool_variant: pool_to_swap.variant(),
-            minimum_received
+            minimum_received,
         };
-    
+
         let call_data = encode_swap(router_params);
-
-        
-
 
         Ok(QuoteResult {
             block_number: params.block.header.number.unwrap(),
@@ -495,10 +509,9 @@ impl Backend {
             gas_cost: "TODO".to_string(),
             data: call_data,
         })
-    }
+    }*/
 
-    
-
+/* 
     async fn collect_pools(&self, params: SwapParams) -> Result<Vec<Pool>, anyhow::Error> {
         let pools = Arc::new(Mutex::new(Vec::new()));
 
@@ -582,7 +595,9 @@ impl Backend {
         Ok(all_pools)
     }
 }
+    */
 
+/* 
 fn sim_swap(
     pool: Pool,
     contract: DummyAccount,
@@ -590,7 +605,7 @@ fn sim_swap(
     params: SwapParams,
     evm: &mut Evm<'static, (), ForkDB>
 ) -> Result<U256, anyhow::Error> {
-    let amount_in = params.token_in.token.parse_wei(&params.amount_in)?;
+    let amount_in = parse_wei(&params.amount_in, params.token_in.token.decimals)?;
 
     // approve the contract to spend token_in
     evm.tx_mut().caller = caller.address;
@@ -622,12 +637,11 @@ fn sim_swap(
         U256::ZERO
     };
 
-    
     Ok(amount_out)
 }
+    */
 
-
-
+/* 
 /// Calculate token out price in usd
 /// 
 /// This only works if `base_token` is WETH and `quote_token` is anything except of a stable coin
@@ -675,3 +689,4 @@ pub fn calc_quote_token_price(
 
     quote_price_usd
 }
+    */

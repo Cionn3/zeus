@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use zeus_gui::ZeusApp;
+use zeus_gui::app::ZeusApp;
 
 
 fn main() -> Result<(), eframe::Error> {

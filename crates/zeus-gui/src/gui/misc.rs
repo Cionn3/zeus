@@ -15,9 +15,11 @@ use eframe::{
     emath::Vec2,
 };
 
-use crate::{ fonts::roboto_regular, ZeusApp };
+use crate::fonts::roboto_regular;
 
-use super::{ THEME, SHARED_UI_STATE, AppData };
+use super::THEME;
+use super::super::app::ZeusApp;
+use zeus_shared_types::{SHARED_UI_STATE, AppData};
 
 
 /// Render the login screen
