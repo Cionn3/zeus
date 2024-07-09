@@ -1,4 +1,4 @@
-use std::{ collections::HashMap, time::{ Instant, Duration } };
+use std::{ collections::HashMap, time::{ Instant, Duration }, sync::Arc };
 use eframe::{ egui, CreationContext };
 use egui::{ vec2, Align2, ComboBox, Context, Style, Ui };
 
@@ -11,7 +11,7 @@ use crate::{
         ZeusTheme,
         GUI,
         misc::{ login_screen, new_profile_screen, tx_settings_window, rich_text, frame },
-        icons::*,
+        icons::IconTextures,
     },
 };
 
@@ -41,6 +41,9 @@ pub struct ZeusApp {
     /// The GUI components of the application
     pub gui: GUI,
 
+    /// The icons used in the application
+    pub icons: Arc<IconTextures>,
+
     /// Send Data to backend
     pub front_sender: Option<Sender<Request>>,
 
@@ -57,19 +60,6 @@ pub struct ZeusApp {
     pub last_quote_request: Instant,
 }
 
-impl Default for ZeusApp {
-    fn default() -> Self {
-        Self {
-            gui: GUI::default(),
-            front_sender: None,
-            back_receiver: None,
-            data: AppData::default(),
-            last_eth_request: Instant::now(),
-            last_erc20_request: Instant::now(),
-            last_quote_request: Instant::now(),
-        }
-    }
-}
 
 fn setup_logging() -> (WorkerGuard, WorkerGuard) {
     // Setup for file appenders
@@ -99,7 +89,21 @@ fn setup_logging() -> (WorkerGuard, WorkerGuard) {
 impl ZeusApp {
     pub fn new(cc: &CreationContext) -> Self {
         let _guard = setup_logging();
-        let mut app = Self::default();
+
+        let icons = Arc::new(IconTextures::new(&cc.egui_ctx).unwrap());
+        let gui = GUI::new_default(icons.clone());
+
+        let mut app = Self {
+            gui,
+            icons,
+            front_sender: None,
+            back_receiver: None,
+            data: AppData::default(),
+            last_eth_request: Instant::now(),
+            last_erc20_request: Instant::now(),
+            last_quote_request: Instant::now(),
+        };   
+
         app.config_style(&cc.egui_ctx);
 
         match app.data.load_rpc() {
@@ -314,7 +318,7 @@ impl ZeusApp {
     fn select_chain(&mut self, ui: &mut Ui) {
         let networks = self.data.networks.clone();
         ui.horizontal(|ui| {
-            ui.add(get_chain_icon(self.data.chain_id.id()));
+            ui.add(self.icons.chain_icon(self.data.chain_id.id()));
 
             ComboBox::from_label("")
                 .selected_text(self.data.chain_id.name())
@@ -337,7 +341,7 @@ impl ZeusApp {
                         }
                     }
                 });
-            ui.add(connected_icon(self.data.connected(self.data.chain_id.id())));
+            ui.add(self.icons.connected_icon(self.data.connected(self.data.chain_id.id())));
         });
     }
 
@@ -438,7 +442,6 @@ impl eframe::App for ZeusApp {
         {
             let oracle = BLOCK_ORACLE.read().unwrap();
             self.data.block_info = oracle.get_block_info();
-           // info!("Latest Block: {:?}", self.data.block_info.0.number);
         }
 
         self.request_eth_balance();
@@ -447,10 +450,10 @@ impl eframe::App for ZeusApp {
 
         // Draw the UI that belongs to the Top Panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.horizontal_centered(|ui| {
+           
                 self.gui.render_wallet_ui(ui, &mut self.data);
-                self.info_msg(ui);
-            });
+               // self.info_msg(ui);
+            
         });
 
         // Draw the UI that belongs to the Central Panel
@@ -468,7 +471,7 @@ impl eframe::App for ZeusApp {
 
             ui.vertical_centered_justified(|ui| {
                 ui.add_space(100.0);
-                self.gui.swap_ui.swap_panel(ui, &mut self.data);
+                self.gui.swap_ui.swap_panel(ui, &mut self.data, self.icons.clone());
                 self.gui.networks_ui(ui, &mut self.data);
                 tx_settings_window(ui, &mut self.data);
             });

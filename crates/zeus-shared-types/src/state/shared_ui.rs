@@ -24,6 +24,15 @@ pub struct SharedUiState {
     /// (on/off, "New"/"Import Wallet")
     pub wallet_popup: (bool, &'static str),
 
+    /// New Wallet Window
+    pub new_wallet_window_on: bool,
+
+    /// Generate Wallet UI
+    pub generate_wallet_on: bool,
+
+    /// Import Wallet UI
+    pub import_wallet_window_on: bool,
+
     /// Export wallet Key UI on/off
     pub export_key_ui: bool,
 
@@ -46,6 +55,9 @@ impl Default for SharedUiState {
             swap_ui_on: true,
             networks_on: false,
             wallet_popup: (false, "New"),
+            new_wallet_window_on: false,
+            generate_wallet_on: false,
+            import_wallet_window_on: false,
             export_key_ui: false,
             exported_key_window: (false, String::new()),
             tx_settings_on: false,

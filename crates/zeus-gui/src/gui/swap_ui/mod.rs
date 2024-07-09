@@ -18,7 +18,7 @@ use egui::{
 use crossbeam::channel::Sender;
 
 use crate::fonts::roboto_regular;
-use super::{ icons::tx_settings_icon, misc::{ frame, rich_text } };
+use super::{ icons::IconTextures, misc::{ frame, rich_text } };
 
 use zeus_backend::types::Request;
 use zeus_shared_types::{
@@ -35,7 +35,6 @@ use zeus_chain::{
     alloy::primitives::{ U256, Address },
 };
 
-use tracing::{ info, error };
 
 /// Manages the state of the swap UI
 pub struct SwapUI {
@@ -63,7 +62,7 @@ impl SwapUI {
     }
 
     /// Renders the swap panel
-    pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData) {
+pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTextures>) {
         let currencies;
 
         {
@@ -91,7 +90,7 @@ impl SwapUI {
                 ui.set_height(ui_height);
 
                 ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
-                    let response = ui.add(tx_settings_icon());
+                    let response = ui.add(icons.tx_settings_icon());
 
                     if response.clicked() {
                         let mut state = SHARED_UI_STATE.write().unwrap();
