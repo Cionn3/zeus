@@ -11,24 +11,23 @@ use eframe::{
         TextEdit,
         Ui,
         Visuals,
+        ComboBox,
     },
     epaint::Margin,
 };
 
 use std::sync::Arc;
 use misc::frame;
-use crate::{
-    fonts::roboto_regular,
-    gui::{ icons::IconTextures, swap_ui::SwapUI },
-};
+use crate::{ fonts::roboto_regular, gui::{ icons::IconTextures, swap_ui::SwapUI } };
 
 use wallet_ui::wallet_ui;
 
 use zeus_backend::types::Request;
-use zeus_shared_types::{ SHARED_UI_STATE, ErrorMsg, AppData };
+use zeus_shared_types::{ SHARED_UI_STATE, SWAP_UI_STATE, ErrorMsg, AppData };
 
 use lazy_static::lazy_static;
 use crossbeam::channel::Sender;
+use tracing::info;
 
 pub mod swap_ui;
 pub mod wallet_ui;
@@ -81,7 +80,7 @@ impl GUI {
         ui.vertical(|ui| {
             ui.label(base_fee);
             ui.label(
-                RichText::new(&data.block_info.1.readable()).family(roboto_regular()).size(15.0)
+                RichText::new(&data.next_block.format_gwei()).family(roboto_regular()).size(15.0)
             );
             ui.add_space(10.0);
 
@@ -166,6 +165,36 @@ impl GUI {
     /// Render the UI repsonsible for managing the wallets
     pub fn render_wallet_ui(&mut self, ui: &mut Ui, data: &mut AppData) {
         wallet_ui(ui, data, &self);
+    }
+
+    /// Chain Selection
+    pub fn select_chain(&mut self, ui: &mut Ui, data: &mut AppData) {
+        let chain_ids = data.chain_ids.clone();
+        ui.horizontal(|ui| {
+            ui.add(self.icons.chain_icon(data.chain_id.id()));
+
+            ComboBox::from_label("")
+                .selected_text(data.chain_id.name())
+                .show_ui(ui, |ui| {
+                    for chain_id in chain_ids {
+                        if ui.selectable_value(&mut data.chain_id, chain_id.clone(), chain_id.name()).clicked() {
+
+                            // Send a request to the backend to get the client
+                            self.send_request(Request::GetClient {
+                                chain_id: chain_id.clone(),
+                                rpcs: data.rpc.clone(),
+                                clients: data.ws_client.clone()
+                            });
+
+                            let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
+                            swap_ui_state.default_input(chain_id.id());
+                            swap_ui_state.default_output(chain_id.id());                
+                        }
+                    }
+                });
+                ui.add(self.icons.connected_icon(data.connected(data.chain_id.id())));
+
+        });
     }
 }
 

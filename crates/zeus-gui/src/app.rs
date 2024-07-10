@@ -1,6 +1,6 @@
 use std::{ collections::HashMap, time::{ Instant, Duration }, sync::Arc };
 use eframe::{ egui, CreationContext };
-use egui::{ vec2, Align2, ComboBox, Context, Style, Ui };
+use egui::{ vec2, Align2, Context, Style, Ui };
 
 use crossbeam::channel::{ unbounded, Receiver, Sender };
 
@@ -110,14 +110,23 @@ impl ZeusApp {
         match app.data.load_rpc() {
             Ok(_) => {}
             Err(e) => {
-                println!("Error Loading rpc.json: {}", e);
+                error!("Error Loading rpc.json: {}", e);
             }
         }
 
         let currencies: HashMap<u64, Vec<Currency>>;
 
         {
-            let zeus_db = ZeusDB::new().unwrap();
+            let zeus_db = match ZeusDB::new() {
+                Ok(db) => db,
+                Err(e) => {
+                    // TODO: handle this differently
+                    error!("Error Creating Database: {}", e);
+                    let mut state = SHARED_UI_STATE.write().unwrap();
+                    state.err_msg = ErrorMsg::new(true, e);
+                    return app;
+                }
+            };
 
             match zeus_db.insert_default() {
                 Ok(_) => {}
@@ -247,7 +256,9 @@ impl ZeusApp {
             return;
         }
         
-        let mut swap_state = SWAP_UI_STATE.write().unwrap();     
+        let mut swap_state = SWAP_UI_STATE.write().unwrap();
+        let client = self.data.client().unwrap();
+
 
         if !swap_state.currency_in.is_native() {
             // currency is an ERC20 token
@@ -259,7 +270,7 @@ impl ZeusApp {
                 owner: self.data.wallet_address(),
                 chain_id: self.data.chain_id.id(),
                 block: latest_block,
-                client: self.data.ws_client.get(&self.data.chain_id.id()).unwrap().clone(),
+                client: client.clone()
             };
             self.send_request(req);
             info!("Request sent for input token: {:?}", token.symbol);
@@ -274,7 +285,7 @@ impl ZeusApp {
                 owner: self.data.wallet_address(),
                 chain_id: self.data.chain_id.id(),
                 block: latest_block,
-                client: self.data.ws_client.get(&self.data.chain_id.id()).unwrap().clone(),
+                client
             };
             self.send_request(req);
             info!("Request sent for output token: {:?}", token.symbol);
@@ -289,9 +300,9 @@ impl ZeusApp {
 
     fn update_eth_balance(&mut self, balance: U256) {
         if let Some(wallet) = &mut self.data.profile.current_wallet {
-            let block = self.data.block_info.0.number;
+            let latest_block = self.data.latest_block.number;
             let chain_id = self.data.chain_id.id();
-            wallet.update_balance(chain_id, balance, block);
+            wallet.update_balance(chain_id, balance, latest_block);
 
             // * update the balance in the swap ui if a native currency is selected
             let mut swap_state = SWAP_UI_STATE.write().unwrap();
@@ -317,31 +328,7 @@ impl ZeusApp {
         }
     }
 
-    fn select_chain(&mut self, ui: &mut Ui) {
-        let chain_ids = self.data.chain_ids.clone();
-        ui.horizontal(|ui| {
-            ui.add(self.icons.chain_icon(self.data.chain_id.id()));
 
-            ComboBox::from_label("")
-                .selected_text(self.data.chain_id.name())
-                .show_ui(ui, |ui| {
-                    for chain_id in chain_ids {
-                        if ui.selectable_value(&mut self.data.chain_id, chain_id.clone(), chain_id.name()).clicked() {
-                            self.send_request(Request::GetClient {
-                                chain_id: chain_id.clone(),
-                                rpcs: self.data.rpc.clone(),
-                                clients: self.data.ws_client.clone()
-                            });
-                            let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
-                            swap_ui_state.default_input(chain_id.id());
-                            swap_ui_state.default_output(chain_id.id());                
-                        }
-                    }
-                });
-                ui.add(self.icons.connected_icon(self.data.connected(self.data.chain_id.id())));
-
-        });
-    }
 
     /// Show an error message if needed
     fn err_msg(&mut self, ui: &mut Ui) {
@@ -390,8 +377,12 @@ impl ZeusApp {
             frame().show(ui, |ui| {
                 ui.set_max_size(vec2(1000.0, 50.0));
 
-                let state = SHARED_UI_STATE.read().unwrap();
-                let msg_text = rich_text(&state.info_msg.msg, 16.0);
+                let info_msg;
+                {
+                    let state = SHARED_UI_STATE.read().unwrap();
+                    info_msg = state.info_msg.msg.clone();
+                }   
+                let msg_text = rich_text(&info_msg, 16.0);
                 let close_text = rich_text("Close", 16.0);
 
                 ui.label(msg_text);
@@ -420,16 +411,14 @@ impl eframe::App for ZeusApp {
                         }
 
                         Response::GetClient(client, chain_id) => {
-                            info!("Received client for chain: {:?}", chain_id);
                             self.data.ws_client.insert(chain_id.id(), client.clone());
-                            info!("Changed Chain: {:?}", chain_id.name().clone());
-                            
+                            trace!("Changed Chain: {:?}", chain_id.name().clone());
+
                             // setup block oracle
                             self.send_request(Request::InitOracles {
                                 client,
                                 chain_id: chain_id.clone(),
                             });
-                            info!("Request sent to init oracles for chain: {:?}", chain_id);
                         }
 
                     }
@@ -441,7 +430,10 @@ impl eframe::App for ZeusApp {
         // update to latest block
         {
             let oracle = BLOCK_ORACLE.read().unwrap();
-            self.data.block_info = oracle.get_block_info();
+            if self.data.latest_block().number != oracle.latest_block().number {
+                self.data.latest_block = oracle.latest_block.clone();
+                self.data.next_block = oracle.next_block.clone();
+            }
         }
 
         self.request_eth_balance();
@@ -479,7 +471,7 @@ impl eframe::App for ZeusApp {
         egui::SidePanel::left("left_panel")
             .exact_width(170.0)
             .show(ctx, |ui| {
-                self.select_chain(ui);
+                self.gui.select_chain(ui, &mut self.data);
                 ui.add_space(10.0);
                 self.gui.menu(ui, &mut self.data);
             });

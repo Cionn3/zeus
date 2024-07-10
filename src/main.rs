@@ -18,7 +18,7 @@ fn main() -> Result<(), eframe::Error> {
             // This gives us image support:
             egui_extras::install_image_loaders(&cc.egui_ctx);
 
-            Box::new(ZeusApp::new(cc))
+            Ok(Box::new(ZeusApp::new(cc)))
         })
     )
 }

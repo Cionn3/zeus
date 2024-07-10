@@ -2,25 +2,25 @@ use std::sync::{ Arc, RwLock };
 use futures_util::StreamExt;
 use crossbeam::channel::Receiver;
 use alloy::{
-    primitives::{ address, utils::format_units, Address, U256 },
-    providers::{Provider, RootProvider},
+    primitives::{ address, Address, U256 },
+    providers::{ Provider, RootProvider },
     pubsub::PubSubFrontend,
     rpc::types::eth::{ Block, BlockId, BlockNumberOrTag },
     sol,
 };
+
+use anyhow::anyhow;
 use lazy_static::lazy_static;
 lazy_static! {
     pub static ref BLOCK_ORACLE: Arc<RwLock<BlockOracle>> = BlockOracle::default();
 }
-
-
 
 use tracing::{ info, error, trace };
 use super::OracleAction;
 
 use std::time::{ Instant, Duration };
 
-const ETH_USD_FEED_DECIMALS: u8 = 8;
+//const ETH_USD_FEED_DECIMALS: u8 = 8;
 
 const ETH_USD_FEED: Address = address!("5f4eC3Df9cbd43714FE2740f5E3616155c5b8419");
 const BNB_USD_FEED: Address = address!("0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE");
@@ -37,14 +37,13 @@ sol!(
     }
 );
 
-
 /// Holds Block basic information
 #[derive(Debug, Clone)]
 pub struct BlockInfo {
     pub full_block: Option<Block>,
     pub number: u64,
     pub timestamp: u64,
-    pub base_fee: U256
+    pub base_fee: U256,
 }
 
 impl Default for BlockInfo {
@@ -53,7 +52,7 @@ impl Default for BlockInfo {
             full_block: None,
             number: 0,
             timestamp: 0,
-            base_fee: U256::default()
+            base_fee: U256::default(),
         }
     }
 }
@@ -64,8 +63,32 @@ impl BlockInfo {
             full_block,
             number,
             timestamp,
-            base_fee
+            base_fee,
         }
+    }
+
+    /// Calculate the next block
+    fn calc_next_block(&mut self, chain_id: u64, block: Block) -> Result<(), anyhow::Error> {
+        let timestamp = match chain_id {
+            1 => block.header.timestamp + 12,
+            56 => block.header.timestamp + 3,
+            8453 => block.header.timestamp + 2,
+            42161 => block.header.timestamp, // Arbitrum??????
+            _ => block.header.timestamp + 12,
+        };
+
+        let base_fee = match chain_id {
+            1 => calculate_next_block_base_fee(block.clone()),
+            56 => U256::from(3000000000u64), // 3 Gwei
+            _ => U256::from(0), // TODO
+        };
+
+        let number = block.header.number.ok_or_else(|| anyhow!("Block number is missing"))?;
+
+        self.number = number + 1;
+        self.timestamp = timestamp;
+        self.base_fee = base_fee;
+        Ok(())
     }
 
     /// Wei to Gwei conversion
@@ -73,38 +96,9 @@ impl BlockInfo {
         self.base_fee * U256::from(10).pow(U256::from(9))
     }
 
-    /// Convert to human readable format
-    pub fn readable(&self) -> String {
+    /// Format Gwei to human readable format
+    pub fn format_gwei(&self) -> String {
         format!("{:.2} Gwei", self.gwei() / U256::from(10).pow(U256::from(18)))
-    }
-}
-
-
-
-/// Gas Price in USD
-#[derive(Clone)]
-struct GasPrice {
-    price: f64,
-    eth_usd: U256,
-    last_request: Instant,
-}
-
-impl GasPrice {
-    async fn new(
-        client: Arc<RootProvider<PubSubFrontend>>,
-        chain_id: u64,
-        base_fee: U256
-    ) -> Result<Self, anyhow::Error> {
-        let eth_usd = get_eth_price(client.clone(), chain_id).await?;
-        let price = get_usd_value(eth_usd.clone(), base_fee)?;
-
-        Ok(Self { price, eth_usd, last_request: Instant::now() })
-    }
-
-    fn update(&mut self, price: f64, eth_usd: U256) {
-        self.price = price;
-        self.eth_usd = eth_usd;
-        self.last_request = Instant::now();
     }
 }
 
@@ -113,89 +107,87 @@ pub struct BlockOracle {
     pub latest_block: BlockInfo,
     pub next_block: BlockInfo,
     pub chain_id: u64,
-    gas_price: GasPrice,
+    pub eth_price: U256,
+    last_eth_price_request: Instant,
 }
 
 impl BlockOracle {
-    pub async fn new(client: Arc<RootProvider<PubSubFrontend>>, chain_id: u64) -> Result<Self, anyhow::Error> {
+    pub async fn new(
+        client: Arc<RootProvider<PubSubFrontend>>,
+        chain_id: u64
+    ) -> Result<Self, anyhow::Error> {
         let time = Instant::now();
 
-        info!("Requesting block to init block oracle for Chain Id: {:?}", chain_id);
-        let block = client
-            .get_block(BlockId::Number(BlockNumberOrTag::Latest), true.into()).await?
-            .expect("Block is missing");
-        info!("Got New block for block oracle");
+        let block_id = BlockId::Number(BlockNumberOrTag::Latest);
+        let block = client.get_block(block_id, true.into()).await?;
+        let eth_price = get_eth_price(client.clone(), chain_id).await?;
 
-        let next_block = next_block(chain_id.clone(), block.clone())?;
+        let block = block.ok_or_else(|| anyhow!("Block is missing"))?;
+
+        let block_number = block.header.number.ok_or_else(|| anyhow!("Block number is missing"))?;
+        let base_fee = block.header.base_fee_per_gas.ok_or_else(|| anyhow!("Base fee is missing"))?;
 
         let latest_block = BlockInfo::new(
             Some(block.clone()),
-            block.header.number.expect("Block number is missing"),
+            block_number,
             block.header.timestamp,
-            U256::from(block.header.base_fee_per_gas.unwrap_or_default())
+            U256::from(base_fee)
         );
 
-        let gas_price = GasPrice::new(client.clone(), chain_id, next_block.base_fee).await?;
+        let mut next_block = BlockInfo::default();
+        next_block.calc_next_block(chain_id, block)?;
 
-        info!("Block Oracle initialized in: {:?}ms", time.elapsed().as_millis());
+        info!("Block oracle initialized in {:?}ms", time.elapsed().as_millis());
 
         Ok(Self {
             latest_block,
             next_block,
             chain_id,
-            gas_price,
+            eth_price,
+            last_eth_price_request: Instant::now(),
         })
     }
 
+    /// A default instance of the block oracle
     pub fn default() -> Arc<RwLock<Self>> {
-        let latest_block = BlockInfo {
-            full_block: None,
-            number: 0,
-            timestamp: 0,
-            base_fee: U256::from(0),
+        let block_oracle = BlockOracle {
+            latest_block: BlockInfo::default(),
+            next_block: BlockInfo::default(),
+            chain_id: 1,
+            eth_price: U256::ZERO,
+            last_eth_price_request: Instant::now(),
         };
 
-        let next_block = BlockInfo::new(None, 1, 1, U256::from(0));
-
-        let gas_price = GasPrice {
-            price: 0.0,
-            eth_usd: U256::from(0),
-            last_request: Instant::now(),
-        };
-
-        Arc::new(
-            RwLock::new(Self {
-                latest_block,
-                next_block,
-                chain_id: 1,
-                gas_price,
-            })
-        )
+        Arc::new(RwLock::new(block_oracle))
     }
 
-    fn update_block(&mut self, block: Block) -> Result<(), anyhow::Error> {
+    /// Update the BlockInfo
+    fn update_block_info(&mut self, block: Block) -> Result<(), anyhow::Error> {
+        let number = block.header.number.ok_or_else(|| anyhow!("Block number is missing"))?;
+        let base_fee = block.header.base_fee_per_gas.ok_or_else(|| anyhow!("Base fee is missing"))?;
+
         self.latest_block = BlockInfo::new(
             Some(block.clone()),
-            block.header.number.expect("Block number is missing"),
+            number,
             block.header.timestamp,
-            U256::from(block.header.base_fee_per_gas.unwrap_or_default())
+            U256::from(base_fee)
         );
 
-        self.next_block = next_block(self.chain_id.clone(), block)?;
-
+        self.next_block.calc_next_block(self.chain_id, block)?;
+        trace!("Next block fee {}", self.next_block.format_gwei());
         Ok(())
     }
 
-    pub fn get_block_info(&self) -> (BlockInfo, BlockInfo) {
-        (self.latest_block.clone(), self.next_block.clone())
+    pub fn latest_block(&self) -> &BlockInfo {
+        &self.latest_block
     }
 
-    pub fn get_gas_price(&self) -> f64 {
-        self.gas_price.price.clone()
+    pub fn next_block(&self) -> &BlockInfo {
+        &self.next_block
     }
 
-    pub fn get_eth_usd(&self) -> U256 {
-        self.gas_price.eth_usd.clone()
+    pub fn get_eth_price(&self) -> &U256 {
+        &self.eth_price
     }
 }
 
@@ -205,85 +197,66 @@ pub async fn start_block_oracle(
     oracle: Arc<RwLock<BlockOracle>>,
     receiver: Receiver<OracleAction>
 ) {
+    trace!("Started block oracle for Chain ID: {}", chain_id);
     loop {
         let sub = client.subscribe_blocks().await;
         let mut stream = match sub {
             Ok(s) => s.into_stream(),
             Err(e) => {
-                error!("Error subscribing to blocks: {}", e);
+                error!("Failed to subscribe to blocks: {:?}", e);
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
         };
 
-        let chain_id = chain_id.clone();
         while let Some(block) = stream.next().await {
-            trace!("Received new block for Chain Id: {}", chain_id);
-            trace!("Block Number: {}", block.header.number.expect("Block number is missing"));
-
             match receiver.try_recv() {
-                Ok(OracleAction::STOP) => {
-                    info!("Received stop signal, block oracle stopped for Chain Id: {:?}", chain_id);
+                Ok(OracleAction::KILL) => {
+                    trace!(
+                        "Received kill signal, block oracle stopped for Chain Id: {:?}",
+                        chain_id
+                    );
                     return;
                 }
                 _ => {}
             }
 
-            {
-                let mut guard = oracle.write().unwrap();
-                match guard.update_block(block.clone()) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("Error updating block: {}", e);
-                    }
-                }
-            }
+            let number = if let Some(n) = block.header.number {
+                n
+            } else {
+                error!("Block number is missing");
+                continue;
+            };
+
+            trace!("Received new block {} for Chain ID: {}", number, chain_id);
 
             let last_request;
-            let base_fee;
-
             {
-                let oracle = oracle.read().unwrap();
-                last_request = oracle.gas_price.last_request;
-                base_fee = oracle.next_block.base_fee;
+                let mut lock = oracle.write().unwrap();
+
+                match lock.update_block_info(block.clone()) {
+                    Ok(_) => (),
+                    Err(e) => error!("Failed to update block info: {:?}", e),
+                }
+                last_request = lock.last_eth_price_request;
             }
 
             let now = Instant::now();
-            if now.duration_since(last_request) > Duration::from_secs(TIME_OUT) {
-                let (gas_price, eth_usd) = match
-                    get_gas_price(client.clone(), chain_id, base_fee).await
-                {
-                    Ok((price, eth_usd)) => (price, eth_usd),
-                    Err(e) => {
-                        error!("Error getting gas price: {}", e);
-                        continue;
-                    }
-                };
+            let timeout_expired = now.duration_since(last_request) > Duration::from_secs(TIME_OUT);
 
-                let mut oracle = oracle.write().unwrap();
-                oracle.gas_price.update(gas_price, eth_usd);
-                trace!("Gas Price updated: ${}", oracle.gas_price.price.clone());
+            if timeout_expired {
+                let eth_price = get_eth_price(client.clone(), chain_id).await;
+                match eth_price {
+                    Ok(price) => {
+                        let mut lock = oracle.write().unwrap();
+                        lock.eth_price = price;
+                        lock.last_eth_price_request = Instant::now();
+                    }
+                    Err(e) => error!("Failed to get ETH price: {:?}", e),
+                }
             }
         }
     }
-}
-
-async fn get_gas_price(
-    client: Arc<RootProvider<PubSubFrontend>>,
-    chain_id: u64,
-    base_fee: U256
-) -> Result<(f64, U256), anyhow::Error> {
-    let eth_usd = get_eth_price(client.clone(), chain_id).await?;
-    let price = get_usd_value(eth_usd.clone(), base_fee)?;
-
-    Ok((price, eth_usd))
-}
-
-fn get_usd_value(eth_usd: U256, base_fee: U256) -> Result<f64, anyhow::Error> {
-    let base = U256::from(10).pow(U256::from(18));
-    let value = (U256::from(base_fee) * eth_usd) / base;
-    let formatted = format_units(value, ETH_USD_FEED_DECIMALS)?.parse::<f64>()?;
-    Ok(formatted)
 }
 
 async fn get_eth_price(
@@ -304,24 +277,6 @@ async fn get_eth_price(
     // convert i256 to U256
     let eth_usd = eth_usd.to_string().parse::<U256>()?;
     Ok(eth_usd)
-}
-
-/// Calculate the next block
-fn next_block(chain_id: u64, block: Block) -> Result<BlockInfo, anyhow::Error> {
-    let timestamp = match chain_id {
-        1 => block.header.timestamp + 12,
-        56 => block.header.timestamp + 3,
-        8453 => block.header.timestamp + 2,
-        42161 => block.header.timestamp + 1, // ! Arbitrum doesnt have stable block time
-        _ => block.header.timestamp + 12,
-    };
-    let base_fee = match chain_id {
-        1 => calculate_next_block_base_fee(block.clone()),
-        56 => U256::from(3000000000u64), // 3 Gwei
-        _ => U256::from(0), // TODO
-    };
-    let number = block.header.number.expect("Block number is missing");
-    Ok(BlockInfo::new(None, number + 1, timestamp, base_fee))
 }
 
 /// Calculate the next block base fee
@@ -351,3 +306,25 @@ fn calculate_next_block_base_fee(block: Block) -> U256 {
         return U256::from(current_base_fee_per_gas - base_fee_per_gas_delta);
     }
 }
+
+/*
+
+async fn get_gas_price(
+    client: Arc<RootProvider<PubSubFrontend>>,
+    chain_id: u64,
+    base_fee: U256
+) -> Result<(f64, U256), anyhow::Error> {
+    let eth_usd = get_eth_price(client.clone(), chain_id).await?;
+    let price = get_usd_value(eth_usd.clone(), base_fee)?;
+
+    Ok((price, eth_usd))
+}
+
+fn get_usd_value(eth_usd: U256, base_fee: U256) -> Result<f64, anyhow::Error> {
+    let base = U256::from(10).pow(U256::from(18));
+    let value = (U256::from(base_fee) * eth_usd) / base;
+    let formatted = format_units(value, ETH_USD_FEED_DECIMALS)?.parse::<f64>()?;
+    Ok(formatted)
+}
+
+*/

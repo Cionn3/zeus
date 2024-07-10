@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use crossbeam::channel::{ Sender, Receiver, bounded };
+use crossbeam::channel::{ unbounded, Receiver, Sender };
 use anyhow::Context;
 use tracing::{ info, error };
 
@@ -184,39 +184,30 @@ impl Backend {
         chain_id: ChainId
     ) -> Result<(), anyhow::Error> {
         info!("Initializing Oracles for Chain: {}", chain_id.name());
-        self.stop_previous_oracles().await;
+        self.kill_oracle().await;
 
         let new_block_oracle = BlockOracle::new(client.clone(), chain_id.id().clone()).await?;
 
         {
-            let mut block_oracle_1 = BLOCK_ORACLE.write().unwrap();
-            *block_oracle_1 = new_block_oracle;
+            let mut block_oracle = BLOCK_ORACLE.write().unwrap();
+            *block_oracle = new_block_oracle;
         }
-        info!("Updated Block Oracle and lock is released");
 
-        let (action_sender, action_receiver) = bounded(10);
-        self.oracle_sender = Some(action_sender);
-
+        let (sender, receiver) = unbounded();
+        self.oracle_sender = Some(sender);
         let client_clone = client.clone();
-        let action_receiver_1 = action_receiver.clone();
 
         tokio::spawn(async move {
-            start_block_oracle(
-                client_clone,
-                chain_id.id(),
-                BLOCK_ORACLE.clone(),
-                action_receiver_1
-            ).await;
+            start_block_oracle(client_clone, chain_id.id(), BLOCK_ORACLE.clone(), receiver).await;
         });
 
-        info!("Init Oracles Done!");
         Ok(())
     }
 
-    /// If we already run an oracle stop it so we can start a new one
-    async fn stop_previous_oracles(&mut self) {
+    /// If we already run an oracle kill it
+    async fn kill_oracle(&mut self) {
         if let Some(oracle_sender) = &self.oracle_sender {
-            match oracle_sender.send(OracleAction::STOP) {
+            match oracle_sender.send(OracleAction::KILL) {
                 Ok(_) => {}
                 Err(e) => error!("Error sending stop action: {}", e),
             }

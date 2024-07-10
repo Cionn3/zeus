@@ -1,25 +1,14 @@
 use eframe::{
     egui::{
-        Color32,
-        Frame,
-        Ui,
-        RichText,
-        widgets::TextEdit,
-        Rounding,
-        vec2,
-        Align2,
-        Checkbox,
-        Window
-    },
-    epaint::{ Margin, Shadow },
-    emath::Vec2,
+        vec2, widgets::TextEdit, Align2, Button, Checkbox, Color32, Frame, RichText, Rounding, Ui, Window
+    }, emath::Vec2, epaint::{ Margin, Shadow }
 };
 
 use crate::fonts::roboto_regular;
 
 use super::THEME;
 use super::super::app::ZeusApp;
-use zeus_shared_types::{SHARED_UI_STATE, AppData};
+use zeus_shared_types::{AppData, ErrorMsg, SHARED_UI_STATE};
 
 
 /// Render the login screen
@@ -59,28 +48,27 @@ pub fn login_screen(ui: &mut Ui, app: &mut ZeusApp) {
 
                 ui.label(pass_text);
                 ui.add(pass_field);
-                ui.add_space(15.0);
+                ui.add_space(10.0);
 
                 ui.label(confrim_text);
                 ui.add(confrim_field);
                 ui.add_space(15.0);
             });
-
-            ui.horizontal(|ui| {
-                // TODO: dont center the buttons manually
-                ui.add_space(120.0);
-                if ui.button("Unlock").clicked() {
+             
+                let unlock_txt = rich_text("Unlock", 15.0);
+                if ui.button(unlock_txt).clicked() {
 
                     match app.data.profile.decrypt_and_load() {
                         Ok(_) => {
                             app.data.logged_in = true;
                         }
                         Err(e) => {
-                            println!("Failed to unlock profile: {:?}", e);
+                            let mut state = SHARED_UI_STATE.write().unwrap();
+                            state.err_msg = ErrorMsg::new(true, e);
                         }
                     }
                 }           
-            });
+           
         });
     });
 }
@@ -137,26 +125,27 @@ pub fn new_profile_screen(ui: &mut Ui, app: &mut ZeusApp) {
             ui.add(confirm_field);
 
             ui.add_space(15.0);
-        });
+        
 
-        ui.horizontal(|ui| {
-            ui.add_space(150.0);
-            if ui.button("Create Profile").clicked() {
-                
+        
+            let create_txt = rich_text("Create", 15.0);
+            let button = Button::new(create_txt).rounding(10.0).min_size(vec2(30.0, 10.0));
+            let res = ui.add(button);
+
+            if res.clicked() {   
                 // encrypt and save the wallets to disk
                 match app.data.profile.encrypt_and_save() {
                     Ok(_) => {
-                        println!("Profile Created");
+                        app.data.new_profile_screen = false;
+                        app.data.profile_exists = true;
+                        app.data.logged_in = true;
                     }
                     Err(e) => {
-                        println!("Failed to create profile: {:?}", e);
+                        let mut state = SHARED_UI_STATE.write().unwrap();
+                        state.err_msg = ErrorMsg::new(true, e);
                     }
                 }
-                
 
-                app.data.new_profile_screen = false;
-                app.data.profile_exists = true;
-                app.data.logged_in = true;
             }
         });
     });

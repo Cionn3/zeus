@@ -20,7 +20,7 @@ tracing-subscriber = {version = "0.3.18", features = ["env-filter", "fmt"]}
 tracing-appender = "0.2.3"
 
 # GUI
-eframe = "0.27.2"
+eframe = "0.28.1"
 image = "0.25.1"
 
 anyhow = "1.0.44"

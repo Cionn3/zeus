@@ -49,8 +49,9 @@ impl Default for TxSettings {
 /// Main data and settings loaded by the app
 pub struct AppData {
 
-    /// Cache the `lastest` & `next` block info
-    pub block_info: (BlockInfo, BlockInfo),
+    pub latest_block: BlockInfo,
+
+    pub next_block: BlockInfo,
 
     /// A map of all connected websocket clients
     pub ws_client: HashMap<u64, Arc<WsClient>>,
@@ -115,7 +116,12 @@ impl AppData {
 
     /// Return the latest block
     pub fn latest_block(&self) -> BlockInfo {
-        self.block_info.0.clone()
+        self.latest_block.clone()
+    }
+
+    /// Return the next block
+    pub fn next_block(&self) -> BlockInfo {
+        self.next_block.clone()
     }
 
     pub fn add_rpc(&mut self, rpc: Rpc) {
@@ -159,7 +165,7 @@ impl AppData {
     /// Check if the wallet's balance its outdated
     pub fn should_update_balance(&self) -> bool {
         if let Some(wallet) = &self.profile.current_wallet {
-            wallet.balance_outdated(self.chain_id.id(), self.block_info.0.number)
+            wallet.balance_outdated(self.chain_id.id(), self.latest_block().number)
         } else {
             false
         }
@@ -189,7 +195,8 @@ impl Default for AppData {
         }
 
         Self {
-            block_info: (BlockInfo::default(), BlockInfo::default()),
+            latest_block: BlockInfo::default(),
+            next_block: BlockInfo::default(),
             ws_client: HashMap::new(),
             chain_id: ChainId::default(),
             chain_ids: NETWORKS.to_vec(),
