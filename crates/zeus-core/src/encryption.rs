@@ -113,8 +113,8 @@ pub struct EncryptionResult {
 /// The parameters used to encrypt the data
 #[derive(Clone, Debug)]
 pub struct EncryptionParams {
-    pub t_cost: u32,
     pub m_cost: u32,
+    pub t_cost: u32,
     pub p_cost: u32,
     pub hash_length: usize,
 }
@@ -128,8 +128,8 @@ impl EncryptionParams {
         }
         
         Ok(Self {
-            t_cost: argon2.params().t_cost(),
             m_cost: argon2.params().m_cost(),
+            t_cost: argon2.params().t_cost(),
             p_cost: argon2.params().p_cost(),
             hash_length: hash_lenght.expect("Failed to get output length"),
         })
@@ -137,8 +137,8 @@ impl EncryptionParams {
 
     pub fn to_vec(&self) -> Vec<u8> {
         let mut data = Vec::new();
-        data.extend_from_slice(&self.t_cost.to_be_bytes());
         data.extend_from_slice(&self.m_cost.to_be_bytes());
+        data.extend_from_slice(&self.t_cost.to_be_bytes());
         data.extend_from_slice(&self.p_cost.to_be_bytes());
 
         // Ensure hash_length is always 8 bytes
@@ -147,18 +147,18 @@ impl EncryptionParams {
     }
 
     /// Recover the params
-    pub fn from_vec(data: &[u8]) -> Result<Self, anyhow::Error> {
+    pub fn from_u8(data: &[u8]) -> Result<Self, anyhow::Error> {
         if data.len() != 20 {
             return Err(anyhow!("Invalid data length for EncryptionParams"));
         }
-        let t_cost = u32::from_be_bytes(data[0..4].try_into().map_err(|_| anyhow!("Failed to convert t_cost from bytes"))?);
-        let m_cost = u32::from_be_bytes(data[4..8].try_into().map_err(|_| anyhow!("Failed to convert m_cost from bytes"))?);
+        let m_cost = u32::from_be_bytes(data[0..4].try_into().map_err(|_| anyhow!("Failed to convert m_cost from bytes"))?);
+        let t_cost = u32::from_be_bytes(data[4..8].try_into().map_err(|_| anyhow!("Failed to convert t_cost from bytes"))?);
         let p_cost = u32::from_be_bytes(data[8..12].try_into().map_err(|_| anyhow!("Failed to convert p_cost from bytes"))?);
         let hash_length = u64::from_be_bytes(data[12..20].try_into().map_err(|_| anyhow!("Failed to convert hash_length from bytes"))?) as usize;
 
         Ok(Self {
-            t_cost,
             m_cost,
+            t_cost,
             p_cost,
             hash_length,
         })
@@ -175,7 +175,7 @@ pub fn encrypt(credentials: Credentials, data: Vec<u8>) -> Result<EncryptionResu
     let salt = credentials.generate_saltstring()?;
 
     // set the argon2 parameters
-    let params = match Params::new(T_COST, M_COST, P_COST, Some(HASH_LENGTH)) {
+    let params = match Params::new(M_COST, T_COST, P_COST, Some(HASH_LENGTH)) {
         Ok(params) => params,
         Err(e) => {
             return Err(anyhow::Error::msg(format!("{:?}", e)));
@@ -228,7 +228,7 @@ pub fn decrypt(credentials: Credentials, data: Vec<u8>) -> Result<Vec<u8>, anyho
 
 
     // Parse the encryption params
-    let argon2_params = EncryptionParams::from_vec(params)?;
+    let argon2_params = EncryptionParams::from_u8(params)?;
 
 
     let params = Params::new(
