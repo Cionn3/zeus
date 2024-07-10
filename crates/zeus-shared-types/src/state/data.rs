@@ -58,8 +58,8 @@ pub struct AppData {
     /// The current selected chain id
     pub chain_id: ChainId,
 
-    /// All supported networks
-    pub networks: Vec<ChainId>,
+    /// All supported ChainIds
+    pub chain_ids: Vec<ChainId>,
 
     /// The current saved RPC endpoints
     pub rpc: Vec<Rpc>,
@@ -98,7 +98,7 @@ impl AppData {
     }
 
     pub fn supported_networks(&self) -> Vec<u64> {
-        self.networks
+        self.chain_ids
             .iter()
             .cloned()
             .map(|chain_id| chain_id.id())
@@ -111,6 +111,11 @@ impl AppData {
     // ! Not 100% reliable as we may lose connection to the client
     pub fn connected(&self, chain_id: u64) -> bool {
         self.ws_client.contains_key(&chain_id)
+    }
+
+    /// Return the latest block
+    pub fn latest_block(&self) -> BlockInfo {
+        self.block_info.0.clone()
     }
 
     pub fn add_rpc(&mut self, rpc: Rpc) {
@@ -187,7 +192,7 @@ impl Default for AppData {
             block_info: (BlockInfo::default(), BlockInfo::default()),
             ws_client: HashMap::new(),
             chain_id: ChainId::default(),
-            networks: NETWORKS.to_vec(),
+            chain_ids: NETWORKS.to_vec(),
             rpc,
             profile: Profile::default(),
             tx_settings: TxSettings::default(),

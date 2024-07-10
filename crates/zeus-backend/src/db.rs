@@ -74,7 +74,7 @@ impl ZeusDB {
                           owner            TEXT NOT NULL,
                           token            TEXT NOT NULL,
                           balance             TEXT NOT NULL,
-                          UNIQUE(owner, address, block_number)
+                          UNIQUE(owner, token, block_number)
                           )",
                     [],
                 )?;

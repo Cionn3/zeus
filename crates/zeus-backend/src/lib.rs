@@ -139,6 +139,7 @@ impl Backend {
                             }
 
                             Request::GetClient { chain_id, rpcs, clients } => {
+                                info!("Received Request to get client: {}", chain_id.name());
                                 if !clients.contains_key(&chain_id.id()) {
                                     match self.get_client(chain_id, rpcs).await {
                                         Ok(_) => {}
@@ -191,6 +192,7 @@ impl Backend {
             let mut block_oracle_1 = BLOCK_ORACLE.write().unwrap();
             *block_oracle_1 = new_block_oracle;
         }
+        info!("Updated Block Oracle and lock is released");
 
         let (action_sender, action_receiver) = bounded(10);
         self.oracle_sender = Some(action_sender);
@@ -207,7 +209,7 @@ impl Backend {
             ).await;
         });
 
-        info!("Block Oracle started");
+        info!("Init Oracles Done!");
         Ok(())
     }
 

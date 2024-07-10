@@ -29,12 +29,13 @@ use tracing_subscriber::{
 
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::Registry;
-use tracing::{error, info};
+use tracing::{error, info, trace};
 
 
 
-/// Rate Limit
-const TIME_OUT: u64 = 2;
+/// The timeout for requesting eth and erc20 balances
+/// This do not apply for Ethereum since it has a block time of 12 secs and cannot cause a lot of rpc calls
+const TIME_OUT: u64 = 3;
 
 /// The main application struct
 pub struct ZeusApp {
@@ -71,9 +72,9 @@ fn setup_logging() -> (WorkerGuard, WorkerGuard) {
     let (output_writer, output_guard) = tracing_appender::non_blocking(output_appender);
 
     // Defining filters
-    let console_filter = EnvFilter::new("zeus=info,error,warn");
-    let trace_filter = EnvFilter::new("zeus=trace");
-    let output_filter = EnvFilter::new("zeus=info,error,warn");
+    let console_filter = EnvFilter::new("zeus,zeus_core,zeus_chain,zeus_backend=info,error,warn");
+    let trace_filter = EnvFilter::new("zeus,zeus_core,zeus_chain_zeus_backend=trace");
+    let output_filter = EnvFilter::new("zeus,zeus_core,zeus_chain_zeus_backend=info,error,warn");
 
     // Setting up layers
     let console_layer = fmt::layer().with_writer(std::io::stdout).with_filter(console_filter);
@@ -204,84 +205,85 @@ impl ZeusApp {
                         self.send_request(req);
                         self.last_eth_request = now;
                     }
-                }   
-            
-        
+                }         
     }
 
+    /// Request the ERC20 balance of the current wallet for the SwapUI
+    /// 
+    /// For Ethereum we only do requests on every new block
+    /// For other chains their block time can vary a lot so we only do requests every 3 seconds
     fn request_erc20_balance(&mut self) {
+
+        // no selected wallet, skip
         if self.data.wallet_address().is_zero() {
             return;
         }
 
-        if !self.data.ws_client.contains_key(&self.data.chain_id.id()) {
+        // no client, skip
+        if self.data.client().is_none() {
             return;
         }
 
-
+        // check if the timeout has passed
         let now = Instant::now();
-        if now.duration_since(self.last_erc20_request) > Duration::from_secs(TIME_OUT) {
+        let timeout_expired = now.duration_since(self.last_erc20_request) > Duration::from_secs(TIME_OUT);
+        let chain = self.data.chain_id.id();
 
+        // timeout has not expired and chain is not ethereum, skip
+        if !timeout_expired && chain != 1{
+            return;
+        }
+
+        // compare the latest block from oracle with the swap ui state block
         let swap_state_block;
         {
             let swap_state = SWAP_UI_STATE.read().unwrap();
             swap_state_block = swap_state.block;
         }
-        let latest_block = self.data.block_info.0.number;
+        let latest_block = self.data.latest_block().number;
 
-        if latest_block > swap_state_block {
-            let mut swap_state = SWAP_UI_STATE.write().unwrap();
+        // if the block is the same, skip
+        if swap_state_block == latest_block {
+            return;
+        }
+        
+        let mut swap_state = SWAP_UI_STATE.write().unwrap();     
 
-            if !swap_state.currency_in.is_native() {
-
-            let token = swap_state.currency_in.get_erc20();
-            
-            if token.is_some() {
+        if !swap_state.currency_in.is_native() {
+            // currency is an ERC20 token
+            let token = swap_state.currency_in.get_erc20().unwrap();
+          
             let req = Request::GetERC20Balance {
                 id: "input".to_string(),
-                token: token.unwrap(),
+                token: token.clone(),
                 owner: self.data.wallet_address(),
                 chain_id: self.data.chain_id.id(),
                 block: latest_block,
                 client: self.data.ws_client.get(&self.data.chain_id.id()).unwrap().clone(),
             };
             self.send_request(req);
-        } else {
-            error!("Token is None, this should not happen!");
-            info!("Selected Currency: {:?}", swap_state.currency_in.clone());
-
+            info!("Request sent for input token: {:?}", token.symbol);
         }
-    }
-        
 
         if !swap_state.currency_out.is_native() {
+            let token = swap_state.currency_out.get_erc20().unwrap();
 
-            let token = swap_state.currency_out.get_erc20();
-
-            if token.is_some() {
             let req = Request::GetERC20Balance {
                 id: "output".to_string(),
-                token: token.unwrap(),
+                token: token.clone(),
                 owner: self.data.wallet_address(),
                 chain_id: self.data.chain_id.id(),
                 block: latest_block,
                 client: self.data.ws_client.get(&self.data.chain_id.id()).unwrap().clone(),
             };
-
             self.send_request(req);
-        } else {
-            error!("Token is None, this should not happen!");
-            info!("Selected Currency: {:?}", swap_state.currency_out.clone());
+            info!("Request sent for output token: {:?}", token.symbol);
+        }
 
-        }
-        }
-            self.last_erc20_request = now;
-
-            // update the swap state block
-            swap_state.block = latest_block;
-        }
-        
-    }
+        // update the last request time
+        self.last_erc20_request = now;
+        // update the swap state block
+        swap_state.block = latest_block;
         
     }
 
@@ -316,32 +318,28 @@ impl ZeusApp {
     }
 
     fn select_chain(&mut self, ui: &mut Ui) {
-        let networks = self.data.networks.clone();
+        let chain_ids = self.data.chain_ids.clone();
         ui.horizontal(|ui| {
             ui.add(self.icons.chain_icon(self.data.chain_id.id()));
 
             ComboBox::from_label("")
                 .selected_text(self.data.chain_id.name())
                 .show_ui(ui, |ui| {
-                    for id in networks.iter().map(|chain_id| chain_id.clone()) {
-                        if
-                            ui
-                                .selectable_value(&mut self.data.chain_id, id.clone(), id.name())
-                                .clicked()
-                        {
-                            println!("Selected Chain: {:?}", id);
+                    for chain_id in chain_ids {
+                        if ui.selectable_value(&mut self.data.chain_id, chain_id.clone(), chain_id.name()).clicked() {
                             self.send_request(Request::GetClient {
-                                chain_id: id.clone(),
+                                chain_id: chain_id.clone(),
                                 rpcs: self.data.rpc.clone(),
                                 clients: self.data.ws_client.clone()
                             });
                             let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
-                            swap_ui_state.default_input(id.id());
-                            swap_ui_state.default_output(id.id());
+                            swap_ui_state.default_input(chain_id.id());
+                            swap_ui_state.default_output(chain_id.id());                
                         }
                     }
                 });
-            ui.add(self.icons.connected_icon(self.data.connected(self.data.chain_id.id())));
+                ui.add(self.icons.connected_icon(self.data.connected(self.data.chain_id.id())));
+
         });
     }
 
@@ -422,14 +420,16 @@ impl eframe::App for ZeusApp {
                         }
 
                         Response::GetClient(client, chain_id) => {
+                            info!("Received client for chain: {:?}", chain_id);
                             self.data.ws_client.insert(chain_id.id(), client.clone());
-                            // setup oracles
-                            println!("Changed Chain: {:?}", chain_id.name().clone());
-                            println!("Sending request to init oracles");
+                            info!("Changed Chain: {:?}", chain_id.name().clone());
+                            
+                            // setup block oracle
                             self.send_request(Request::InitOracles {
                                 client,
-                                chain_id,
+                                chain_id: chain_id.clone(),
                             });
+                            info!("Request sent to init oracles for chain: {:?}", chain_id);
                         }
 
                     }
@@ -449,11 +449,9 @@ impl eframe::App for ZeusApp {
         
 
         // Draw the UI that belongs to the Top Panel
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-           
-                self.gui.render_wallet_ui(ui, &mut self.data);
-               // self.info_msg(ui);
-            
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| { 
+            self.gui.render_wallet_ui(ui, &mut self.data);
+            // self.info_msg(ui);
         });
 
         // Draw the UI that belongs to the Central Panel
@@ -463,7 +461,7 @@ impl eframe::App for ZeusApp {
                 self.draw_login(ui);
             });
 
-             
+             // if we are not logged in or we are on the new profile screen, we should not draw the main UI
             if !self.data.logged_in || self.data.new_profile_screen {
                 return;
             } 

@@ -15,7 +15,7 @@ lazy_static! {
 
 
 
-use tracing::{ info, error };
+use tracing::{ info, error, trace };
 use super::OracleAction;
 
 use std::time::{ Instant, Duration };
@@ -120,9 +120,11 @@ impl BlockOracle {
     pub async fn new(client: Arc<RootProvider<PubSubFrontend>>, chain_id: u64) -> Result<Self, anyhow::Error> {
         let time = Instant::now();
 
+        info!("Requesting block to init block oracle for Chain Id: {:?}", chain_id);
         let block = client
             .get_block(BlockId::Number(BlockNumberOrTag::Latest), true.into()).await?
             .expect("Block is missing");
+        info!("Got New block for block oracle");
 
         let next_block = next_block(chain_id.clone(), block.clone())?;
 
@@ -216,12 +218,12 @@ pub async fn start_block_oracle(
 
         let chain_id = chain_id.clone();
         while let Some(block) = stream.next().await {
-            info!("Received new block for Chain Id: {}", chain_id);
-            info!("Block Number: {}", block.header.number.expect("Block number is missing"));
+            trace!("Received new block for Chain Id: {}", chain_id);
+            trace!("Block Number: {}", block.header.number.expect("Block number is missing"));
 
             match receiver.try_recv() {
                 Ok(OracleAction::STOP) => {
-                    info!("Received stop signal, stopping block oracle for Chain Id: {:?}", chain_id);
+                    info!("Received stop signal, block oracle stopped for Chain Id: {:?}", chain_id);
                     return;
                 }
                 _ => {}
@@ -260,7 +262,7 @@ pub async fn start_block_oracle(
 
                 let mut oracle = oracle.write().unwrap();
                 oracle.gas_price.update(gas_price, eth_usd);
-                info!("Gas Price updated: ${}", oracle.gas_price.price.clone());
+                trace!("Gas Price updated: ${}", oracle.gas_price.price.clone());
             }
         }
     }
