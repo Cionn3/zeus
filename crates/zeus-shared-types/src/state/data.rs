@@ -195,7 +195,7 @@ impl Default for AppData {
         let mut rpc = vec![];
 
         for chain_id in NETWORKS {
-            rpc.push(Rpc::new("".to_string(), chain_id));
+            rpc.push(Rpc::new("".to_string(), chain_id.id()));
         }
 
         Self {

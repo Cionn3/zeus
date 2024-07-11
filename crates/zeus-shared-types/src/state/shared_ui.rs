@@ -3,6 +3,10 @@ use std::sync::{Arc, RwLock};
 use super::{error::ErrorMsg, info::InfoMsg};
 
 lazy_static! {
+
+    /// The State of [SharedUiState]
+    /// 
+    /// This can be safely shared across all tasks
     pub static ref SHARED_UI_STATE: Arc<RwLock<SharedUiState>> = Arc::new(
         RwLock::new(SharedUiState::default())
     );

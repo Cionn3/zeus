@@ -1,23 +1,32 @@
-use super::chain_id::ChainId;
 use serde::{Deserialize, Serialize};
 
 
 
-/// Rpc Url and [ChainId]
+/// Rpc Url
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rpc {
     pub url: String,
-    pub chain_id: ChainId,
+    pub chain_id: u64,
 }
 
 impl Rpc {
 
-    pub fn new(url: String, chain_id: ChainId) -> Self {
+    pub fn new(url: String, chain_id: u64) -> Self {
         Self { url, chain_id }
     }
 
     pub fn chain_name(&self) -> String {
-        self.chain_id.name()
+        match self.chain_id {
+            1 => "Ethereum".to_string(),
+            56 => "Binance Smart Chain".to_string(),
+            8453 => "Base".to_string(),
+            42161 => "Arbitrum".to_string(),
+            _ => "Unknown Chain ID".to_string(),
+        }
+    }
+
+    pub fn is_url_empty(&self) -> bool {
+        self.url.is_empty()
     }
 
     /// Serialize to JSON
@@ -31,8 +40,8 @@ impl Rpc {
 impl Default for Rpc {
     fn default() -> Self {
         Self {
-            url: "wss://localhost:8545".to_string(),
-            chain_id: ChainId::default(),
+            url: "wss://localhost:8546".to_string(),
+            chain_id: 1,
         }
     }
 }

@@ -10,9 +10,24 @@ use super::THEME;
 use super::super::app::ZeusApp;
 use zeus_shared_types::{AppData, ErrorMsg, SHARED_UI_STATE};
 
+use tracing::trace;
 
-/// Render the login screen
-pub fn login_screen(ui: &mut Ui, app: &mut ZeusApp) {
+/// Paint the login area
+pub fn paint_login(ui: &mut Ui, data: &mut AppData) {
+    // profile found but not logged in
+    if data.profile_exists && !data.logged_in {
+        login_screen(ui, data);
+    }
+
+    // if this is true then the user has not created a profile yet
+    if data.new_profile_screen {
+        new_profile_screen(ui, data);
+    }
+}
+
+
+/// Paint the login screen
+pub fn login_screen(ui: &mut Ui, data: &mut AppData) {
     
     frame().show(ui, |ui| {
         ui.set_max_size(Vec2::new(400.0, 500.0));
@@ -30,14 +45,14 @@ pub fn login_screen(ui: &mut Ui, app: &mut ZeusApp) {
             let confrim_text = rich_text("Confirm Password", 16.0);
 
             let user_field = TextEdit::singleline(
-                &mut app.data.profile.credentials.username
+                &mut data.profile.credentials.username
             ).desired_width(150.0);
 
-            let pass_field = TextEdit::singleline(&mut app.data.profile.credentials.password)
+            let pass_field = TextEdit::singleline(&mut data.profile.credentials.password)
                 .desired_width(150.0)
                 .password(true);
 
-            let confrim_field = TextEdit::singleline(&mut app.data.profile.credentials.confrim_password).desired_width(150.0).password(true);
+            let confrim_field = TextEdit::singleline(&mut data.profile.credentials.confrim_password).desired_width(150.0).password(true);
 
             
             ui.vertical_centered(|ui| {
@@ -58,9 +73,10 @@ pub fn login_screen(ui: &mut Ui, app: &mut ZeusApp) {
                 let unlock_txt = rich_text("Unlock", 15.0);
                 if ui.button(unlock_txt).clicked() {
 
-                    match app.data.profile.decrypt_and_load() {
+                    match data.profile.decrypt_and_load() {
                         Ok(_) => {
-                            app.data.logged_in = true;
+                            trace!("Profile unlocked");
+                            data.logged_in = true;
                         }
                         Err(e) => {
                             let mut state = SHARED_UI_STATE.write().unwrap();
@@ -74,9 +90,9 @@ pub fn login_screen(ui: &mut Ui, app: &mut ZeusApp) {
 }
 
 
-/// Render the new profile screen
-pub fn new_profile_screen(ui: &mut Ui, app: &mut ZeusApp) {
-    if !app.data.new_profile_screen {
+/// Paint the new profile screen
+pub fn new_profile_screen(ui: &mut Ui, data: &mut AppData) {
+    if !data.new_profile_screen {
         return;
     }
 
@@ -98,15 +114,15 @@ pub fn new_profile_screen(ui: &mut Ui, app: &mut ZeusApp) {
             let confirm_text = rich_text("Confirm Password", 16.0);
 
             let user_field = TextEdit::singleline(
-                &mut app.data.profile.credentials.username
+                &mut data.profile.credentials.username
             ).desired_width(150.0);
 
-            let pass_field = TextEdit::singleline(&mut app.data.profile.credentials.password)
+            let pass_field = TextEdit::singleline(&mut data.profile.credentials.password)
                 .desired_width(150.0)
                 .password(true);
 
             let confirm_field = TextEdit::singleline(
-                &mut app.data.profile.credentials.confrim_password
+                &mut data.profile.credentials.confrim_password
             )
                 .desired_width(150.0)
                 .password(true);
@@ -134,11 +150,11 @@ pub fn new_profile_screen(ui: &mut Ui, app: &mut ZeusApp) {
 
             if res.clicked() {   
                 // encrypt and save the wallets to disk
-                match app.data.profile.encrypt_and_save() {
+                match data.profile.encrypt_and_save() {
                     Ok(_) => {
-                        app.data.new_profile_screen = false;
-                        app.data.profile_exists = true;
-                        app.data.logged_in = true;
+                        data.new_profile_screen = false;
+                        data.profile_exists = true;
+                        data.logged_in = true;
                     }
                     Err(e) => {
                         let mut state = SHARED_UI_STATE.write().unwrap();
@@ -212,6 +228,70 @@ pub fn tx_settings_window(ui: &mut Ui, data: &mut AppData) {
         });
             
 }
+
+    /// Show an error message if needed
+    pub fn err_msg(ui: &mut Ui) {
+        let err_msg;
+        {
+            let state = SHARED_UI_STATE.read().unwrap();
+            err_msg = state.err_msg.msg.clone();
+            if !state.err_msg.on {
+                return;
+            }
+        }
+
+        Window::new("Error")
+            .resizable(false)
+            .anchor(Align2::CENTER_TOP, vec2(0.0, 0.0))
+            .collapsible(false)
+            .title_bar(false)
+            .show(ui.ctx(), |ui| {
+                ui.vertical_centered(|ui| {
+                    let msg_text = rich_text(&err_msg, 16.0);
+                    let close_text = rich_text("Close", 16.0);
+
+                    ui.label(msg_text);
+                    ui.add_space(5.0);
+                    if ui.button(close_text).clicked() {
+                        let mut state = SHARED_UI_STATE.write().unwrap();
+                        state.err_msg.on = false;
+                    }
+                });
+            });
+    }
+
+
+    // TODO: Auto close it after a few seconds
+    /// Show an info message if needed
+    pub fn info_msg(ui: &mut Ui) {
+        {
+            let state = SHARED_UI_STATE.read().unwrap();
+            if !state.info_msg.on {
+                return;
+            }
+        }
+
+        ui.vertical_centered_justified(|ui| {
+            frame().show(ui, |ui| {
+                ui.set_max_size(vec2(1000.0, 50.0));
+
+                let info_msg;
+                {
+                    let state = SHARED_UI_STATE.read().unwrap();
+                    info_msg = state.info_msg.msg.clone();
+                }
+                let msg_text = rich_text(&info_msg, 16.0);
+                let close_text = rich_text("Close", 16.0);
+
+                ui.label(msg_text);
+                ui.add_space(5.0);
+                if ui.button(close_text).clicked() {
+                    let mut state = SHARED_UI_STATE.write().unwrap();
+                    state.info_msg.on = false;
+                }
+            });
+        });
+    }
 
 
 

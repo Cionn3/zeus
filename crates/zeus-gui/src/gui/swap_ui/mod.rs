@@ -64,20 +64,12 @@ impl SwapUI {
 
     /// Renders the swap panel
 pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTextures>) {
-        let currencies;
 
         {
             let shared = SHARED_UI_STATE.read().unwrap();
             if !shared.swap_ui_on {
                 return;
             }
-
-            let state = SWAP_UI_STATE.read().unwrap();
-
-            currencies = state.currencies
-                .get(&data.chain_id.id())
-                .unwrap_or(&vec![])
-                .clone();
         }
 
         let swap = rich_text("Swap", 20.0);
@@ -107,7 +99,7 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                     self.input_amount_field(ui);
                     ui.add_space(10.0);
                     ui.vertical(|ui| {
-                        self.token_select_button(ui, "input", currencies.clone(), data);
+                        self.token_select_button(ui, "input", data);
                         self.token_balance(ui, "input");
                     });
                 });
@@ -121,7 +113,7 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                     self.output_amount_field(ui);
                     ui.add_space(10.0);
                     ui.vertical(|ui| {
-                        self.token_select_button(ui, "output", currencies.clone(), data);
+                        self.token_select_button(ui, "output", data);
                         self.token_balance(ui, "output");
                     });
                 });
@@ -211,7 +203,6 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
         &mut self,
         ui: &mut Ui,
         id: &str,
-        currencies: Vec<Currency>,
         data: &mut AppData
     ) {
         {
@@ -229,6 +220,11 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
             .show(ui.ctx(), |ui| {
                 // ! Lock here maybe held too much
                 let mut state = SWAP_UI_STATE.write().unwrap();
+
+                let currencies = state.currencies
+                .get(&data.chain_id.id())
+                .unwrap_or(&vec![])
+                .clone();
 
                 ui.add(
                     TextEdit::singleline(&mut state.search_currency)
@@ -334,22 +330,23 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
             });
     }
 
-    /// Renders the token select button
+    /// Paint the token select button
     fn token_select_button(
         &mut self,
         ui: &mut Ui,
         id: &str,
-        currencies: Vec<Currency>,
         data: &mut AppData
     ) {
+        // ! for some reason if i merge these 2 functions the lock freezes the ui
+        
         if self.token_button(id, ui).clicked() {
             let mut state = SWAP_UI_STATE.write().unwrap();
             state.update_token_list_status(id, true);
         }
-        self.token_list_window(ui, id, currencies, data);
+        self.token_list_window(ui, id, data);
     }
 
-    /// Render the balance of the token
+    /// Paint the balance of the token
     fn token_balance(&mut self, ui: &mut Ui, id: &str) {
         let currency;
         {
@@ -408,7 +405,9 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
         ui.add(field);
     }
 
-    /// Create the token button
+    /// Paint the token button
+    /// 
+    /// If clicked, it will show the token list window
     fn token_button(&mut self, id: &str, ui: &mut Ui) -> Response {
         let state = SWAP_UI_STATE.read().unwrap();
         let token_symbol = RichText::new(state.get_selected_currency(id).currency.symbol().clone())

@@ -1,11 +1,11 @@
 use eframe::{egui, CreationContext};
 use egui::{vec2, Align2, Context, Style, Ui};
-use zeus_core::profile::WalletBalance;
 use std::{
     collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
+use zeus_core::profile::WalletBalance;
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
 
@@ -13,7 +13,7 @@ use crate::{
     fonts::get_fonts,
     gui::{
         icons::IconTextures,
-        misc::{frame, login_screen, new_profile_screen, rich_text, tx_settings_window},
+        misc::{err_msg, info_msg, paint_login, tx_settings_window},
         ZeusTheme, GUI,
     },
 };
@@ -60,6 +60,8 @@ pub struct ZeusApp {
     pub last_erc20_request: Instant,
 
     pub last_quote_request: Instant,
+
+    pub on_startup: bool,
 }
 
 fn setup_logging() -> (WorkerGuard, WorkerGuard) {
@@ -72,9 +74,12 @@ fn setup_logging() -> (WorkerGuard, WorkerGuard) {
     let (output_writer, output_guard) = tracing_appender::non_blocking(output_appender);
 
     // Defining filters
-    let console_filter = EnvFilter::new("zeus,zeus_core,zeus_chain,zeus_backend,zeus_shared_types=info,error,warn");
-    let trace_filter = EnvFilter::new("zeus,zeus_core,zeus_chain_zeus_backend,zeus_shared_types=trace");
-    let output_filter = EnvFilter::new("zeus,zeus_core,zeus_chain_zeus_backend,zeus_shared_types=info,error,warn");
+    let console_filter =
+        EnvFilter::new("zeus,zeus_core,zeus_chain,zeus_backend,zeus_shared_types=info,error,warn");
+    let trace_filter =
+        EnvFilter::new("zeus,zeus_core,zeus_chain_zeus_backend,zeus_shared_types=trace");
+    let output_filter =
+        EnvFilter::new("zeus,zeus_core,zeus_chain_zeus_backend,zeus_shared_types=info,error,warn");
 
     // Setting up layers
     let console_layer = fmt::layer()
@@ -113,6 +118,7 @@ impl ZeusApp {
             last_eth_request: Instant::now(),
             last_erc20_request: Instant::now(),
             last_quote_request: Instant::now(),
+            on_startup: true,
         };
 
         app.config_style(&cc.egui_ctx);
@@ -170,13 +176,6 @@ impl ZeusApp {
         app.front_sender = Some(front_sender);
         app.back_receiver = Some(back_receiver);
 
-        if app.data.profile_exists {
-            app.send_request(Request::OnStartup {
-                chain_id: app.data.chain_id.clone(),
-                rpcs: app.data.rpc.clone(),
-            });
-        }
-
         app
     }
 
@@ -212,7 +211,13 @@ impl ZeusApp {
         }
         let chain = self.data.chain_id.id();
 
-        let wallet_state = self.data.profile.current_wallet.as_mut().unwrap().get_balance_full(chain);
+        let wallet_state = self
+            .data
+            .profile
+            .current_wallet
+            .as_mut()
+            .unwrap()
+            .get_balance_full(chain);
         let latest_block = self.data.latest_block().number;
 
         // balance up to date, skip
@@ -229,20 +234,24 @@ impl ZeusApp {
         if !timeout_expired && chain != 1 {
             return;
         }
-        
-            let req = Request::EthBalance {
-                owner: self.data.wallet_address(),
-                chain_id: self.data.chain_id.id(),
-                block: self.data.latest_block().number,
-                client: self.data.client().unwrap(),
-            };
-            self.send_request(req);
-            self.last_eth_request = now;
-            // insert just the latest block to avoid duplicate requests
-            // it will be overwritten when the response is received
-            self.data.profile.current_wallet.as_mut().unwrap().update_balance(chain, wallet_state.balance, latest_block);
-            trace!("Sent Request For ETH Balance");
-        
+
+        let req = Request::EthBalance {
+            owner: self.data.wallet_address(),
+            chain_id: self.data.chain_id.id(),
+            block: self.data.latest_block().number,
+            client: self.data.client().unwrap(),
+        };
+        self.send_request(req);
+        self.last_eth_request = now;
+        // insert just the latest block to avoid duplicate requests
+        // it will be overwritten when the response is received
+        self.data
+            .profile
+            .current_wallet
+            .as_mut()
+            .unwrap()
+            .update_balance(chain, wallet_state.balance, latest_block);
+        trace!("Sent Request For ETH Balance");
     }
 
     /// Request the ERC20 balance of the current wallet for the SwapUI
@@ -341,79 +350,6 @@ impl ZeusApp {
             }
         }
     }
-
-    fn draw_login(&mut self, ui: &mut Ui) {
-        if self.data.profile_exists && !self.data.logged_in {
-            login_screen(ui, self);
-        }
-
-        if self.data.new_profile_screen {
-            new_profile_screen(ui, self);
-        }
-    }
-
-    /// Show an error message if needed
-    fn err_msg(&mut self, ui: &mut Ui) {
-        let err_msg;
-        {
-            let state = SHARED_UI_STATE.read().unwrap();
-            err_msg = state.err_msg.msg.clone();
-            if !state.err_msg.on {
-                return;
-            }
-        }
-
-        egui::Window::new("Error")
-            .resizable(false)
-            .anchor(Align2::CENTER_TOP, vec2(0.0, 0.0))
-            .collapsible(false)
-            .title_bar(false)
-            .show(ui.ctx(), |ui| {
-                ui.vertical_centered(|ui| {
-                    let msg_text = rich_text(&err_msg, 16.0);
-                    let close_text = rich_text("Close", 16.0);
-
-                    ui.label(msg_text);
-                    ui.add_space(5.0);
-                    if ui.button(close_text).clicked() {
-                        let mut state = SHARED_UI_STATE.write().unwrap();
-                        state.err_msg.on = false;
-                    }
-                });
-            });
-    }
-
-    // TODO: Auto close it after a few seconds
-    /// Show an info message if needed
-    fn info_msg(&mut self, ui: &mut Ui) {
-        {
-            let state = SHARED_UI_STATE.read().unwrap();
-            if !state.info_msg.on {
-                return;
-            }
-        }
-
-        ui.vertical_centered_justified(|ui| {
-            frame().show(ui, |ui| {
-                ui.set_max_size(vec2(1000.0, 50.0));
-
-                let info_msg;
-                {
-                    let state = SHARED_UI_STATE.read().unwrap();
-                    info_msg = state.info_msg.msg.clone();
-                }
-                let msg_text = rich_text(&info_msg, 16.0);
-                let close_text = rich_text("Close", 16.0);
-
-                ui.label(msg_text);
-                ui.add_space(5.0);
-                if ui.button(close_text).clicked() {
-                    let mut state = SHARED_UI_STATE.write().unwrap();
-                    state.info_msg.on = false;
-                }
-            });
-        });
-    }
 }
 
 // Main Event Loop Of The Window
@@ -444,6 +380,15 @@ impl eframe::App for ZeusApp {
             }
         }
 
+        if self.on_startup {
+            self.send_request(Request::OnStartup {
+                chain_id: self.data.chain_id.clone(),
+                rpcs: self.data.rpc.clone(),
+            });
+            // run only once
+            self.on_startup = false;
+        }
+
         // update to latest block
         {
             let oracle = BLOCK_ORACLE.read().unwrap();
@@ -453,16 +398,8 @@ impl eframe::App for ZeusApp {
             }
         }
 
-        // DEBUG
-       // trace!("Debug Wallet Before Request");
-       // self.data.debug_wallet();
-
         self.request_eth_balance();
         self.request_erc20_balance();
-
-        // DEBUG
-       // trace!("Debug Wallet After Request");
-       // self.data.debug_wallet();
 
         // Draw the UI that belongs to the Top Panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -473,11 +410,11 @@ impl eframe::App for ZeusApp {
         // Draw the UI that belongs to the Central Panel
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered_justified(|ui| {
-                self.err_msg(ui);
-                self.draw_login(ui);
+                err_msg(ui);
+                paint_login(ui, &mut self.data);
             });
 
-            // if we are not logged in or we are on the new profile screen, we should not draw the main UI
+            // if we are not logged in or we are on the new profile screen, we should not paint the main UI
             if !self.data.logged_in || self.data.new_profile_screen {
                 return;
             }

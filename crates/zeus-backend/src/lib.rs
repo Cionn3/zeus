@@ -363,17 +363,17 @@ impl Backend {
         Ok(())
     }
 
-    async fn get_client(&mut self, id: ChainId, rpcs: Vec<Rpc>) -> Result<(), anyhow::Error> {
+    async fn get_client(&mut self, chain_id: ChainId, rpcs: Vec<Rpc>) -> Result<(), anyhow::Error> {
         let url = rpcs
             .iter()
-            .find(|rpc| rpc.chain_id == id)
-            .context(format!("Failed to find RPC for {}", id.name()))?
+            .find(|rpc| rpc.chain_id == chain_id.id())
+            .context(format!("Failed to find RPC for {}", chain_id.name()))?
             .url.clone();
 
         let client = ProviderBuilder::new().on_ws(WsConnect::new(url)).await?;
         let client = Arc::new(client);
 
-        self.back_sender.send(Response::GetClient(client, id))?;
+        self.back_sender.send(Response::GetClient(client, chain_id))?;
         Ok(())
     }
 }

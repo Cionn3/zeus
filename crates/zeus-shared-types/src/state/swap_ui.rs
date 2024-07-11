@@ -9,6 +9,10 @@ use zeus_chain::{
 use zeus_core::lazy_static::lazy_static;
 
 lazy_static! {
+
+    /// The State Of the Swap UI
+    /// 
+    /// This can be safely shared across all tasks
     pub static ref SWAP_UI_STATE: Arc<RwLock<SwapUIState>> = Arc::new(
         RwLock::new(SwapUIState::default())
     );
