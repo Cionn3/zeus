@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use crossbeam::channel::{ unbounded, Receiver, Sender };
 use anyhow::Context;
-use tracing::{ info, error };
+use tracing::{ info, error, trace };
 
 use zeus_chain::{
     ChainId,
@@ -41,6 +41,7 @@ pub struct Backend {
     /// Receive Data from the frontend
     pub front_receiver: Receiver<Request>,
 
+    /// Sqlite Database
     pub db: ZeusDB,
 
     pub oracle_sender: Option<Sender<OracleAction>>,
@@ -61,6 +62,8 @@ impl Backend {
         let rt = Runtime::new().unwrap();
         println!("Backend Started");
 
+        // !! TODO: REFACTOR
+        // If we are connected on a bad RPC and dont get a response this loop will stuck
         rt.block_on(async {
             loop {
                 match self.front_receiver.recv() {
@@ -118,8 +121,18 @@ impl Backend {
                                 state.err_msg = ErrorMsg::new(true, "TODO!");
                             }
 
-                            Request::EthBalance { address, client } => {
-                                match self.get_eth_balance(address, client).await {
+                            Request::EthBalance { 
+                                owner, 
+                                chain_id, 
+                                block, 
+                                client
+                             } => {
+                                match self.get_eth_balance(
+                                    owner,
+                                    chain_id,
+                                    block,
+                                    client
+                                ).await {
                                     Ok(_) => {}
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
@@ -214,19 +227,32 @@ impl Backend {
         }
     }
 
+    /// Get the eth balance of an address
+    /// 
+    /// If the balance is not found in the database, we make an rpc call
     async fn get_eth_balance(
         &mut self,
-        address: Address,
+        owner: Address,
+        chain_id: u64,
+        block: u64,
         client: Arc<WsClient>
     ) -> Result<(), anyhow::Error> {
-        let balance = client.get_balance(address).await?;
+        let balance = if let Ok(balance) = self.db.get_eth_balance(owner, chain_id, block) {
+            balance
+        } else {
+            let balance = client.get_balance(owner).await?;
+            if let Err(e) = self.db.insert_eth_balance(owner, balance, chain_id, block) {
+                error!("Failed to insert Eth balance into db: {}", e);
+            }
+            balance
+        };
         self.back_sender.send(Response::EthBalance(balance))?;
         Ok(())
     }
 
     /// Get the [ERC20Token] from the given address
     ///
-    /// If the token is not found in the database, we fetch it from the rpc
+    /// If the token is not found in the database, we make an rpc call
     ///
     /// ### Arguments:
     ///
@@ -264,6 +290,7 @@ impl Backend {
         let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
         let selected_currency = SelectedCurrency::new_from_erc(token.clone(), balance);
         let currency = Currency::new_erc20(token.clone());
+        trace!("Got ERC20 Token: {} With Balance {}", token.symbol, balance);
 
         // replace with the new token
         swap_ui_state.replace_currency(&id, selected_currency);
@@ -281,6 +308,8 @@ impl Backend {
     }
 
     /// Get the balance of an erc20 token
+    /// 
+    /// We first check if the balance is in the database, if not we make an rpc call
     async fn get_erc20_balance(
         &self,
         id: String,
@@ -316,14 +345,21 @@ impl Backend {
 
             balance
         };
-        // update the balance
+        trace!("Got ERC20 Balance: {} \n For {}", balance, token.address);
+
         let mut swap_state = SWAP_UI_STATE.write().unwrap();
+
+        // update the balance in the cache
+        swap_state.update_erc20_balance(chain_id, token.address, balance);
+
         swap_state.update_balance(&id, balance.to_string());
+        trace!("ERC20 Balance updated in UI State");
         Ok(())
     }
 
     fn save_profile(&self, profile: Profile) -> Result<(), anyhow::Error> {
         profile.encrypt_and_save()?;
+        trace!("Profile Saved");
         Ok(())
     }
 

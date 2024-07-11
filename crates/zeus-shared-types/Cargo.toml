@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 zeus-core = { path = "../zeus-core" }
 zeus-chain = { path = "../zeus-chain" }
+
+tracing = "0.1.40"

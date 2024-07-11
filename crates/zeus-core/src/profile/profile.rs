@@ -1,6 +1,7 @@
 use super::super::encryption::{Credentials, encrypt_data, decrypt_data};
-use super::{Wallet, WalletData};
+use super::{Wallet, WalletBalance, WalletData};
 use alloy::core::hex::encode;
+use std::collections::HashMap;
 use anyhow::anyhow;
 
 const FILENAME: &str = "profile.data";
@@ -60,21 +61,25 @@ impl Profile {
     }
 
     /// Create a new random wallet and add it to the profile
-    pub fn new_wallet(&mut self, name: String) {
+    pub fn new_wallet(&mut self, name: String) -> Result<(), anyhow::Error> {
+        // do not allow duplicate names
+        if self.wallets.iter().any(|w| w.name == name) {
+            return Err(anyhow!("Wallet with name {} already exists", name));
+        }
         let wallet = Wallet::new_rng(name);
-        self.wallets.push(wallet);
-    }
-
-    /// Import a wallet from a private key
-    pub fn import_wallet(&mut self, name: String, key: String) -> Result<(), anyhow::Error> {
-        let wallet = Wallet::new_from_key(name, key)?;
         self.wallets.push(wallet);
         Ok(())
     }
 
-    /// Add a wallet to the profile
-    pub fn add_wallet(&mut self, wallet: Wallet) {
+    /// Import a wallet from a private key
+    pub fn import_wallet(&mut self, name: String, balance: HashMap<u64, WalletBalance>, key: String) -> Result<(), anyhow::Error> {
+        // do not allow duplicate names
+        if self.wallets.iter().any(|w| w.name == name) {
+            return Err(anyhow!("Wallet with name {} already exists", name));
+        }
+        let wallet = Wallet::new_from_key(name, balance, key)?;
         self.wallets.push(wallet);
+        Ok(())
     }
 
     /// Get current wallet
@@ -108,7 +113,7 @@ impl Profile {
         let wallet_data = serde_json::from_slice::<Vec<WalletData>>(&data)?;
         let mut wallets = Vec::new();
         for data in wallet_data {
-            let wallet = Wallet::new_from_key(data.name, data.key)?;
+            let wallet = Wallet::new_from_key(data.name, data.balance, data.key)?;
             wallets.push(wallet);
         }
         Ok(wallets)

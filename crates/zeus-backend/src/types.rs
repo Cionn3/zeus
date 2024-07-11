@@ -32,8 +32,13 @@ pub enum Request {
         params: SwapParams,
     },
 
-    /// Get the eth balance of an address
-    EthBalance { address: Address, client: Arc<WsClient>},
+    /// Get the eth balance of an address on a chain at a specific block
+    EthBalance { 
+        owner: Address,
+        chain_id: u64,
+        block: u64,
+        client: Arc<WsClient>,
+    },
 
     /// Get the ERC20 Balance
     GetERC20Balance { id: String, token: ERC20Token, owner: Address, chain_id: u64, block: u64, client: Arc<WsClient> },

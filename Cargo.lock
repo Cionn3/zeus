@@ -7318,6 +7318,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tracing",
 ]
 
 [[package]]
@@ -7342,6 +7343,7 @@ dependencies = [
 name = "zeus-shared-types"
 version = "0.1.0"
 dependencies = [
+ "tracing",
  "zeus-chain",
  "zeus-core",
 ]

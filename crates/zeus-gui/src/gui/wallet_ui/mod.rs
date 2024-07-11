@@ -1,5 +1,5 @@
 use eframe::{ egui::{ Align2, Button, ComboBox, Sense, TextEdit, Ui, Window }, epaint::vec2 };
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use super::{ misc::{ frame, rich_text }, THEME, icons::IconTextures, GUI };
 use zeus_backend::types::Request;
@@ -209,10 +209,18 @@ fn generate_new_wallet(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
             
 
             if create_res.clicked() {
-                data.profile.new_wallet(data.wallet_name.clone());
+                match data.profile.new_wallet(data.wallet_name.clone()) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        let mut state = SHARED_UI_STATE.write().unwrap();
+                        state.err_msg = ErrorMsg::new(true, e);
+                    }
+                }
+
                 let mut state = SHARED_UI_STATE.write().unwrap();
                 state.generate_wallet_on = false;
                 data.wallet_name = "".to_string();
+                
                 gui.send_request(Request::SaveProfile { profile: data.profile.clone() });
             }
 
@@ -279,6 +287,7 @@ fn import_wallet(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
                     match
                         data.profile.import_wallet(
                             data.wallet_name.clone(),
+                            HashMap::new(),
                             data.private_key.clone()
                         )
                     {

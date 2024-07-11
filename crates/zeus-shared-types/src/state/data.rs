@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use zeus_core::{anyhow, Profile, Credentials};
 use zeus_chain::{alloy::primitives::{U256, Address}, ChainId, Rpc, BlockInfo, WsClient, serde_json};
-
+use tracing::{info, trace};
 
 /// Supported networks
 pub const NETWORKS: [ChainId; 4] = [
@@ -142,14 +142,26 @@ impl AppData {
         Ok(())
     }
 
-    /// Get eth balance of the current wallet for a specific chain
+    /// Get eth balance of the a wallet for a specific chain
     pub fn eth_balance(&self, chain_id: u64) -> U256 {
-        let balance = if let Some(wallet) = &self.profile.current_wallet {
-            wallet.get_balance(chain_id)
+        let current_wallet = if let Some(wallet) = &self.profile.current_wallet {
+            wallet
         } else {
-            U256::ZERO
+            trace!("No current wallet found");
+            return U256::ZERO;
         };
-        balance
+
+        current_wallet.get_balance(chain_id)
+    }
+
+    /// DEBUG
+    pub fn debug_wallet(&self) {
+        if let Some(wallet) = &self.profile.current_wallet {
+            trace!("Wallet Name: {:?}", wallet.name);
+            trace!("Wallet Balance: {:?}", wallet.balance);
+        } else {
+            trace!("No current wallet found");
+        }
     }
 
 
@@ -162,14 +174,6 @@ impl AppData {
         }
     }
 
-    /// Check if the wallet's balance its outdated
-    pub fn should_update_balance(&self) -> bool {
-        if let Some(wallet) = &self.profile.current_wallet {
-            wallet.balance_outdated(self.chain_id.id(), self.latest_block().number)
-        } else {
-            false
-        }
-    }
 
     /// Get native coin on current chain
     pub fn native_coin(&self) -> String {

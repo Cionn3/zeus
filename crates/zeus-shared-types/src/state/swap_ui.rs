@@ -1,8 +1,9 @@
 use std::sync::{ Arc, RwLock };
 use std::collections::HashMap;
 
+use tracing::info;
 use zeus_chain::{
-    alloy::primitives::{ Bytes, U256 },
+    alloy::primitives::{ Bytes, U256, Address },
     defi_types::currency::{ Currency, NativeCurrency, erc20::ERC20Token },
 };
 use zeus_core::lazy_static::lazy_static;
@@ -100,10 +101,32 @@ pub struct SwapUIState {
     /// A HashMap that holds a list of [Currency] with their corrsponing `chain_id` as key
     pub currencies: HashMap<u64, Vec<Currency>>,
 
+    /// ERC20 Balance cache
+    /// (`Block`, `Token Address`, `Balance`)
+    pub erc20_balances: HashMap<u64, (u64, Address, U256)>,
+
     pub quote_result: QuoteResult,
 }
 
 impl SwapUIState {
+
+    /// Get the balance of a token for a specific chain_id
+    pub fn get_erc20_balance(&self, chain_id: u64, token: &Address) -> U256 {
+        match self.erc20_balances.get(&chain_id) {
+            Some((_, addr, balance)) if addr == token => balance.clone(),
+            _ => U256::from(0),
+        }
+    }
+
+    /// Update the balance of a token for a specific chain_id
+    pub fn update_erc20_balance(&mut self, chain_id: u64, token: Address, balance: U256) {
+        self.erc20_balances.insert(chain_id, (self.block, token, balance));
+
+        // remove old balances < block for the same chain and token only
+        self.erc20_balances.retain(|_, (block, addr, _)| *block >= self.block || *addr != token);
+        info!("Updated ERC20 Balance: {:?}", self.erc20_balances);
+    }
+
     /// Get the input or output selected currency by an id
     pub fn get_selected_currency(&self, id: &str) -> SelectedCurrency {
         match id {
@@ -193,6 +216,7 @@ impl Default for SwapUIState {
             currency_out: SelectedCurrency::default_output(1),
             search_currency: String::new(),
             currencies: HashMap::new(),
+            erc20_balances: HashMap::new(),
             quote_result: QuoteResult::default(),
         }
     }
@@ -209,11 +233,11 @@ impl SelectedCurrency {
     }
 
     /// Create a new selected currency from a native currency
-    pub fn new_from_native(currency: NativeCurrency) -> Self {
+    pub fn new_from_native(currency: NativeCurrency, balance: U256) -> Self {
         Self {
             currency: Currency::new_from_native(currency),
             amount_to_swap: String::new(),
-            balance: "0".to_string(),
+            balance: balance.to_string(),
         }
     }
 

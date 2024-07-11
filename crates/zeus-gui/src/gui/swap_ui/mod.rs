@@ -1,4 +1,5 @@
 use eframe::egui::{ self, SelectableLabel };
+use tracing::trace;
 use std::str::FromStr;
 use std::sync::{ Arc, RwLock };
 use egui::{
@@ -260,11 +261,12 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                                         let res = ui.add(selectable_label);
 
                                         if res.clicked() {
+                                            let balance = state.get_erc20_balance(data.chain_id.id(), &token.address);
                                             state.replace_currency(
                                                 id,
                                                 SelectedCurrency::new_from_erc(
                                                     token.clone(),
-                                                    U256::ZERO
+                                                    balance
                                                 )
                                             );
                                             state.update_token_list_status(id, false);
@@ -291,9 +293,10 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                                         let res = ui.add(selectable_label);
 
                                         if res.clicked() {
+                                            let balance = data.eth_balance(data.chain_id.id());
                                             state.replace_currency(
                                                 id,
-                                                SelectedCurrency::new_from_native(native.clone())
+                                                SelectedCurrency::new_from_native(native.clone(), balance)
                                             );
                                             state.update_token_list_status(id, false);
                                         }
@@ -306,7 +309,7 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                     // if search string is a valid ethereum address
                     if let Ok(address) = Address::from_str(&state.search_currency) {
                         if ui.button("Add Token").clicked() {
-                            println!("Adding Token: {:?}", address);
+                            trace!("Adding Token: {:?}", address);
                             let client = match data.client() {
                                 Some(client) => client,
                                 None => {
