@@ -10,7 +10,7 @@ use alloy::{
     },
 };
 
-use tracing::trace;
+
 
 /// Eth balance at a specific block
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

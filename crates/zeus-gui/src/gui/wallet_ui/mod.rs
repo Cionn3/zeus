@@ -5,18 +5,18 @@ use eframe::{
 use std::{collections::HashMap, sync::Arc};
 
 use super::{
-    icons::IconTextures,
-    misc::{frame, rich_text, button, text_edit_s},
+    super::icons::IconTextures,
+    misc::{button, frame, rich_text, text_edit_s},
     GUI,
 };
 use zeus_backend::types::Request;
 use zeus_chain::alloy::primitives::utils::format_ether;
 use zeus_shared_types::{AppData, ErrorMsg, SHARED_UI_STATE};
 
-
 /// Paint the UI repsonsible for managing the wallets
 pub fn wallet_ui(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
-    wallet_selection(ui, data, gui.icons.clone());
+    // wallet_selection(ui, data, gui.icons.clone());
+    new_wallet_area(ui, data, gui.theme.icons.clone());
 
     new_wallet(ui);
     generate_new_wallet(ui, data, gui);
@@ -25,6 +25,90 @@ pub fn wallet_ui(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
     export_key_ui(ui, data);
 
     show_exported_key(ui);
+}
+
+/// WIP
+fn new_wallet_area(ui: &mut Ui, data: &mut AppData, icons: Arc<IconTextures>) {
+    if !data.logged_in || data.new_profile_screen {
+        return;
+    }
+
+    ui.vertical_centered(|ui| {
+        ui.add_space(10.0);
+
+        ui.horizontal(|ui| {
+            // show the available wallets
+            available_wallets(ui, data);
+
+            // show the balance of the selected wallet
+            let balance = data.eth_balance(data.chain_id.id());
+            let formated = format!("{:.4}", format_ether(balance));
+            let balance_text = rich_text(&formated, 15.0);
+
+            ui.add(icons.currency_icon(data.chain_id.id()));
+            ui.label(balance_text);
+        });
+        // TODO: Portofolio value in USD
+
+        ui.horizontal(|ui| {
+
+        // New Wallet Icon, If clicked, open the [new_wallet()] UI
+        let wallet_new_res = ui.add(icons.wallet_new_icon());
+        if wallet_new_res.clicked() {
+            let mut state = SHARED_UI_STATE.write().unwrap();
+            state.new_wallet_window_on = true;
+        }
+
+        ui.add_space(10.0);
+
+        // copy current wallet address to clipboard
+        let copy_addr_res = ui.add(icons.copy_icon());
+        if copy_addr_res.clicked() {
+            let curr_wallet = data.profile.current_wallet.clone();
+
+            let curr_wallet = match curr_wallet {
+                Some(wallet) => wallet,
+                None => {
+                    let mut state = SHARED_UI_STATE.write().unwrap();
+                    state.err_msg = ErrorMsg::new(true, "No Wallet Selected");
+                    return;
+                }
+            };
+
+            ui.ctx().output_mut(|output| {
+                output.copied_text = curr_wallet.key.address().to_string();
+            });
+        }
+
+        ui.add_space(5.0);
+
+        let export_key_res = ui.add(icons.export_key_icon());
+
+        if export_key_res.clicked() {
+            let mut state = SHARED_UI_STATE.write().unwrap();
+            state.export_key_ui = true;
+        }
+    });
+    });
+}
+
+fn available_wallets(ui: &mut Ui, data: &mut AppData) {
+    let wallet_name = &data.profile.current_wallet_name();
+    let selected_text = rich_text(wallet_name, 13.0);
+
+    ComboBox::from_label("")
+        .selected_text(selected_text)
+        .width(30.0)
+        .height(5.0)
+        .show_ui(ui, |ui| {
+            for wallet in &data.profile.wallets {
+                ui.selectable_value(
+                    &mut data.profile.current_wallet,
+                    Some(wallet.clone()),
+                    wallet.name.clone(),
+                );
+            }
+        });
 }
 
 fn wallet_selection(ui: &mut Ui, data: &mut AppData, icons: Arc<IconTextures>) {
@@ -316,81 +400,77 @@ pub fn export_key_ui(ui: &mut Ui, data: &mut AppData) {
         .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
         .collapsible(false)
         .show(ui.ctx(), |ui| {
-
             ui.vertical_centered(|ui| {
-        
-            ui.label(heading);
-            ui.add_space(10.0);
-
-            {
-                let username_field = text_edit_s(data.confirm_credentials.user_mut(), 200.0, false);
-                ui.label(username);
-                ui.add(username_field);
+                ui.label(heading);
                 ui.add_space(10.0);
-            }
 
-            {
-                let password_field = text_edit_s(data.confirm_credentials.passwd_mut(), 200.0, true);
-                ui.label(password);
-                ui.add(password_field);
-                ui.add_space(10.0);
-            }
-
-            {
-                let confirm_field = text_edit_s(
-                    data.confirm_credentials.confirm_passwd_mut(),
-                    200.0,
-                    true,
-                );
-                ui.label(confirm_password);
-                ui.add(confirm_field);
-            }
-
-            ui.add_space(10.0);
-
-            let export_text = rich_text("Export Key", 15.0);
-            let export_button = button(export_text);
-
-            
-            if ui.add(export_button).clicked() {
-                let wallet = match data.profile.current_wallet.clone() {
-                    Some(wallet) => wallet,
-                    None => {
-                        let mut state = SHARED_UI_STATE.write().unwrap();
-                        state.err_msg = ErrorMsg::new(true, "No Wallet Selected");
-                        return;
-                    }
-                };
-
-                let key = match data
-                    .profile
-                    .export_wallet(wallet.name, data.confirm_credentials.clone())
                 {
-                    Ok(key) => key,
-                    Err(e) => {
-                        let mut state = SHARED_UI_STATE.write().unwrap();
-                        state.err_msg = ErrorMsg::new(true, e);
-                        return;
-                    }
-                };
+                    let username_field =
+                        text_edit_s(data.confirm_credentials.user_mut(), 200.0, false);
+                    ui.label(username);
+                    ui.add(username_field);
+                    ui.add_space(10.0);
+                }
 
-                // clear the confirm credentials
-                data.confirm_credentials.clear();
+                {
+                    let password_field =
+                        text_edit_s(data.confirm_credentials.passwd_mut(), 200.0, true);
+                    ui.label(password);
+                    ui.add(password_field);
+                    ui.add_space(10.0);
+                }
 
-                let mut state = SHARED_UI_STATE.write().unwrap();
-                state.export_key_ui = false;
-                state.exported_key_window = (true, key);
-            }
-            ui.add_space(10.0);
+                {
+                    let confirm_field =
+                        text_edit_s(data.confirm_credentials.confirm_passwd_mut(), 200.0, true);
+                    ui.label(confirm_password);
+                    ui.add(confirm_field);
+                }
 
-            let close_text = rich_text("Close", 15.0);
-            let close_button = button(close_text);
+                ui.add_space(10.0);
 
-            if ui.add(close_button).clicked() {
-                let mut state = SHARED_UI_STATE.write().unwrap();
-                state.export_key_ui = false;
-            }
-        });
+                let export_text = rich_text("Export Key", 15.0);
+                let export_button = button(export_text);
+
+                if ui.add(export_button).clicked() {
+                    let wallet = match data.profile.current_wallet.clone() {
+                        Some(wallet) => wallet,
+                        None => {
+                            let mut state = SHARED_UI_STATE.write().unwrap();
+                            state.err_msg = ErrorMsg::new(true, "No Wallet Selected");
+                            return;
+                        }
+                    };
+
+                    let key = match data
+                        .profile
+                        .export_wallet(wallet.name, data.confirm_credentials.clone())
+                    {
+                        Ok(key) => key,
+                        Err(e) => {
+                            let mut state = SHARED_UI_STATE.write().unwrap();
+                            state.err_msg = ErrorMsg::new(true, e);
+                            return;
+                        }
+                    };
+
+                    // clear the confirm credentials
+                    data.confirm_credentials.clear();
+
+                    let mut state = SHARED_UI_STATE.write().unwrap();
+                    state.export_key_ui = false;
+                    state.exported_key_window = (true, key);
+                }
+                ui.add_space(10.0);
+
+                let close_text = rich_text("Close", 15.0);
+                let close_button = button(close_text);
+
+                if ui.add(close_button).clicked() {
+                    let mut state = SHARED_UI_STATE.write().unwrap();
+                    state.export_key_ui = false;
+                }
+            });
         });
 }
 

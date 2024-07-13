@@ -1,20 +1,19 @@
 use eframe::{egui, CreationContext};
-use egui::{vec2, Align2, Context, Style, Ui};
+use egui::{ Context, Style};
 use std::{
     collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
-use zeus_core::profile::WalletBalance;
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
 
 use crate::{
+    theme::ZeusTheme,
     fonts::get_fonts,
     gui::{
-        icons::IconTextures,
-        misc::{err_msg, info_msg, paint_login, tx_settings_window},
-        ZeusTheme, GUI,
+        misc::{err_msg, paint_login, tx_settings_window},
+        GUI
     },
 };
 
@@ -38,13 +37,17 @@ use tracing_subscriber::Registry;
 /// This do not apply for Ethereum since it has a block time of 12 secs and cannot cause a lot of rpc calls
 const TIME_OUT: u64 = 3;
 
+/// The width of the window
+pub const WIDTH: f32 = 1280.0;
+
+/// The height of the window
+pub const HEIGHT: f32 = 720.0;
+
 /// The main application struct
 pub struct ZeusApp {
+
     /// The GUI components of the application
     pub gui: GUI,
-
-    /// The icons used in the application
-    pub icons: Arc<IconTextures>,
 
     /// Send Data to backend
     pub front_sender: Option<Sender<Request>>,
@@ -62,6 +65,10 @@ pub struct ZeusApp {
     pub last_quote_request: Instant,
 
     pub on_startup: bool,
+
+    pub top_panel_h: f32,
+
+    pub left_panel_w: f32,
 }
 
 fn setup_logging() -> (WorkerGuard, WorkerGuard) {
@@ -106,12 +113,10 @@ impl ZeusApp {
     pub fn new(cc: &CreationContext) -> Self {
         let _guard = setup_logging();
 
-        let icons = Arc::new(IconTextures::new(&cc.egui_ctx).unwrap());
-        let gui = GUI::new_default(icons.clone());
+        let gui = GUI::default();
 
         let mut app = Self {
             gui,
-            icons,
             front_sender: None,
             back_receiver: None,
             data: AppData::default(),
@@ -119,9 +124,13 @@ impl ZeusApp {
             last_erc20_request: Instant::now(),
             last_quote_request: Instant::now(),
             on_startup: true,
+            top_panel_h: 0.0,
+            left_panel_w: 0.0,
         };
 
-        app.config_style(&cc.egui_ctx);
+        let theme = app.config_style(&cc.egui_ctx);
+        app.gui.theme = Arc::new(theme);
+
 
         match app.data.load_rpc() {
             Ok(_) => {}
@@ -179,13 +188,15 @@ impl ZeusApp {
         app
     }
 
-    fn config_style(&self, ctx: &Context) {
+    fn config_style(&self, ctx: &Context) -> ZeusTheme {
+        let theme = ZeusTheme::new(ctx);
         let style = Style {
-            visuals: ZeusTheme::default().visuals,
+            visuals: theme.visuals.clone(),
             ..Style::default()
         };
         ctx.set_fonts(get_fonts());
         ctx.set_style(style);
+        theme
     }
 
     /// Send a request to backend
@@ -380,6 +391,12 @@ impl eframe::App for ZeusApp {
             }
         }
 
+        // this is a temp solution
+        if self.data.logged_in {
+            self.top_panel_h = 100.0;
+            self.left_panel_w = 200.0;
+        }
+
         if self.on_startup {
             self.send_request(Request::OnStartup {
                 chain_id: self.data.chain_id.clone(),
@@ -401,15 +418,15 @@ impl eframe::App for ZeusApp {
         self.request_eth_balance();
         self.request_erc20_balance();
 
-        // Draw the UI that belongs to the Top Panel
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            self.gui.render_wallet_ui(ui, &mut self.data);
-            // self.info_msg(ui);
-        });
+
 
         // Draw the UI that belongs to the Central Panel
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical_centered_justified(|ui| {
+            // Paint the gradient mesh
+            let painter = ui.painter();
+            painter.add(self.gui.theme.bg_gradient.clone());
+
+            ui.vertical_centered(|ui| {
                 err_msg(ui);
                 paint_login(ui, &mut self.data);
             });
@@ -423,16 +440,33 @@ impl eframe::App for ZeusApp {
                 ui.add_space(100.0);
                 self.gui
                     .swap_ui
-                    .swap_panel(ui, &mut self.data, self.icons.clone());
+                    .swap_panel(ui, &mut self.data, self.gui.theme.icons.clone());
                 self.gui.networks_ui(ui, &mut self.data);
                 tx_settings_window(ui, &mut self.data);
             });
         });
 
+        
+        // Draw the UI that belongs to the Top Panel
+        egui::TopBottomPanel::top("top_panel")
+        .exact_height(self.top_panel_h)
+        .show(ctx, |ui| {
+
+            let painter = ui.painter();
+            painter.add(self.gui.theme.bg_gradient.clone());
+
+            self.gui.render_wallet_ui(ui, &mut self.data);  
+        });
+        
+
         // Draw the UI that belongs to the Left Panel
         egui::SidePanel::left("left_panel")
-            .exact_width(170.0)
+        .exact_width(self.left_panel_w)
             .show(ctx, |ui| {
+
+                let painter = ui.painter();
+                painter.add(self.gui.theme.bg_gradient.clone());
+
                 self.gui.select_chain(ui, &mut self.data);
                 ui.add_space(10.0);
                 self.gui.menu(ui, &mut self.data);

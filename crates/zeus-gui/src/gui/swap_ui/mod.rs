@@ -19,7 +19,7 @@ use egui::{
 use crossbeam::channel::Sender;
 
 use crate::fonts::roboto_regular;
-use super::{ icons::IconTextures, misc::{ frame, rich_text } };
+use super::{ super::icons::IconTextures, misc::{ frame, rich_text } };
 
 use zeus_backend::types::Request;
 use zeus_shared_types::{
@@ -33,7 +33,7 @@ use zeus_shared_types::{
 use zeus_chain::{
     defi_types::currency::Currency,
     utils::format_wei,
-    alloy::primitives::{ U256, Address },
+    alloy::primitives::Address,
 };
 
 
@@ -75,7 +75,6 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
         let swap = rich_text("Swap", 20.0);
         let for_t = rich_text("For", 20.0);
 
-        frame().show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 let ui_width = 550.0;
                 let ui_height = 220.0;
@@ -125,9 +124,9 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                     self.swap_button(ui, data);
                 });
                 ui.add_space(20.0);
-                self.quote_result(ui, data);
+               // self.quote_result(ui, data);
             }); // vertical centered main frame
-        }); // frame
+        
     }
 
     fn quote_result(&self, ui: &mut Ui, data: &mut AppData) {
@@ -377,9 +376,10 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
         let field = TextEdit::singleline(&mut state.currency_in.amount_to_swap)
             .font(font.clone())
             .min_size((100.0, 30.0).into())
+            .text_color(Color32::WHITE)
             .hint_text(
                 RichText::new("0")
-                    .color(Color32::from_gray(128))
+                    .color(Color32::WHITE)
                     .size(23.0)
                     .family(roboto_regular())
             );
@@ -395,9 +395,10 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
         let field = TextEdit::singleline(&mut state.currency_out.amount_to_swap)
             .font(font.clone())
             .min_size((100.0, 30.0).into())
+            .text_color(Color32::WHITE)
             .hint_text(
                 RichText::new("0")
-                    .color(Color32::from_gray(128))
+                    .color(Color32::WHITE)
                     .size(23.0)
                     .family(roboto_regular())
             );

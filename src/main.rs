@@ -2,12 +2,12 @@
 
 use eframe::egui;
 
-use zeus_gui::app::ZeusApp;
+use zeus_gui::app::{ZeusApp, WIDTH, HEIGHT};
 
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 720.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([WIDTH, HEIGHT]),
         ..Default::default()
     };
 

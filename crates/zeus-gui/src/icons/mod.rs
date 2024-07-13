@@ -25,6 +25,10 @@ pub struct IconTextures {
     pub bsc: TextureHandle,
     pub base: TextureHandle,
     pub arbitrum: TextureHandle,
+
+    // Currency Icons
+    pub eth_coin: TextureHandle,
+    pub bnb_coin: TextureHandle,
 }
 
 impl IconTextures {
@@ -42,6 +46,10 @@ impl IconTextures {
         let base_icon = load_image_from_memory(include_bytes!("chain/base.png"), 24, 24)?;
         let arbitrum_icon = load_image_from_memory(include_bytes!("chain/arbitrum.png"), 24, 24)?;
 
+        // Currency icons
+        let eth_coin = load_image_from_memory(include_bytes!("currency/ethereum.png"), 24, 24)?;
+        let bnb_coin = load_image_from_memory(include_bytes!("currency/bnb.png"), 24, 24)?;
+
         let texture_options = TextureOptions::default();
 
         Ok(Self {
@@ -55,6 +63,8 @@ impl IconTextures {
             bsc: ctx.load_texture("bsc", bsc_icon, texture_options),
             base: ctx.load_texture("base", base_icon, texture_options),
             arbitrum: ctx.load_texture("arbitrum", arbitrum_icon, texture_options),
+            eth_coin: ctx.load_texture("eth_coin", eth_coin, texture_options),
+            bnb_coin: ctx.load_texture("bnb_coin", bnb_coin, texture_options),
         })
     }
 
@@ -81,6 +91,17 @@ impl IconTextures {
             8453 => Image::new(&self.base),
             42161 => Image::new(&self.arbitrum),
             _ => Image::new(&self.eth),
+        }
+    }
+
+    /// Return the native currency icon based on the chain_id
+    pub fn currency_icon(&self, id: u64) -> Image<'static> {
+        match id {
+            1 => Image::new(&self.eth_coin),
+            56 => Image::new(&self.bnb_coin),
+            8453 => Image::new(&self.eth_coin),
+            42161 => Image::new(&self.eth_coin),
+            _ => Image::new(&self.eth_coin),
         }
     }
 

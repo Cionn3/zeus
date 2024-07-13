@@ -1,16 +1,14 @@
 use eframe::{
     egui::{
         vec2, widgets::TextEdit, Align2, Button, Checkbox, Color32, FontId, Frame, RichText,
-        Rounding, Sense, Ui, Window,
+        Rounding, Sense, Stroke, Ui, Window,
     },
-    emath::Vec2,
     epaint::{Margin, Shadow},
 };
-use zeus_chain::alloy::rpc::types::Rich;
 
 use crate::fonts::roboto_regular;
 
-use super::THEME;
+
 use zeus_shared_types::{AppData, ErrorMsg, SHARED_UI_STATE};
 
 use tracing::trace;
@@ -30,53 +28,75 @@ pub fn paint_login(ui: &mut Ui, data: &mut AppData) {
 
 /// Paint the login screen
 pub fn login_screen(ui: &mut Ui, data: &mut AppData) {
-    frame().show(ui, |ui| {
-        ui.set_max_size(Vec2::new(400.0, 500.0));
 
-        let heading = rich_text("Unlock Profile", 16.0);
-        ui.label(heading);
-        ui.add_space(30.0);
+    let heading = rich_text("Unlock Profile", 16.0);
+    let unlock_txt = rich_text("Unlock", 16.0);
 
-        ui.vertical_centered(|ui| {
-            let user_text = rich_text("Username", 16.0);
-            let pass_text = rich_text("Password", 16.0);
+    let user_text = rich_text("Username", 16.0);
+    let pass_text = rich_text("Password", 16.0);
 
-            ui.vertical_centered(|ui| {
-                {
-                    let user_field = text_edit_s(data.profile.credentials.user_mut(), 150.0, false);
-                    ui.label(user_text);
-                    ui.add(user_field);
+    let font = FontId::new(15.0, roboto_regular());
+
+    ui.vertical_centered(|ui| {
+
+            ui.add_space(150.0);
+
+            ui.label(heading);
+            ui.add_space(30.0);
+
+
+            {
+                let user_mut = data.profile.credentials.user_mut();
+                let text_edit = TextEdit::singleline(user_mut)
+                .password(false)
+                .font(font.clone())
+                .text_color(Color32::WHITE)
+                .desired_width(150.0)
+                .min_size(vec2(50.0, 25.0));
+
+                ui.label(user_text);
+                ui.add(text_edit);
+            }
+
+            ui.add_space(15.0);
+
+            {
+                let pass_mut = data.profile.credentials.passwd_mut();
+                let text_edit = TextEdit::singleline(pass_mut)
+                .password(true)
+                .font(font)
+                .text_color(Color32::WHITE)
+                .desired_width(150.0)
+                .min_size(vec2(50.0, 25.0));
+
+                ui.label(pass_text);
+                ui.add(text_edit);
+                ui.add_space(15.0);
+            }
+            {
+                // set confrim password to the same as password
+                data.profile.credentials.copy_passwd_to_confirm();
+            }
+       
+
+        let button = Button::new(unlock_txt)
+            .rounding(10.0)
+            .sense(Sense::click())
+            .min_size(vec2(70.0, 25.0));
+
+
+        if ui.add(button).clicked() {
+            match data.profile.decrypt_and_load() {
+                Ok(_) => {
+                    trace!("Profile unlocked");
+                    data.logged_in = true;
                 }
-
-                ui.add_space(10.0);
-
-                {
-                    let pass_field =
-                        text_edit_s(data.profile.credentials.passwd_mut(), 150.0, true);
-                    ui.label(pass_text);
-                    ui.add(pass_field);
-                    ui.add_space(10.0);
-                }
-                {
-                    // set confrim password to the same as password
-                    data.profile.credentials.copy_passwd_to_confirm();
-                }
-            });
-
-            let unlock_txt = rich_text("Unlock", 15.0);
-            if ui.button(unlock_txt).clicked() {
-                match data.profile.decrypt_and_load() {
-                    Ok(_) => {
-                        trace!("Profile unlocked");
-                        data.logged_in = true;
-                    }
-                    Err(e) => {
-                        let mut state = SHARED_UI_STATE.write().unwrap();
-                        state.err_msg = ErrorMsg::new(true, e);
-                    }
+                Err(e) => {
+                    let mut state = SHARED_UI_STATE.write().unwrap();
+                    state.err_msg = ErrorMsg::new(true, e);
                 }
             }
-        });
+        }
     });
 }
 
@@ -86,53 +106,62 @@ pub fn new_profile_screen(ui: &mut Ui, data: &mut AppData) {
         return;
     }
 
-    frame().show(ui, |ui| {
-        ui.set_max_size(Vec2::new(400.0, 500.0));
+        let heading = rich_text("Create a Profile", 16.0);
+        let user_text = rich_text("Username", 16.0);
+        let pass_text = rich_text("Password", 16.0);
+        let confirm_text = rich_text("Confirm Password", 16.0);
+        let create_txt = rich_text("Create", 16.0);
 
-        let heading = rich_text("Create Profile", 16.0);
-
-        ui.label(heading);
-        ui.add_space(30.0);
 
         ui.vertical_centered(|ui| {
-            let user_text = rich_text("Username", 16.0);
 
-            let pass_text = rich_text("Password", 16.0);
+            ui.add_space(150.0);
 
-            let confirm_text = rich_text("Confirm Password", 16.0);
+            ui.label(heading);
+            ui.add_space(30.0);
 
             {
-                let user_field = text_edit_s(data.profile.credentials.user_mut(), 150.0, false);
+                let user_mut = data.profile.credentials.user_mut();
+                let text_edit = TextEdit::singleline(user_mut)
+                    .password(false)
+                    .desired_width(150.0)
+                    .min_size(vec2(50.0, 25.0));
                 ui.label(user_text);
-                ui.add(user_field);
+                ui.add(text_edit);
             }
 
             ui.add_space(10.0);
 
             {
-                let pass_field = text_edit_s(data.profile.credentials.passwd_mut(), 150.0, true);
+                let pass_mut = data.profile.credentials.passwd_mut();
+                let text_edit = TextEdit::singleline(pass_mut)
+                    .password(true)
+                    .desired_width(150.0)
+                    .min_size(vec2(50.0, 25.0));
                 ui.label(pass_text);
-                ui.add(pass_field);
+                ui.add(text_edit);
             }
 
             ui.add_space(10.0);
 
             {
-                let confirm_field =
-                    text_edit_s(data.profile.credentials.confirm_passwd_mut(), 150.0, true);
+                let pass_mut = data.profile.credentials.confirm_passwd_mut();
+                let text_edit = TextEdit::singleline(pass_mut)
+                    .password(true)
+                    .desired_width(150.0)
+                    .min_size(vec2(50.0, 25.0));
                 ui.label(confirm_text);
-                ui.add(confirm_field);
+                ui.add(text_edit);
             }
 
             ui.add_space(15.0);
 
-            let create_txt = rich_text("Create", 15.0);
             let button = Button::new(create_txt)
-                .rounding(10.0)
-                .min_size(vec2(30.0, 10.0));
-            let res = ui.add(button);
+            .rounding(10.0)
+            .sense(Sense::click())
+            .min_size(vec2(70.0, 25.0));
 
-            if res.clicked() {
+            if ui.add(button).clicked() {
                 // encrypt and save the wallets to disk
                 match data.profile.encrypt_and_save() {
                     Ok(_) => {
@@ -147,7 +176,7 @@ pub fn new_profile_screen(ui: &mut Ui, data: &mut AppData) {
                 }
             }
         });
-    });
+   
 }
 
 /// TxSettings popup
@@ -277,7 +306,7 @@ pub fn frame() -> Frame {
     Frame {
         inner_margin: Margin::same(8.0),
         outer_margin: Margin::same(8.0),
-        fill: THEME.colors.darker_gray,
+        fill: Color32::DARK_GRAY,
         rounding: Rounding {
             ne: 8.0,
             se: 8.0,
@@ -288,9 +317,34 @@ pub fn frame() -> Frame {
             offset: vec2(0.0, 0.0),
             blur: 4.0,
             spread: 0.0,
-            color: Color32::from_gray(128),
+            color: Color32::WHITE,
         },
         ..Frame::default()
+    }
+}
+
+/// A transparent frame
+pub fn frame_transparent() -> Frame {
+    Frame {
+        inner_margin: Margin::same(0.0),
+        outer_margin: Margin::same(0.0),
+        fill: Color32::TRANSPARENT,
+        rounding: Rounding {
+            ne: 15.0,
+            se: 15.0,
+            sw: 15.0,
+            nw: 15.0,
+        },
+        shadow: Shadow {
+            offset: vec2(0.0, 0.0),
+            blur: 0.0,
+            spread: 0.0,
+            color: Color32::TRANSPARENT,
+        },
+        stroke: Stroke {
+            width: 0.0,
+            color: Color32::WHITE,
+        },
     }
 }
 
@@ -301,7 +355,7 @@ pub fn rich_text(text: &str, size: f32) -> RichText {
     RichText::new(text)
         .family(roboto_regular())
         .size(size)
-        .color(THEME.colors.white)
+        .color(Color32::WHITE)
 }
 
 /// Returns a [TextEdit::singleline] that is commonly used
@@ -311,7 +365,9 @@ pub fn text_edit_s(text: &mut String, width: f32, passwd: bool) -> TextEdit {
         .desired_width(width)
         .password(passwd)
         .font(font)
-        .text_color(THEME.colors.dark_gray)
+        .text_color(Color32::WHITE)
+        .min_size(vec2(width, 25.0))
+        
 }
 
 /// Returns a [Button] that is commonly used

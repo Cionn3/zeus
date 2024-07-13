@@ -1,7 +1,9 @@
 use super::super::encryption::{Credentials, encrypt_data, decrypt_data};
-use super::{Wallet, WalletBalance, WalletData};
+use super::{ Wallet, WalletBalance, WalletData};
 use alloy::core::hex::encode;
+use alloy::primitives::Address;
 use std::collections::HashMap;
+use std::str::FromStr;
 use anyhow::anyhow;
 
 const FILENAME: &str = "profile.data";
@@ -87,7 +89,20 @@ impl Profile {
         if let Some(wallet) = &self.current_wallet {
             wallet.name.clone()
         } else {
-            "No Wallet".to_string()
+            "No Wallet Available".to_string()
+        }
+    }
+
+    /// Truncate the wallet name if its an Ethereum address
+    pub fn truncated_name(&self) -> String {
+        if let Some(wallet) = &self.current_wallet {
+            if let Ok(address) = Address::from_str(&wallet.name) {
+                // truncate the address
+                return format!("0x{}", &address.to_string()[2..12]);
+            }
+            wallet.name.clone()
+        } else {
+            "No Wallet Available".to_string()
         }
     }
 
