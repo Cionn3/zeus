@@ -99,7 +99,7 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                     ui.add_space(10.0);
                     ui.vertical(|ui| {
                         self.token_select_button(ui, "input", data);
-                        self.token_balance(ui, "input");
+                        self.token_balance(ui, data, "input");
                     });
                 });
                 ui.add_space(10.0);
@@ -113,7 +113,7 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                     ui.add_space(10.0);
                     ui.vertical(|ui| {
                         self.token_select_button(ui, "output", data);
-                        self.token_balance(ui, "output");
+                        self.token_balance(ui, data, "output");
                     });
                 });
 
@@ -210,6 +210,11 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                 return;
             }
         }
+        let currencies;
+        {
+            let state = SWAP_UI_STATE.read().unwrap();
+            currencies = state.shared_cache.read().unwrap().currencies.get(&data.chain_id.id()).unwrap_or(&vec![]).clone();
+        }
 
         egui::Window
             ::new("Token List")
@@ -219,11 +224,6 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
             .show(ui.ctx(), |ui| {
                 // ! Lock here maybe held too much
                 let mut state = SWAP_UI_STATE.write().unwrap();
-
-                let currencies = state.currencies
-                .get(&data.chain_id.id())
-                .unwrap_or(&vec![])
-                .clone();
 
                 ui.add(
                     TextEdit::singleline(&mut state.search_currency)
@@ -256,13 +256,10 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                                         let res = ui.add(selectable_label);
 
                                         if res.clicked() {
-                                            let balance = state.get_erc20_balance(data.chain_id.id(), &token.address);
                                             state.replace_currency(
                                                 id,
                                                 SelectedCurrency::new_from_erc(
-                                                    token.clone(),
-                                                    balance
-                                                )
+                                                    token.clone()                                                )
                                             );
                                             state.update_token_list_status(id, false);
                                         }
@@ -288,10 +285,9 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                                         let res = ui.add(selectable_label);
 
                                         if res.clicked() {
-                                            let balance = data.eth_balance(data.chain_id.id());
                                             state.replace_currency(
                                                 id,
-                                                SelectedCurrency::new_from_native(native.clone(), balance)
+                                                SelectedCurrency::new_from_native(native.clone())
                                             );
                                             state.update_token_list_status(id, false);
                                         }
@@ -346,11 +342,13 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
     }
 
     /// Paint the balance of the token
-    fn token_balance(&mut self, ui: &mut Ui, id: &str) {
+    fn token_balance(&mut self, ui: &mut Ui, data: &mut AppData, id: &str) {
         let currency;
+        let balance;
         {
             let state = SWAP_UI_STATE.read().unwrap();
-            currency = state.get_selected_currency(id).clone();
+            currency = state.get_selected_currency(id);
+            balance = state.get_balance(&data.chain_id.id(), &data.wallet_address(), &currency);
         }
 
         let balance_text = RichText::new("Balance:")
@@ -358,7 +356,7 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
             .family(roboto_regular())
             .color(Color32::WHITE);
 
-        let balance = format_wei(&currency.balance, currency.decimals());
+        let balance = format_wei(&balance.to_string(), currency.decimals());
         let formated_balance = format!("{:.4}", balance);
 
         ui.horizontal(|ui| {
@@ -453,7 +451,7 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                 state.err_msg = ErrorMsg::new(true, "You are not connected to a node");
                 return;
             }
-            let swap_state = SWAP_UI_STATE.read().unwrap();
+           // let swap_state = SWAP_UI_STATE.read().unwrap();
 
             // TODO
             /* 

@@ -7343,6 +7343,7 @@ dependencies = [
 name = "zeus-shared-types"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "tracing",
  "zeus-chain",
  "zeus-core",

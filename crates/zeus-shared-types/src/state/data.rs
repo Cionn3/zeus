@@ -1,10 +1,11 @@
 use std::{ path::Path, str::FromStr };
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::collections::HashMap;
 
 use zeus_core::{anyhow, Profile, Credentials};
 use zeus_chain::{alloy::primitives::{U256, Address}, ChainId, Rpc, BlockInfo, WsClient, serde_json};
-use tracing::{info, trace};
+use crate::cache::{SHARED_CACHE, SharedCache};
+use tracing::trace;
 
 /// Supported networks
 pub const NETWORKS: [ChainId; 4] = [
@@ -67,6 +68,8 @@ pub struct AppData {
 
     /// The current profile
     pub profile: Profile,
+
+    pub shared_cache: Arc<RwLock<SharedCache>>,
 
     /// Tx settings
     pub tx_settings: TxSettings,
@@ -142,16 +145,15 @@ impl AppData {
         Ok(())
     }
 
-    /// Get eth balance of the a wallet for a specific chain
-    pub fn eth_balance(&self, chain_id: u64) -> U256 {
-        let current_wallet = if let Some(wallet) = &self.profile.current_wallet {
-            wallet
-        } else {
-            trace!("No current wallet found");
-            return U256::ZERO;
-        };
+    /// Get eth balance of a wallet for a specific chain
+    pub fn eth_balance(&self, chain_id: u64, owner: Address) -> (u64, U256) {
+        self.shared_cache.read().unwrap().get_eth_balance(chain_id, owner)
+    }
 
-        current_wallet.get_balance(chain_id)
+    /// Update eth balance of a wallet for a specific chain
+    pub fn update_balance(&mut self, chain_id: u64, owner: Address, balance: U256) {
+        let block = self.latest_block.number;
+        self.shared_cache.write().unwrap().update_eth_balance(chain_id, owner, block, balance);
     }
 
     /// DEBUG
@@ -171,17 +173,6 @@ impl AppData {
             wallet.key.address()
         } else {
             Address::ZERO
-        }
-    }
-
-
-    /// Get native coin on current chain
-    pub fn native_coin(&self) -> String {
-        match self.chain_id {
-            ChainId::Ethereum(_) => "ETH".to_string(),
-            ChainId::BinanceSmartChain(_) => "BNB".to_string(),
-            ChainId::Base(_) => "ETH".to_string(),
-            ChainId::Arbitrum(_) => "ETH".to_string(),
         }
     }
 }
@@ -206,6 +197,7 @@ impl Default for AppData {
             chain_ids: NETWORKS.to_vec(),
             rpc,
             profile: Profile::default(),
+            shared_cache: SHARED_CACHE.clone(),
             tx_settings: TxSettings::default(),
             logged_in: false,
             new_profile_screen,

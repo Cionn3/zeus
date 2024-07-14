@@ -2,11 +2,12 @@ use eframe::{
     egui::{Align2, Button, ComboBox, Sense, Ui, Window},
     epaint::vec2,
 };
+use tracing::trace;
 use std::{collections::HashMap, sync::Arc};
 
 use super::{
     super::icons::IconTextures,
-    misc::{button, frame, rich_text, text_edit_s},
+    misc::{button, rich_text, text_edit_s},
     GUI,
 };
 use zeus_backend::types::Request;
@@ -37,11 +38,12 @@ fn new_wallet_area(ui: &mut Ui, data: &mut AppData, icons: Arc<IconTextures>) {
         ui.add_space(10.0);
 
         ui.horizontal(|ui| {
-            // show the available wallets
+            // show the available walletss
             available_wallets(ui, data);
 
             // show the balance of the selected wallet
-            let balance = data.eth_balance(data.chain_id.id());
+            let owner = data.wallet_address();
+            let (_, balance) = data.eth_balance(data.chain_id.id(), owner);
             let formated = format!("{:.4}", format_ether(balance));
             let balance_text = rich_text(&formated, 15.0);
 
@@ -111,85 +113,7 @@ fn available_wallets(ui: &mut Ui, data: &mut AppData) {
         });
 }
 
-fn wallet_selection(ui: &mut Ui, data: &mut AppData, icons: Arc<IconTextures>) {
-    if !data.logged_in || data.new_profile_screen {
-        return;
-    }
 
-    ui.vertical(|ui| {
-        ui.horizontal(|ui| {
-            frame().show(ui, |ui| {
-                let balance = data.eth_balance(data.chain_id.id());
-                let formated = format!("{} {:.4}", data.native_coin(), format_ether(balance));
-                let balance_text = rich_text(&formated, 15.0);
-
-                let selected_text = rich_text(&data.profile.current_wallet_name(), 13.0);
-
-                let wallets_text = rich_text("Wallets", 13.0);
-
-                ui.label(wallets_text);
-                ComboBox::from_label("")
-                    .selected_text(selected_text)
-                    .width(30.0)
-                    .height(5.0)
-                    .show_ui(ui, |ui| {
-                        for wallet in &data.profile.wallets {
-                            ui.selectable_value(
-                                &mut data.profile.current_wallet,
-                                Some(wallet.clone()),
-                                wallet.name.clone(),
-                            );
-                        }
-                    });
-                ui.label(balance_text);
-            });
-        });
-
-        ui.horizontal(|ui| {
-            ui.set_min_size(vec2(200.0, 50.0));
-
-            ui.add_space(10.0);
-
-            // New Wallet Icon, If clicked, open the [new_wallet] UI
-            let wallet_new_res = ui.add(icons.wallet_new_icon());
-            if wallet_new_res.clicked() {
-                let mut state = SHARED_UI_STATE.write().unwrap();
-                state.new_wallet_window_on = true;
-            }
-
-            ui.add_space(10.0);
-
-            // copy current wallet address to clipboard
-            let copy_addr_res = ui.add(icons.copy_icon());
-            if copy_addr_res.clicked() {
-                let curr_wallet = data.profile.current_wallet.clone();
-
-                let curr_wallet = match curr_wallet {
-                    Some(wallet) => wallet,
-                    None => {
-                        let mut state = SHARED_UI_STATE.write().unwrap();
-                        state.err_msg = ErrorMsg::new(true, "No Wallet Selected");
-                        return;
-                    }
-                };
-
-                ui.ctx().output_mut(|output| {
-                    output.copied_text = curr_wallet.key.address().to_string();
-                });
-            }
-
-            ui.add_space(5.0);
-
-            let export_key_res = ui.add(icons.export_key_icon());
-
-            if export_key_res.clicked() {
-                let mut state = SHARED_UI_STATE.write().unwrap();
-                state.export_key_ui = true;
-            }
-        });
-        ui.add_space(10.0);
-    });
-}
 
 /// Prompt the user to create a new random wallet or import one
 fn new_wallet(ui: &mut Ui) {

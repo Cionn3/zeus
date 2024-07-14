@@ -1,5 +1,5 @@
 use eframe::{egui, CreationContext};
-use egui::{ Context, Style};
+use egui::{Context, Style};
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -9,12 +9,12 @@ use std::{
 use crossbeam::channel::{unbounded, Receiver, Sender};
 
 use crate::{
-    theme::ZeusTheme,
     fonts::get_fonts,
     gui::{
         misc::{err_msg, paint_login, tx_settings_window},
-        GUI
+        GUI,
     },
+    theme::ZeusTheme,
 };
 
 use zeus_backend::{
@@ -22,8 +22,8 @@ use zeus_backend::{
     types::{Request, Response},
     Backend,
 };
-use zeus_chain::{alloy::primitives::U256, defi_types::currency::Currency, BLOCK_ORACLE};
-use zeus_shared_types::{AppData, ErrorMsg, SHARED_UI_STATE, SWAP_UI_STATE};
+use zeus_chain::{alloy::primitives::{U256, Address}, defi_types::currency::Currency, BLOCK_ORACLE};
+use zeus_shared_types::{cache::SHARED_CACHE, state::swap_ui, AppData, ErrorMsg, SHARED_UI_STATE, SWAP_UI_STATE};
 
 use tracing_subscriber::{
     fmt, layer::SubscriberExt, prelude::*, util::SubscriberInitExt, EnvFilter,
@@ -45,7 +45,6 @@ pub const HEIGHT: f32 = 720.0;
 
 /// The main application struct
 pub struct ZeusApp {
-
     /// The GUI components of the application
     pub gui: GUI,
 
@@ -84,9 +83,9 @@ fn setup_logging() -> (WorkerGuard, WorkerGuard) {
     let console_filter =
         EnvFilter::new("zeus,zeus_core,zeus_chain,zeus_backend,zeus_shared_types=info,error,warn");
     let trace_filter =
-        EnvFilter::new("zeus,zeus_core,zeus_chain_zeus_backend,zeus_shared_types=trace");
+        EnvFilter::new("zeus,zeus_core,zeus_chain,zeus_backend,zeus_shared_types=trace");
     let output_filter =
-        EnvFilter::new("zeus,zeus_core,zeus_chain_zeus_backend,zeus_shared_types=info,error,warn");
+        EnvFilter::new("zeus,zeus_core,zeus_chain,zeus_backend,zeus_shared_types=info,error,warn");
 
     // Setting up layers
     let console_layer = fmt::layer()
@@ -131,7 +130,6 @@ impl ZeusApp {
         let theme = app.config_style(&cc.egui_ctx);
         app.gui.theme = Arc::new(theme);
 
-
         match app.data.load_rpc() {
             Ok(_) => {}
             Err(e) => {
@@ -140,6 +138,8 @@ impl ZeusApp {
         }
 
         let currencies: HashMap<u64, Vec<Currency>>;
+        let erc20_balances: HashMap<(u64, Address, Address), U256>;
+        let eth_balances: HashMap<(u64, Address), (u64, U256)>;
 
         {
             let zeus_db = match ZeusDB::new() {
@@ -160,17 +160,40 @@ impl ZeusApp {
                 }
             }
 
-            currencies = match zeus_db.load_currencies(app.data.supported_networks()) {
+            let networks = app.data.supported_networks();
+
+            currencies = match zeus_db.load_currencies(networks.clone()) {
                 Ok(currencies) => currencies,
                 Err(e) => {
                     error!("Error Loading Currencies: {}", e);
                     HashMap::new()
                 }
             };
+
+            erc20_balances = match zeus_db.load_all_erc20_balances(networks.clone()) {
+                Ok(balances) => balances,
+                Err(e) => {
+                    error!("Error Loading ERC20 Balances: {}", e);
+                    HashMap::new()
+                }
+            };
+
+            eth_balances = match zeus_db.load_all_eth_balances(networks) {
+                Ok(balances) => balances,
+                Err(e) => {
+                    error!("Error Loading ETH Balances: {}", e);
+                    HashMap::new()
+                }
+            };
+            trace!("ERC20 Balances Loaded: {:?}", erc20_balances);
+            trace!("ETH Balances Loaded: {:?}", eth_balances);
         }
 
-        let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
-        swap_ui_state.currencies = currencies;
+        let mut shared_cache = SHARED_CACHE.write().unwrap();
+        shared_cache.currencies = currencies;
+        shared_cache.erc20_balance = erc20_balances;
+        shared_cache.eth_balance = eth_balances;
+
 
         let (front_sender, front_receiver) = unbounded();
         let (back_sender, back_receiver) = unbounded();
@@ -221,18 +244,13 @@ impl ZeusApp {
             return;
         }
         let chain = self.data.chain_id.id();
+        let owner = self.data.wallet_address();
 
-        let wallet_state = self
-            .data
-            .profile
-            .current_wallet
-            .as_mut()
-            .unwrap()
-            .get_balance_full(chain);
+        let (balance_block, latest_balance) = self.data.eth_balance(chain, owner);
         let latest_block = self.data.latest_block().number;
 
         // balance up to date, skip
-        if wallet_state.block == latest_block {
+        if balance_block == latest_block {
             return;
         }
 
@@ -256,12 +274,7 @@ impl ZeusApp {
         self.last_eth_request = now;
         // insert just the latest block to avoid duplicate requests
         // it will be overwritten when the response is received
-        self.data
-            .profile
-            .current_wallet
-            .as_mut()
-            .unwrap()
-            .update_balance(chain, wallet_state.balance, latest_block);
+        self.data.update_balance(chain, owner, latest_balance);
         trace!("Sent Request For ETH Balance");
     }
 
@@ -345,21 +358,12 @@ impl ZeusApp {
     }
 
     fn update_eth_balance(&mut self, balance: U256) {
-        if let Some(wallet) = &mut self.data.profile.current_wallet {
-            let latest_block = self.data.latest_block.number;
-            let chain_id = self.data.chain_id.id();
-            wallet.update_balance(chain_id, balance, latest_block);
-
-            // * update the balance in the swap ui if a native currency is selected
-            let mut swap_state = SWAP_UI_STATE.write().unwrap();
-            if swap_state.currency_in.is_native() {
-                swap_state.currency_in.balance = balance.to_string();
-            }
-
-            if swap_state.currency_out.is_native() {
-                swap_state.currency_out.balance = balance.to_string();
-            }
-        }
+        let owner = self.data.wallet_address();
+        let chain_id = self.data.chain_id.id();
+        
+        // update eth balance in the shared cache
+        let mut shared_cache = SHARED_CACHE.write().unwrap();
+        shared_cache.eth_balance.insert((chain_id, owner), (self.data.latest_block().number, balance));
     }
 }
 
@@ -398,12 +402,16 @@ impl eframe::App for ZeusApp {
         }
 
         if self.on_startup {
+
+            if self.data.logged_in {
             self.send_request(Request::OnStartup {
                 chain_id: self.data.chain_id.clone(),
                 rpcs: self.data.rpc.clone(),
             });
+
             // run only once
             self.on_startup = false;
+        }
         }
 
         // update to latest block
@@ -417,8 +425,6 @@ impl eframe::App for ZeusApp {
 
         self.request_eth_balance();
         self.request_erc20_balance();
-
-
 
         // Draw the UI that belongs to the Central Panel
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -446,24 +452,20 @@ impl eframe::App for ZeusApp {
             });
         });
 
-        
         // Draw the UI that belongs to the Top Panel
         egui::TopBottomPanel::top("top_panel")
-        .exact_height(self.top_panel_h)
-        .show(ctx, |ui| {
+            .exact_height(self.top_panel_h)
+            .show(ctx, |ui| {
+                let painter = ui.painter();
+                painter.add(self.gui.theme.bg_gradient.clone());
 
-            let painter = ui.painter();
-            painter.add(self.gui.theme.bg_gradient.clone());
-
-            self.gui.render_wallet_ui(ui, &mut self.data);  
-        });
-        
+                self.gui.render_wallet_ui(ui, &mut self.data);
+            });
 
         // Draw the UI that belongs to the Left Panel
         egui::SidePanel::left("left_panel")
-        .exact_width(self.left_panel_w)
+            .exact_width(self.left_panel_w)
             .show(ctx, |ui| {
-
                 let painter = ui.painter();
                 painter.add(self.gui.theme.bg_gradient.clone());
 

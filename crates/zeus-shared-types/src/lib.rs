@@ -1,5 +1,5 @@
 pub mod state;
-// pub mod cache;
+pub mod cache;
 
 pub use state::{
     data::{ AppData, NETWORKS, TxSettings },

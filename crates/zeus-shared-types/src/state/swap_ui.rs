@@ -1,11 +1,10 @@
 use std::sync::{ Arc, RwLock };
-use std::collections::HashMap;
 
-use tracing::info;
 use zeus_chain::{
     alloy::primitives::{ Bytes, U256, Address },
     defi_types::currency::{ Currency, NativeCurrency, erc20::ERC20Token },
 };
+use crate::cache::{SHARED_CACHE, SharedCache};
 use zeus_core::lazy_static::lazy_static;
 
 lazy_static! {
@@ -77,9 +76,6 @@ pub struct SelectedCurrency {
 
     /// The amount of currency to swap
     pub amount_to_swap: String,
-
-    /// The balance the owner has for this currency
-    pub balance: String,
 }
 
 /// The state of the SwapUI
@@ -102,12 +98,7 @@ pub struct SwapUIState {
     /// The search query for a currency
     pub search_currency: String,
 
-    /// A HashMap that holds a list of [Currency] with their corrsponing `chain_id` as key
-    pub currencies: HashMap<u64, Vec<Currency>>,
-
-    /// ERC20 Balance cache
-    /// (`Block`, `Token Address`, `Balance`)
-    pub erc20_balances: HashMap<u64, (u64, Address, U256)>,
+    pub shared_cache: Arc<RwLock<SharedCache>>,
 
     pub quote_result: QuoteResult,
 }
@@ -115,20 +106,23 @@ pub struct SwapUIState {
 impl SwapUIState {
 
     /// Get the balance of a token for a specific chain_id
-    pub fn get_erc20_balance(&self, chain_id: u64, token: &Address) -> U256 {
-        match self.erc20_balances.get(&chain_id) {
-            Some((_, addr, balance)) if addr == token => balance.clone(),
-            _ => U256::from(0),
-        }
+    pub fn get_erc20_balance(&self, chain_id: &u64, owner: &Address, token: &Address) -> U256 {
+        self.shared_cache.read().unwrap().get_erc20_balance(chain_id, owner, token)
     }
 
     /// Update the balance of a token for a specific chain_id
-    pub fn update_erc20_balance(&mut self, chain_id: u64, token: Address, balance: U256) {
-        self.erc20_balances.insert(chain_id, (self.block, token, balance));
+    pub fn update_erc20_balance(&mut self, chain_id: u64, owner: Address, token: Address, balance: U256) {
+        self.shared_cache.write().unwrap().update_erc20_balance(chain_id, owner, token, balance);
+    }
 
-        // remove old balances < block for the same chain and token only
-        self.erc20_balances.retain(|_, (block, addr, _)| *block >= self.block || *addr != token);
-        info!("Updated ERC20 Balance: {:?}", self.erc20_balances);
+    /// Get the balance of a [SelectedCurrency]
+    pub fn get_balance(&self, chain_id: &u64, owner: &Address, currency: &SelectedCurrency) -> U256 {
+        if currency.currency.is_native() {
+            self.shared_cache.read().unwrap().get_eth_balance(*chain_id, *owner).1
+        } else {
+            let token = currency.get_erc20().unwrap();
+            self.get_erc20_balance(chain_id, owner, &token.address)
+        }
     }
 
     /// Get the input or output selected currency by an id
@@ -154,22 +148,6 @@ impl SwapUIState {
         }
     }
 
-    /// Update the balance of a [SelectedCurrency]
-    ///
-    /// `id` -> "input" or "output" currency
-    ///
-    /// `balance` -> The new balance (Must be in wei format)
-    pub fn update_balance(&mut self, id: &str, balance: String) {
-        match id {
-            "input" => {
-                self.currency_in.balance = balance;
-            }
-            "output" => {
-                self.currency_out.balance = balance;
-            }
-            _ => {}
-        }
-    }
 
     /// Get which window selection list is on or off by an id
     ///
@@ -219,8 +197,7 @@ impl Default for SwapUIState {
             currency_in: SelectedCurrency::default_input(1),
             currency_out: SelectedCurrency::default_output(1),
             search_currency: String::new(),
-            currencies: HashMap::new(),
-            erc20_balances: HashMap::new(),
+            shared_cache: SHARED_CACHE.clone(),
             quote_result: QuoteResult::default(),
         }
     }
@@ -228,20 +205,18 @@ impl Default for SwapUIState {
 
 impl SelectedCurrency {
     /// Create a new selected currency from an ERC20Token
-    pub fn new_from_erc(token: ERC20Token, balance: U256) -> Self {
+    pub fn new_from_erc(token: ERC20Token) -> Self {
         Self {
             currency: Currency::new_erc20(token),
             amount_to_swap: String::new(),
-            balance: balance.to_string(),
         }
     }
 
     /// Create a new selected currency from a native currency
-    pub fn new_from_native(currency: NativeCurrency, balance: U256) -> Self {
+    pub fn new_from_native(currency: NativeCurrency) -> Self {
         Self {
             currency: Currency::new_from_native(currency),
             amount_to_swap: String::new(),
-            balance: balance.to_string(),
         }
     }
 
@@ -250,7 +225,6 @@ impl SelectedCurrency {
         Self {
             currency: Currency::new_native(id),
             amount_to_swap: String::new(),
-            balance: "0".to_string(),
         }
     }
 
@@ -258,9 +232,7 @@ impl SelectedCurrency {
     pub fn default_output(id: u64) -> Self {
         Self {
             currency: Currency::default_erc20(id),
-            amount_to_swap: String::new(),
-            balance: "0".to_string(),
-        }
+            amount_to_swap: String::new(),        }
     }
 
     pub fn is_native(&self) -> bool {
@@ -289,7 +261,6 @@ impl Default for SelectedCurrency {
         Self {
             currency: Currency::default(),
             amount_to_swap: String::new(),
-            balance: "0".to_string(),
         }
     }
 }

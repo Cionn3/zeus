@@ -288,22 +288,18 @@ impl Backend {
         };
 
         let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
-        let selected_currency = SelectedCurrency::new_from_erc(token.clone(), balance);
+        let selected_currency = SelectedCurrency::new_from_erc(token.clone());
         let currency = Currency::new_erc20(token.clone());
         trace!("Got ERC20 Token: {} With Balance {}", token.symbol, balance);
 
-        // replace with the new token
+        // Update SwapUI with the selected currency
         swap_ui_state.replace_currency(&id, selected_currency);
 
         // close the token list window
         swap_ui_state.update_token_list_status(&id, false);
 
-        // update the token list HashMap
-        if let Some(currencies) = swap_ui_state.currencies.get_mut(&chain_id) {
-            currencies.push(currency);
-        } else {
-            swap_ui_state.currencies.insert(chain_id, vec![currency]);
-        }
+        // update the Currency Map in the cache
+        swap_ui_state.shared_cache.write().unwrap().add_currency(chain_id, currency);
         Ok(())
     }
 
@@ -349,10 +345,16 @@ impl Backend {
 
         let mut swap_state = SWAP_UI_STATE.write().unwrap();
 
-        // update the balance in the cache
-        swap_state.update_erc20_balance(chain_id, token.address, balance);
+        // update the balance in the map
+        swap_state.update_erc20_balance(chain_id, owner, token.address, balance);
 
-        swap_state.update_balance(&id, balance.to_string());
+        // update the balance in the SharedCache
+        swap_state.shared_cache.write().unwrap().update_erc20_balance(
+            chain_id,
+            owner,
+            token.address,
+            balance
+        );
         trace!("ERC20 Balance updated in UI State");
         Ok(())
     }

@@ -7,5 +7,5 @@ edition = "2021"
 zeus-core = { path = "../zeus-core" }
 zeus-chain = { path = "../zeus-chain" }
 
-# alloy-primitives = "0.7.7"
+alloy-primitives = "0.7.7"
 tracing = "0.1.40"
