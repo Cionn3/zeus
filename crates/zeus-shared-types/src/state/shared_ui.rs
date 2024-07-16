@@ -4,7 +4,7 @@ use super::{error::ErrorMsg, info::InfoMsg};
 
 lazy_static! {
 
-    /// The State of [SharedUiState]
+    /// See [SharedUiState]
     /// 
     /// This can be safely shared across all tasks
     pub static ref SHARED_UI_STATE: Arc<RwLock<SharedUiState>> = Arc::new(
@@ -15,13 +15,18 @@ lazy_static! {
 
 
 /// Shared State for some GUI components
+/// 
+/// We use this to turn on/off some UI components that are not part of the main UI
+/// 
+/// For convenience we use a thread-safe [SHARED_UI_STATE] instance to manage the state
+/// 
+/// For example an [ErrorMsg] can be set here using 
+/// ```
+/// let mut state = SHARED_UI_STATE.write().unwrap();
+/// state.err_msg = ErrorMsg::new(true, err);
+/// ```
 #[derive(Clone)]
 pub struct SharedUiState {
-    /// Swap UI on/off
-    pub swap_ui_on: bool,
-
-    /// Network settings UI on/off
-    pub networks_on: bool,
 
     /// New/Import Wallet UI on/off
     ///
@@ -43,6 +48,9 @@ pub struct SharedUiState {
     /// Exported key window on/off
     pub exported_key_window: (bool, String),
 
+    /// Network Settings
+    pub network_settings: bool,
+
     /// TxSettings popup on/off
     pub tx_settings_on: bool,
 
@@ -56,12 +64,11 @@ pub struct SharedUiState {
 impl Default for SharedUiState {
     fn default() -> Self {
         Self {
-            swap_ui_on: true,
-            networks_on: false,
             wallet_popup: (false, "New"),
             new_wallet_window_on: false,
             generate_wallet_on: false,
             import_wallet_window_on: false,
+            network_settings: false,
             export_key_ui: false,
             exported_key_window: (false, String::new()),
             tx_settings_on: false,

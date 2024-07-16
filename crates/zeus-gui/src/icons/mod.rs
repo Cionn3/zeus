@@ -14,8 +14,8 @@ use image::imageops::FilterType;
 #[derive(Clone)]
 pub struct IconTextures {
     pub copy: TextureHandle,
-    pub wallet_new: TextureHandle,
-    pub export_key: TextureHandle,
+    pub add: TextureHandle,
+    pub view_key: TextureHandle,
     pub tx_settings: TextureHandle,
     pub online: TextureHandle,
     pub offline: TextureHandle,
@@ -29,19 +29,23 @@ pub struct IconTextures {
     // Currency Icons
     pub eth_coin: TextureHandle,
     pub bnb_coin: TextureHandle,
+
+    // Settings Icons
+    pub network: TextureHandle,
+    pub wallet: TextureHandle,
+    pub rename: TextureHandle,
 }
 
 impl IconTextures {
     pub fn new(ctx: &Context) -> Result<Self, anyhow::Error> {
-        let copy_icon = load_image_from_memory(include_bytes!("wallet/copy.png"), 24, 24)?;
-        let wallet_new_icon = load_image_from_memory(include_bytes!("wallet/new.png"), 24, 24)?;
-        let export_key_icon = load_image_from_memory(include_bytes!("wallet/export.png"), 24, 24)?;
+        let copy = load_image_from_memory(include_bytes!("settings/wallet/copy.png"), 16, 16)?;
+        let add = load_image_from_memory(include_bytes!("settings/wallet/add.png"), 16, 16)?;
         let tx_settings_icon = load_image_from_memory(include_bytes!("misc/tx_settings.png"), 24, 24)?;
         let online_icon = load_image_from_memory(include_bytes!("misc/online.png"), 24, 24)?;
         let offline_icon = load_image_from_memory(include_bytes!("misc/offline.png"), 24, 24)?;
 
         // Chain icons
-        let eth_icon = load_image_from_memory(include_bytes!("chain/eth.png"), 24, 24)?;
+        let eth_icon = load_image_from_memory(include_bytes!("chain/ethereum.png"), 24, 24)?;
         let bsc_icon = load_image_from_memory(include_bytes!("chain/bsc.png"), 24, 24)?;
         let base_icon = load_image_from_memory(include_bytes!("chain/base.png"), 24, 24)?;
         let arbitrum_icon = load_image_from_memory(include_bytes!("chain/arbitrum.png"), 24, 24)?;
@@ -50,12 +54,19 @@ impl IconTextures {
         let eth_coin = load_image_from_memory(include_bytes!("currency/ethereum.png"), 24, 24)?;
         let bnb_coin = load_image_from_memory(include_bytes!("currency/bnb.png"), 24, 24)?;
 
+        // Settings icons
+        let network = load_image_from_memory(include_bytes!("settings/network.png"), 36, 36)?;
+        let wallet = load_image_from_memory(include_bytes!("settings/wallet/wallet.png"), 36, 36)?;
+        let view_key = load_image_from_memory(include_bytes!("settings/wallet/key.png"), 16, 16)?;
+        let rename = load_image_from_memory(include_bytes!("settings/wallet/rename.png"), 16, 16)?;
+
+
         let texture_options = TextureOptions::default();
 
         Ok(Self {
-            copy: ctx.load_texture("copy_icon", copy_icon, texture_options),
-            wallet_new: ctx.load_texture("wallet_new_icon", wallet_new_icon, texture_options),
-            export_key: ctx.load_texture("export_key_icon", export_key_icon, texture_options),
+            copy: ctx.load_texture("copy_icon", copy, texture_options),
+            add: ctx.load_texture("add_icon", add, texture_options),
+            view_key: ctx.load_texture("view_key_icon", view_key, texture_options),
             tx_settings: ctx.load_texture("tx_settings_icon", tx_settings_icon, texture_options),
             online: ctx.load_texture("online", online_icon, texture_options),
             offline: ctx.load_texture("offline", offline_icon, texture_options),
@@ -65,26 +76,61 @@ impl IconTextures {
             arbitrum: ctx.load_texture("arbitrum", arbitrum_icon, texture_options),
             eth_coin: ctx.load_texture("eth_coin", eth_coin, texture_options),
             bnb_coin: ctx.load_texture("bnb_coin", bnb_coin, texture_options),
+            network: ctx.load_texture("network", network, texture_options),
+            wallet: ctx.load_texture("wallet", wallet, texture_options),
+            rename: ctx.load_texture("rename", rename, texture_options),
         })
     }
 
-    /// Return the export key icon
-    pub fn export_key_icon(&self) -> ImageButton {
-        ImageButton::new(&self.export_key).rounding(10.0)
+    /// Return Network icon
+    pub fn network_icon(&self) -> Image<'static> {
+        Image::new(&self.network)
+    }
+
+    /// Return Wallet icon
+    pub fn wallet_icon(&self) -> Image<'static> {
+        Image::new(&self.wallet)
+    }
+
+
+    /// Return the view key icon as [ImageButton]
+    pub fn view_key_btn(&self) -> ImageButton {
+        ImageButton::new(&self.view_key).rounding(10.0)
+    }
+
+    /// Return the export key as [Image]
+    pub fn view_key(&self) -> Image<'static> {
+        Image::new(&self.view_key)
     }
 
     /// Return the copy icon as [ImageButton]
-    pub fn copy_icon(&self) -> ImageButton {
+    pub fn copy_btn(&self) -> ImageButton {
         ImageButton::new(&self.copy).rounding(10.0)
     }
 
-    /// Return the wallet new icon as [ImageButton]
-    pub fn wallet_new_icon(&self) -> ImageButton {
-        ImageButton::new(&self.wallet_new).rounding(10.0)
+    /// Return the copy icon as [Image]
+    pub fn copy(&self) -> Image<'static> {
+        Image::new(&self.copy)
     }
 
+    /// Return the add icon as [ImageButton]
+    pub fn add_btn(&self) -> ImageButton {
+        ImageButton::new(&self.add).rounding(10.0)
+    }
+
+    /// Return the add icon as [Image]
+    pub fn add(&self) -> Image<'static> {
+        Image::new(&self.add)
+    }
+
+    /// Return the rename icon as [Image]
+    pub fn rename(&self) -> Image<'static> {
+        Image::new(&self.rename)
+    }
+
+
     /// Return the chain icon based on the chain_id
-    pub fn chain_icon(&self, id: u64) -> Image<'static> {
+    pub fn chain_icon(&self, id: &u64) -> Image<'static> {
         match id {
             1 => Image::new(&self.eth),
             56 => Image::new(&self.bsc),

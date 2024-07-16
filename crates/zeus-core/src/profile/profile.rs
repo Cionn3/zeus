@@ -93,18 +93,6 @@ impl Profile {
         }
     }
 
-    /// Truncate the wallet name if its an Ethereum address
-    pub fn truncated_name(&self) -> String {
-        if let Some(wallet) = &self.current_wallet {
-            if let Ok(address) = Address::from_str(&wallet.name) {
-                // truncate the address
-                return format!("0x{}", &address.to_string()[2..12]);
-            }
-            wallet.name.clone()
-        } else {
-            "No Wallet Available".to_string()
-        }
-    }
 
 
     /// Convert all the wallets keys with their names to Json string format

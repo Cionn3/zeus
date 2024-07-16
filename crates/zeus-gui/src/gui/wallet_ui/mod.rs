@@ -2,8 +2,8 @@ use eframe::{
     egui::{Align2, Button, ComboBox, Sense, Ui, Window},
     epaint::vec2,
 };
-use tracing::trace;
 use std::{collections::HashMap, sync::Arc};
+
 
 use super::{
     super::icons::IconTextures,
@@ -16,8 +16,7 @@ use zeus_shared_types::{AppData, ErrorMsg, SHARED_UI_STATE};
 
 /// Paint the UI repsonsible for managing the wallets
 pub fn wallet_ui(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
-    // wallet_selection(ui, data, gui.icons.clone());
-    new_wallet_area(ui, data, gui.theme.icons.clone());
+    wallet_selection(ui, data, gui.theme.icons.clone());
 
     new_wallet(ui);
     generate_new_wallet(ui, data, gui);
@@ -28,8 +27,10 @@ pub fn wallet_ui(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
     show_exported_key(ui);
 }
 
-/// WIP
-fn new_wallet_area(ui: &mut Ui, data: &mut AppData, icons: Arc<IconTextures>) {
+/// Wallet Selection UI
+/// 
+/// This UI is responsible for displaying the available wallets and the balance of the selected wallet
+fn wallet_selection(ui: &mut Ui, data: &mut AppData, icons: Arc<IconTextures>) {
     if !data.logged_in || data.new_profile_screen {
         return;
     }
@@ -51,49 +52,10 @@ fn new_wallet_area(ui: &mut Ui, data: &mut AppData, icons: Arc<IconTextures>) {
             ui.label(balance_text);
         });
         // TODO: Portofolio value in USD
-
-        ui.horizontal(|ui| {
-
-        // New Wallet Icon, If clicked, open the [new_wallet()] UI
-        let wallet_new_res = ui.add(icons.wallet_new_icon());
-        if wallet_new_res.clicked() {
-            let mut state = SHARED_UI_STATE.write().unwrap();
-            state.new_wallet_window_on = true;
-        }
-
-        ui.add_space(10.0);
-
-        // copy current wallet address to clipboard
-        let copy_addr_res = ui.add(icons.copy_icon());
-        if copy_addr_res.clicked() {
-            let curr_wallet = data.profile.current_wallet.clone();
-
-            let curr_wallet = match curr_wallet {
-                Some(wallet) => wallet,
-                None => {
-                    let mut state = SHARED_UI_STATE.write().unwrap();
-                    state.err_msg = ErrorMsg::new(true, "No Wallet Selected");
-                    return;
-                }
-            };
-
-            ui.ctx().output_mut(|output| {
-                output.copied_text = curr_wallet.key.address().to_string();
-            });
-        }
-
-        ui.add_space(5.0);
-
-        let export_key_res = ui.add(icons.export_key_icon());
-
-        if export_key_res.clicked() {
-            let mut state = SHARED_UI_STATE.write().unwrap();
-            state.export_key_ui = true;
-        }
-    });
     });
 }
 
+/// Show the available wallets
 fn available_wallets(ui: &mut Ui, data: &mut AppData) {
     let wallet_name = &data.profile.current_wallet_name();
     let selected_text = rich_text(wallet_name, 13.0);
@@ -116,6 +78,8 @@ fn available_wallets(ui: &mut Ui, data: &mut AppData) {
 
 
 /// Prompt the user to create a new random wallet or import one
+/// 
+/// Depends on the state of the [SHARED_UI_STATE]
 fn new_wallet(ui: &mut Ui) {
     {
         let state = SHARED_UI_STATE.read().unwrap();
@@ -168,7 +132,9 @@ fn new_wallet(ui: &mut Ui) {
         });
 }
 
-/// Generate a new wallet UI
+/// This UI is responsible for generating a new wallet
+/// 
+/// Depends on the state of the [SHARED_UI_STATE]
 fn generate_new_wallet(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
     {
         let state = SHARED_UI_STATE.read().unwrap();
@@ -230,7 +196,10 @@ fn generate_new_wallet(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
         });
 }
 
-/// Import Wallet UI
+
+/// This UI is responsible for importing a wallet from a private key
+/// 
+/// Depends on the state of the [SHARED_UI_STATE]
 fn import_wallet(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
     {
         let state = SHARED_UI_STATE.read().unwrap();
@@ -306,6 +275,9 @@ fn import_wallet(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
         });
 }
 
+/// This UI is responsible for exporting the private key of a wallet
+/// 
+/// Depends on the state of the [SHARED_UI_STATE]
 pub fn export_key_ui(ui: &mut Ui, data: &mut AppData) {
     {
         let state = SHARED_UI_STATE.read().unwrap();
@@ -398,6 +370,9 @@ pub fn export_key_ui(ui: &mut Ui, data: &mut AppData) {
         });
 }
 
+/// Show the exported key
+/// 
+/// Depends on the state of the [SHARED_UI_STATE]
 pub fn show_exported_key(ui: &mut Ui) {
     let window_text;
     {

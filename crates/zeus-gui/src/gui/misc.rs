@@ -13,8 +13,10 @@ use zeus_shared_types::{AppData, ErrorMsg, SHARED_UI_STATE};
 
 use tracing::trace;
 
-/// Paint the login area
-pub fn paint_login(ui: &mut Ui, data: &mut AppData) {
+/// Show the login area
+/// 
+/// This should be called by the [eframe::App::update] method
+pub fn show_login(ui: &mut Ui, data: &mut AppData) {
     // profile found but not logged in
     if data.profile_exists && !data.logged_in {
         login_screen(ui, data);
@@ -180,6 +182,10 @@ pub fn new_profile_screen(ui: &mut Ui, data: &mut AppData) {
 }
 
 /// TxSettings popup
+/// 
+/// Depends on [SHARED_UI_STATE]
+/// 
+/// This should be called by the [eframe::App::update] method
 pub fn tx_settings_window(ui: &mut Ui, data: &mut AppData) {
     {
         let state = SHARED_UI_STATE.read().unwrap();
@@ -239,7 +245,11 @@ pub fn tx_settings_window(ui: &mut Ui, data: &mut AppData) {
 }
 
 /// Show an error message if needed
-pub fn err_msg(ui: &mut Ui) {
+/// 
+/// Depends on [SHARED_UI_STATE]
+/// 
+/// This should be called by the [eframe::App::update] method
+pub fn show_err_msg(ui: &mut Ui) {
     let err_msg;
     {
         let state = SHARED_UI_STATE.read().unwrap();

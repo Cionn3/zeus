@@ -10,8 +10,6 @@ use alloy::{
     },
 };
 
-
-
 /// Eth balance at a specific block
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WalletBalance {
@@ -54,7 +52,6 @@ pub struct Wallet {
 }
 
 impl Wallet {
-
     /// Get wallet's key in string format
     pub fn get_key(&self) -> String {
         let key_vec = self.key.to_bytes().to_vec();
@@ -92,10 +89,15 @@ impl Wallet {
             name
         };
 
-        Ok(Self {
-            name,
-            balance,
-            key,
-        })
+        Ok(Self { name, balance, key })
+    }
+
+    /// Truncate the wallet name if its an Ethereum address
+    pub fn truncated_name(&self) -> String {
+        if self.name.len() == 42 {
+            format!("{}...{}", &self.name[..6], &self.name[38..])
+        } else {
+            self.name.clone()
+        }
     }
 }

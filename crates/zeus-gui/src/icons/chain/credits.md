@@ -1,2 +1,5 @@
-### tx_settings_icon.svg https://www.iconfinder.com/webalys
-### green & red circle.png https://www.iconfinder.com/iconsets/softwaredemo
+ethereum.png - https://www.flaticon.com/free-icon/ethereum_14446159
+
+bsc.png - https://www.flaticon.com/free-icon/money_15208359
+
+arbitrum.png - https://www.flaticon.com/free-icon/cryptocurrency_15208284

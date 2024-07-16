@@ -11,7 +11,7 @@ use crossbeam::channel::{unbounded, Receiver, Sender};
 use crate::{
     fonts::get_fonts,
     gui::{
-        misc::{err_msg, paint_login, tx_settings_window},
+        misc::{show_err_msg, show_login, tx_settings_window},
         GUI,
     },
     theme::ZeusTheme,
@@ -22,8 +22,12 @@ use zeus_backend::{
     types::{Request, Response},
     Backend,
 };
-use zeus_chain::{alloy::primitives::{U256, Address}, defi_types::currency::Currency, BLOCK_ORACLE};
-use zeus_shared_types::{cache::SHARED_CACHE, state::swap_ui, AppData, ErrorMsg, SHARED_UI_STATE, SWAP_UI_STATE};
+use zeus_chain::{
+    alloy::primitives::{Address, U256},
+    defi_types::currency::Currency,
+    BLOCK_ORACLE,
+};
+use zeus_shared_types::{cache::SHARED_CACHE, AppData, ErrorMsg, SHARED_UI_STATE, SWAP_UI_STATE};
 
 use tracing_subscriber::{
     fmt, layer::SubscriberExt, prelude::*, util::SubscriberInitExt, EnvFilter,
@@ -194,7 +198,6 @@ impl ZeusApp {
         shared_cache.erc20_balance = erc20_balances;
         shared_cache.eth_balance = eth_balances;
 
-
         let (front_sender, front_receiver) = unbounded();
         let (back_sender, back_receiver) = unbounded();
 
@@ -360,10 +363,13 @@ impl ZeusApp {
     fn update_eth_balance(&mut self, balance: U256) {
         let owner = self.data.wallet_address();
         let chain_id = self.data.chain_id.id();
-        
+
         // update eth balance in the shared cache
         let mut shared_cache = SHARED_CACHE.write().unwrap();
-        shared_cache.eth_balance.insert((chain_id, owner), (self.data.latest_block().number, balance));
+        shared_cache.eth_balance.insert(
+            (chain_id, owner),
+            (self.data.latest_block().number, balance),
+        );
     }
 }
 
@@ -402,16 +408,15 @@ impl eframe::App for ZeusApp {
         }
 
         if self.on_startup {
-
             if self.data.logged_in {
-            self.send_request(Request::OnStartup {
-                chain_id: self.data.chain_id.clone(),
-                rpcs: self.data.rpc.clone(),
-            });
+                self.send_request(Request::OnStartup {
+                    chain_id: self.data.chain_id.clone(),
+                    rpcs: self.data.rpc.clone(),
+                });
 
-            // run only once
-            self.on_startup = false;
-        }
+                // run only once
+                self.on_startup = false;
+            }
         }
 
         // update to latest block
@@ -428,27 +433,24 @@ impl eframe::App for ZeusApp {
 
         // Draw the UI that belongs to the Central Panel
         egui::CentralPanel::default().show(ctx, |ui| {
+
             // Paint the gradient mesh
             let painter = ui.painter();
             painter.add(self.gui.theme.bg_gradient.clone());
 
-            ui.vertical_centered(|ui| {
-                err_msg(ui);
-                paint_login(ui, &mut self.data);
-            });
+            show_login(ui, &mut self.data);
+
 
             // if we are not logged in or we are on the new profile screen, we should not paint the main UI
             if !self.data.logged_in || self.data.new_profile_screen {
                 return;
             }
 
-            ui.vertical_centered_justified(|ui| {
+            ui.vertical_centered(|ui| {
                 ui.add_space(100.0);
                 self.gui
                     .swap_ui
                     .swap_panel(ui, &mut self.data, self.gui.theme.icons.clone());
-                self.gui.networks_ui(ui, &mut self.data);
-                tx_settings_window(ui, &mut self.data);
             });
         });
 
@@ -456,10 +458,13 @@ impl eframe::App for ZeusApp {
         egui::TopBottomPanel::top("top_panel")
             .exact_height(self.top_panel_h)
             .show(ctx, |ui| {
+                // paint the bg
                 let painter = ui.painter();
                 painter.add(self.gui.theme.bg_gradient.clone());
 
-                self.gui.render_wallet_ui(ui, &mut self.data);
+                self.gui.wallet_ui(ui, &mut self.data);
+
+                self.gui.settings_menu(ui);
             });
 
         // Draw the UI that belongs to the Left Panel
@@ -471,7 +476,13 @@ impl eframe::App for ZeusApp {
 
                 self.gui.select_chain(ui, &mut self.data);
                 ui.add_space(10.0);
-                self.gui.menu(ui, &mut self.data);
+                self.gui.side_panel_menu(ui, &mut self.data);
+
+                // Call Show methods that are not part of the main UI
+                // And they depend on their own `State` or the [SHARED_UI_STATE] to be shown
+                self.gui.show_network_settings_ui(ui, &mut self.data);
+                show_err_msg(ui);
+                tx_settings_window(ui, &mut self.data);
             });
     }
 }

@@ -1,46 +1,31 @@
-use eframe::egui::{ self, SelectableLabel };
-use tracing::trace;
-use std::str::FromStr;
-use std::sync::{ Arc, RwLock };
+use eframe::egui::{self, SelectableLabel};
 use egui::{
-    vec2,
-    Align,
-    Align2,
-    Button,
-    Color32,
-    FontId,
-    Layout,
-    RichText,
-    TextEdit,
-    Ui,
-    Response,
+    vec2, Align, Align2, Button, Color32, FontId, Layout, Response, RichText, TextEdit, Ui,
 };
+use std::str::FromStr;
+use std::sync::{Arc, RwLock};
+use tracing::trace;
 
 use crossbeam::channel::Sender;
 
+use super::{
+    super::icons::IconTextures,
+    misc::{frame, rich_text},
+};
 use crate::fonts::roboto_regular;
-use super::{ super::icons::IconTextures, misc::{ frame, rich_text } };
 
 use zeus_backend::types::Request;
+use zeus_chain::{alloy::primitives::Address, defi_types::currency::Currency, utils::format_wei};
 use zeus_shared_types::{
-    SWAP_UI_STATE,
-    SHARED_UI_STATE,
-    ErrorMsg,
-    AppData,
-    SwapUIState,
-    SelectedCurrency,
+    AppData, ErrorMsg, SelectedCurrency, SwapUIState, SHARED_UI_STATE, SWAP_UI_STATE,
 };
-use zeus_chain::{
-    defi_types::currency::Currency,
-    utils::format_wei,
-    alloy::primitives::Address,
-};
-
 
 /// Manages the state of the swap UI
 pub struct SwapUI {
     /// Send Request to the backend
     pub front_sender: Option<Sender<Request>>,
+
+    pub open: bool,
 
     pub state: Arc<RwLock<SwapUIState>>,
 }
@@ -49,6 +34,7 @@ impl Default for SwapUI {
     fn default() -> Self {
         Self {
             front_sender: None,
+            open: true,
             state: SWAP_UI_STATE.clone(),
         }
     }
@@ -62,12 +48,15 @@ impl SwapUI {
         }
     }
 
-    /// Renders the swap panel
-pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTextures>) {
-
+    /// Paint the swap panel
+    pub fn swap_panel(
+        &mut self,
+        ui: &mut Ui,
+        data: &mut AppData,
+        icons: Arc<IconTextures>,
+    ) {
         {
-            let shared = SHARED_UI_STATE.read().unwrap();
-            if !shared.swap_ui_on {
+            if !self.open {
                 return;
             }
         }
@@ -75,58 +64,57 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
         let swap = rich_text("Swap", 20.0);
         let for_t = rich_text("For", 20.0);
 
-            ui.vertical_centered(|ui| {
-                let ui_width = 550.0;
-                let ui_height = 220.0;
-                ui.set_width(ui_width);
-                ui.set_height(ui_height);
+        ui.vertical_centered(|ui| {
+            let ui_width = 550.0;
+            let ui_height = 220.0;
+            ui.set_width(ui_width);
+            ui.set_height(ui_height);
 
-                ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
-                    let response = ui.add(icons.tx_settings_icon());
+            ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
+                let response = ui.add(icons.tx_settings_icon());
 
-                    if response.clicked() {
-                        let mut state = SHARED_UI_STATE.write().unwrap();
-                        state.tx_settings_on = true;
-                    }
-                });
+                if response.clicked() {
+                    let mut state = SHARED_UI_STATE.write().unwrap();
+                    state.tx_settings_on = true;
+                }
+            });
 
-                // Input Token Field
-                ui.label(swap);
+            // Input Token Field
+            ui.label(swap);
 
-                ui.horizontal(|ui| {
-                    ui.add_space(115.0);
-                    self.input_amount_field(ui);
-                    ui.add_space(10.0);
-                    ui.vertical(|ui| {
-                        self.token_select_button(ui, "input", data);
-                        self.token_balance(ui, data, "input");
-                    });
-                });
+            ui.horizontal(|ui| {
+                ui.add_space(115.0);
+                self.input_amount_field(ui);
                 ui.add_space(10.0);
-
-                // Output Token Field
-                ui.label(for_t);
-
-                ui.horizontal(|ui| {
-                    ui.add_space(115.0);
-                    self.output_amount_field(ui);
-                    ui.add_space(10.0);
-                    ui.vertical(|ui| {
-                        self.token_select_button(ui, "output", data);
-                        self.token_balance(ui, data, "output");
-                    });
+                ui.vertical(|ui| {
+                    self.token_select_button(ui, "input", data);
+                    self.token_balance(ui, data, "input");
                 });
+            });
+            ui.add_space(10.0);
 
-                ui.horizontal(|ui| {
-                    ui.add_space(160.0);
-                    self.get_quote_button(ui, data);
-                    ui.add_space(10.0);
-                    self.swap_button(ui, data);
+            // Output Token Field
+            ui.label(for_t);
+
+            ui.horizontal(|ui| {
+                ui.add_space(115.0);
+                self.output_amount_field(ui);
+                ui.add_space(10.0);
+                ui.vertical(|ui| {
+                    self.token_select_button(ui, "output", data);
+                    self.token_balance(ui, data, "output");
                 });
-                ui.add_space(20.0);
-               // self.quote_result(ui, data);
-            }); // vertical centered main frame
-        
+            });
+
+            ui.horizontal(|ui| {
+                ui.add_space(160.0);
+                self.get_quote_button(ui, data);
+                ui.add_space(10.0);
+                self.swap_button(ui, data);
+            });
+            ui.add_space(20.0);
+            // self.quote_result(ui, data);
+        }); // vertical centered main frame
     }
 
     fn quote_result(&self, ui: &mut Ui, data: &mut AppData) {
@@ -198,12 +186,7 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
     }
 
     /// Renders the token selection list window
-    fn token_list_window(
-        &mut self,
-        ui: &mut Ui,
-        id: &str,
-        data: &mut AppData
-    ) {
+    fn token_list_window(&mut self, ui: &mut Ui, id: &str, data: &mut AppData) {
         {
             let state = SWAP_UI_STATE.read().unwrap();
             if !state.get_currency_list_status(id) {
@@ -213,11 +196,17 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
         let currencies;
         {
             let state = SWAP_UI_STATE.read().unwrap();
-            currencies = state.shared_cache.read().unwrap().currencies.get(&data.chain_id.id()).unwrap_or(&vec![]).clone();
+            currencies = state
+                .shared_cache
+                .read()
+                .unwrap()
+                .currencies
+                .get(&data.chain_id.id())
+                .unwrap_or(&vec![])
+                .clone();
         }
 
-        egui::Window
-            ::new("Token List")
+        egui::Window::new("Token List")
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .collapsible(false)
@@ -228,7 +217,7 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                 ui.add(
                     TextEdit::singleline(&mut state.search_currency)
                         .hint_text("Search tokens by symbol or address")
-                        .min_size((200.0, 30.0).into())
+                        .min_size((200.0, 30.0).into()),
                 );
 
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -238,28 +227,27 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                         match currency {
                             // Currency is an ERC20 token
                             Currency::ERC20(token) => {
-                                if
-                                    token.symbol
-                                        .to_lowercase()
-                                        .contains(&state.search_currency.to_lowercase())
+                                if token
+                                    .symbol
+                                    .to_lowercase()
+                                    .contains(&state.search_currency.to_lowercase())
                                 {
                                     ui.push_id(index, |ui| {
                                         // bool check, if true the token is selected
                                         let selected_token =
-                                            state.get_selected_currency(id).currency.symbol() ==
-                                            token.symbol.clone();
+                                            state.get_selected_currency(id).currency.symbol()
+                                                == token.symbol.clone();
 
                                         let selectable_label = SelectableLabel::new(
                                             selected_token,
-                                            token.symbol.clone()
+                                            token.symbol.clone(),
                                         );
                                         let res = ui.add(selectable_label);
 
                                         if res.clicked() {
                                             state.replace_currency(
                                                 id,
-                                                SelectedCurrency::new_from_erc(
-                                                    token.clone()                                                )
+                                                SelectedCurrency::new_from_erc(token.clone()),
                                             );
                                             state.update_token_list_status(id, false);
                                         }
@@ -268,26 +256,26 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                             }
                             // Currency is a native token
                             Currency::Native(native) => {
-                                if
-                                    native.symbol
-                                        .to_lowercase()
-                                        .contains(&state.search_currency.to_lowercase())
+                                if native
+                                    .symbol
+                                    .to_lowercase()
+                                    .contains(&state.search_currency.to_lowercase())
                                 {
                                     ui.push_id(index, |ui| {
                                         let selected_currency =
-                                            state.get_selected_currency(id).currency.symbol() ==
-                                            native.symbol.clone();
+                                            state.get_selected_currency(id).currency.symbol()
+                                                == native.symbol.clone();
 
                                         let selectable_label = SelectableLabel::new(
                                             selected_currency,
-                                            native.symbol.clone()
+                                            native.symbol.clone(),
                                         );
                                         let res = ui.add(selectable_label);
 
                                         if res.clicked() {
                                             state.replace_currency(
                                                 id,
-                                                SelectedCurrency::new_from_native(native.clone())
+                                                SelectedCurrency::new_from_native(native.clone()),
                                             );
                                             state.update_token_list_status(id, false);
                                         }
@@ -305,10 +293,8 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                                 Some(client) => client,
                                 None => {
                                     let mut state = SHARED_UI_STATE.write().unwrap();
-                                    state.err_msg = ErrorMsg::new(
-                                        true,
-                                        "You are not connected to a node"
-                                    );
+                                    state.err_msg =
+                                        ErrorMsg::new(true, "You are not connected to a node");
                                     return;
                                 }
                             };
@@ -326,14 +312,9 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
     }
 
     /// Paint the token select button
-    fn token_select_button(
-        &mut self,
-        ui: &mut Ui,
-        id: &str,
-        data: &mut AppData
-    ) {
+    fn token_select_button(&mut self, ui: &mut Ui, id: &str, data: &mut AppData) {
         // ! for some reason if i merge these 2 functions the lock freezes the ui
-        
+
         if self.token_button(id, ui).clicked() {
             let mut state = SWAP_UI_STATE.write().unwrap();
             state.update_token_list_status(id, true);
@@ -368,7 +349,10 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
 
     /// Creates the field for the input amount
     fn input_amount_field(&mut self, ui: &mut Ui) {
-        let font = FontId { size: 23.0, family: roboto_regular() };
+        let font = FontId {
+            size: 23.0,
+            family: roboto_regular(),
+        };
         let mut state = SWAP_UI_STATE.write().unwrap();
 
         let field = TextEdit::singleline(&mut state.currency_in.amount_to_swap)
@@ -379,7 +363,7 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                 RichText::new("0")
                     .color(Color32::WHITE)
                     .size(23.0)
-                    .family(roboto_regular())
+                    .family(roboto_regular()),
             );
 
         ui.add(field);
@@ -387,7 +371,10 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
 
     /// Creates the field for the output amount
     fn output_amount_field(&mut self, ui: &mut Ui) {
-        let font = FontId { size: 23.0, family: roboto_regular() };
+        let font = FontId {
+            size: 23.0,
+            family: roboto_regular(),
+        };
         let mut state = SWAP_UI_STATE.write().unwrap();
 
         let field = TextEdit::singleline(&mut state.currency_out.amount_to_swap)
@@ -398,14 +385,14 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                 RichText::new("0")
                     .color(Color32::WHITE)
                     .size(23.0)
-                    .family(roboto_regular())
+                    .family(roboto_regular()),
             );
 
         ui.add(field);
     }
 
     /// Paint the token button
-    /// 
+    ///
     /// If clicked, it will show the token list window
     fn token_button(&mut self, id: &str, ui: &mut Ui) -> Response {
         let state = SWAP_UI_STATE.read().unwrap();
@@ -424,7 +411,10 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
 
     /// Swap Button
     fn swap_button(&mut self, ui: &mut Ui, data: &mut AppData) {
-        let text = RichText::new("Swap").size(15.0).family(roboto_regular()).color(Color32::WHITE);
+        let text = RichText::new("Swap")
+            .size(15.0)
+            .family(roboto_regular())
+            .color(Color32::WHITE);
         let button = Button::new(text)
             .min_size(vec2(100.0, 30.0))
             .rounding(10.0)
@@ -451,10 +441,10 @@ pub fn swap_panel(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTex
                 state.err_msg = ErrorMsg::new(true, "You are not connected to a node");
                 return;
             }
-           // let swap_state = SWAP_UI_STATE.read().unwrap();
+            // let swap_state = SWAP_UI_STATE.read().unwrap();
 
             // TODO
-            /* 
+            /*
             self.send_request(Request::GetQuoteResult {
                 params: SwapParams {
                     token_in: swap_state.input_token.clone(),
