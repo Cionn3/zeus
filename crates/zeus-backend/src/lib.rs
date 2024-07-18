@@ -75,7 +75,7 @@ impl Backend {
                                     Ok(_) => {}
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg = ErrorMsg::new(true, e);
+                                        state.err_msg.show(e);
                                     }
                                 }
                             }
@@ -85,7 +85,7 @@ impl Backend {
                                     Ok(_) => {}
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg = ErrorMsg::new(true, e);
+                                        state.err_msg.show(e);
                                     }
                                 }
                             }
@@ -111,14 +111,14 @@ impl Backend {
                                     Ok(_) => {}
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg = ErrorMsg::new(true, e);
+                                        state.err_msg.show(e);
                                     }
                                 }
                             }
 
                             Request::GetQuoteResult { params } => {
                                 let mut state = SHARED_UI_STATE.write().unwrap();
-                                state.err_msg = ErrorMsg::new(true, "TODO!");
+                                state.err_msg.show("TODO");
                             }
 
                             Request::EthBalance { 
@@ -136,7 +136,7 @@ impl Backend {
                                     Ok(_) => {}
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg = ErrorMsg::new(true, e);
+                                        state.err_msg.show(e);
                                     }
                                 }
                             }
@@ -146,7 +146,7 @@ impl Backend {
                                     Ok(_) => {}
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg = ErrorMsg::new(true, e);
+                                        state.err_msg.show(e);
                                     }
                                 }
                             }
@@ -158,7 +158,7 @@ impl Backend {
                                         Ok(_) => {}
                                         Err(e) => {
                                             let mut state = SHARED_UI_STATE.write().unwrap();
-                                            state.err_msg = ErrorMsg::new(true, e);
+                                            state.err_msg.show(e);
                                         }
                                     }
                                 } else {
@@ -179,7 +179,7 @@ impl Backend {
                                     Ok(_) => {}
                                     Err(e) => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg = ErrorMsg::new(true, e);
+                                        state.err_msg.show(e);
                                     }
                                 }
                             }

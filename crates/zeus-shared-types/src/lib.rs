@@ -7,5 +7,6 @@ pub use state::{
     shared_ui::SHARED_UI_STATE,
     SharedUiState,
     error::ErrorMsg,
-    info::InfoMsg
+    info::InfoMsg,
+    UiState
 };

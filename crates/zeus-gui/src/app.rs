@@ -152,7 +152,7 @@ impl ZeusApp {
                     // TODO: handle this differently
                     error!("Error Creating Database: {}", e);
                     let mut state = SHARED_UI_STATE.write().unwrap();
-                    state.err_msg = ErrorMsg::new(true, e);
+                    state.err_msg.show(e);
                     return app;
                 }
             };
@@ -201,8 +201,9 @@ impl ZeusApp {
         let (front_sender, front_receiver) = unbounded();
         let (back_sender, back_receiver) = unbounded();
 
-        app.gui.swap_ui.front_sender = Some(front_sender.clone());
         app.gui.sender = Some(front_sender.clone());
+        app.gui.swap_ui.front_sender = Some(front_sender.clone());
+        app.gui.token_selection_window.front_sender = Some(front_sender.clone());
 
         std::thread::spawn(move || {
             Backend::new(back_sender, front_receiver).init();
@@ -232,7 +233,7 @@ impl ZeusApp {
                 Ok(_) => {}
                 Err(e) => {
                     let mut state = SHARED_UI_STATE.write().unwrap();
-                    state.err_msg = ErrorMsg::new(true, e);
+                    state.err_msg.show(e);
                 }
             }
         }
@@ -464,7 +465,10 @@ impl eframe::App for ZeusApp {
 
                 self.gui.wallet_ui(ui, &mut self.data);
 
+                ui.horizontal(|ui| {
                 self.gui.settings_menu(ui);
+
+                });
             });
 
         // Draw the UI that belongs to the Left Panel
@@ -477,6 +481,8 @@ impl eframe::App for ZeusApp {
                 self.gui.select_chain(ui, &mut self.data);
                 ui.add_space(10.0);
                 self.gui.side_panel_menu(ui, &mut self.data);
+                self.gui.send_crypto_button(ui, &mut self.data);
+
 
                 // Call Show methods that are not part of the main UI
                 // And they depend on their own `State` or the [SHARED_UI_STATE] to be shown

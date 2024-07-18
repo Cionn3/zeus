@@ -12,7 +12,7 @@ use super::{
 };
 use zeus_backend::types::Request;
 use zeus_chain::alloy::primitives::utils::format_ether;
-use zeus_shared_types::{AppData, ErrorMsg, SHARED_UI_STATE};
+use zeus_shared_types::{AppData, SHARED_UI_STATE};
 
 /// Paint the UI repsonsible for managing the wallets
 pub fn wallet_ui(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
@@ -175,7 +175,7 @@ fn generate_new_wallet(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
                         Ok(_) => {}
                         Err(e) => {
                             let mut state = SHARED_UI_STATE.write().unwrap();
-                            state.err_msg = ErrorMsg::new(true, e);
+                            state.err_msg.show(e);
                         }
                     }
 
@@ -251,7 +251,7 @@ fn import_wallet(ui: &mut Ui, data: &mut AppData, gui: &GUI) {
                         Ok(_) => {}
                         Err(e) => {
                             let mut state = SHARED_UI_STATE.write().unwrap();
-                            state.err_msg = ErrorMsg::new(true, e);
+                            state.err_msg.show(e);
                         }
                     }
 
@@ -333,7 +333,7 @@ pub fn export_key_ui(ui: &mut Ui, data: &mut AppData) {
                         Some(wallet) => wallet,
                         None => {
                             let mut state = SHARED_UI_STATE.write().unwrap();
-                            state.err_msg = ErrorMsg::new(true, "No Wallet Selected");
+                            state.err_msg.show("No wallet selected");
                             return;
                         }
                     };
@@ -345,7 +345,7 @@ pub fn export_key_ui(ui: &mut Ui, data: &mut AppData) {
                         Ok(key) => key,
                         Err(e) => {
                             let mut state = SHARED_UI_STATE.write().unwrap();
-                            state.err_msg = ErrorMsg::new(true, e);
+                            state.err_msg.show(e);
                             return;
                         }
                     };

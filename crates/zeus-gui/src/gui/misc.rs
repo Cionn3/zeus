@@ -1,7 +1,7 @@
 use eframe::{
     egui::{
         vec2, widgets::TextEdit, Align2, Button, Checkbox, Color32, FontId, Frame, RichText,
-        Rounding, Sense, Stroke, Ui, Window,
+        Rounding, Sense, Ui, Window,
     },
     epaint::{Margin, Shadow},
 };
@@ -9,7 +9,7 @@ use eframe::{
 use crate::fonts::roboto_regular;
 
 
-use zeus_shared_types::{AppData, ErrorMsg, SHARED_UI_STATE};
+use zeus_shared_types::{AppData, ErrorMsg, SHARED_UI_STATE, UiState};
 
 use tracing::trace;
 
@@ -95,7 +95,7 @@ pub fn login_screen(ui: &mut Ui, data: &mut AppData) {
                 }
                 Err(e) => {
                     let mut state = SHARED_UI_STATE.write().unwrap();
-                    state.err_msg = ErrorMsg::new(true, e);
+                    state.err_msg.show(e);
                 }
             }
         }
@@ -173,7 +173,7 @@ pub fn new_profile_screen(ui: &mut Ui, data: &mut AppData) {
                     }
                     Err(e) => {
                         let mut state = SHARED_UI_STATE.write().unwrap();
-                        state.err_msg = ErrorMsg::new(true, e);
+                        state.err_msg.show(e);
                     }
                 }
             }
@@ -254,14 +254,14 @@ pub fn show_err_msg(ui: &mut Ui) {
     {
         let state = SHARED_UI_STATE.read().unwrap();
         err_msg = state.err_msg.msg.clone();
-        if !state.err_msg.on {
+        if state.err_msg.state.is_close() {
             return;
         }
     }
 
     Window::new("Error")
         .resizable(false)
-        .anchor(Align2::CENTER_TOP, vec2(0.0, 0.0))
+        .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
         .collapsible(false)
         .title_bar(false)
         .show(ui.ctx(), |ui| {
@@ -273,7 +273,7 @@ pub fn show_err_msg(ui: &mut Ui) {
                 ui.add_space(5.0);
                 if ui.button(close_text).clicked() {
                     let mut state = SHARED_UI_STATE.write().unwrap();
-                    state.err_msg.on = false;
+                    state.err_msg.close();
                 }
             });
         });
@@ -333,30 +333,6 @@ pub fn frame() -> Frame {
     }
 }
 
-/// A transparent frame
-pub fn frame_transparent() -> Frame {
-    Frame {
-        inner_margin: Margin::same(0.0),
-        outer_margin: Margin::same(0.0),
-        fill: Color32::TRANSPARENT,
-        rounding: Rounding {
-            ne: 15.0,
-            se: 15.0,
-            sw: 15.0,
-            nw: 15.0,
-        },
-        shadow: Shadow {
-            offset: vec2(0.0, 0.0),
-            blur: 0.0,
-            spread: 0.0,
-            color: Color32::TRANSPARENT,
-        },
-        stroke: Stroke {
-            width: 0.0,
-            color: Color32::WHITE,
-        },
-    }
-}
 
 /// Returns a [RichText] that is commonly used
 ///

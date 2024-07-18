@@ -23,10 +23,13 @@ lazy_static! {
 /// For example an [ErrorMsg] can be set here using 
 /// ```
 /// let mut state = SHARED_UI_STATE.write().unwrap();
-/// state.err_msg = ErrorMsg::new(true, err);
+/// state.err_msg.show(err);
 /// ```
 #[derive(Clone)]
 pub struct SharedUiState {
+
+    /// Search Query for a token
+    pub search_query: String,
 
     /// New/Import Wallet UI on/off
     ///
@@ -64,6 +67,7 @@ pub struct SharedUiState {
 impl Default for SharedUiState {
     fn default() -> Self {
         Self {
+            search_query: String::new(),
             wallet_popup: (false, "New"),
             new_wallet_window_on: false,
             generate_wallet_on: false,

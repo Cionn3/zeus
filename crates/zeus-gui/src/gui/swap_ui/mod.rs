@@ -293,8 +293,7 @@ impl SwapUI {
                                 Some(client) => client,
                                 None => {
                                     let mut state = SHARED_UI_STATE.write().unwrap();
-                                    state.err_msg =
-                                        ErrorMsg::new(true, "You are not connected to a node");
+                                    state.err_msg.show("You are not connected to a node");
                                     return;
                                 }
                             };
@@ -438,7 +437,7 @@ impl SwapUI {
         if ui.add(button).clicked() {
             if data.client().is_none() {
                 let mut state = SHARED_UI_STATE.write().unwrap();
-                state.err_msg = ErrorMsg::new(true, "You are not connected to a node");
+                state.err_msg.show("You are not connected to a node");
                 return;
             }
             // let swap_state = SWAP_UI_STATE.read().unwrap();

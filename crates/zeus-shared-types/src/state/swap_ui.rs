@@ -69,7 +69,7 @@ impl QuoteResult {
     }
 }
 
-/// A currency that its currently selected in the SwapUI
+/// A currency that its currently selected in a UI
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectedCurrency {
     pub currency: Currency,
@@ -253,6 +253,14 @@ impl SelectedCurrency {
             Currency::Native(currency) => currency.decimals,
             Currency::ERC20(erc20) => erc20.decimals,
         }
+    }
+
+    pub fn name(&self) -> String {
+        match &self.currency {
+            Currency::Native(currency) => currency.name.clone(),
+            Currency::ERC20(erc20) => erc20.name.clone(),
+        }
+    
     }
 }
 

@@ -16,24 +16,24 @@ impl Currency {
         match chain_id {
             1 =>
                 Self::Native(
-                    NativeCurrency::new(chain_id, "ETH".to_string(), "Ether".to_string(), 18, None)
+                    NativeCurrency::default()
                 ),
             56 =>
                 Self::Native(
-                    NativeCurrency::new(chain_id, "BNB".to_string(), "Binance Coin".to_string(), 18, None)
+                    NativeCurrency::default_for_chain(&56)
                 ),
             8453 =>
                 Self::Native(
-                    NativeCurrency::new(chain_id, "ETH".to_string(), "Ether".to_string(), 18, None)
+                    NativeCurrency::default_for_chain(&8453)
                 ),
             42161 =>
                 Self::Native(
-                    NativeCurrency::new(chain_id, "ETH".to_string(), "Ether".to_string(), 18, None)
+                    NativeCurrency::default_for_chain(&42161)
                 ),
             // * This should not happen!
             _ =>
                 Self::Native(
-                    NativeCurrency::new(chain_id, "ETH".to_string(), "Ether".to_string(), 18, None)
+                    NativeCurrency::default()
                 ),
         }
     }
@@ -73,6 +73,22 @@ impl Currency {
         }
     }
 
+    /// Get currency name
+    pub fn name(&self) -> String {
+        match self {
+            Self::Native(native) => native.name.clone(),
+            Self::ERC20(erc20) => erc20.name.clone(),
+        }
+    }
+
+    /// Returns the decimals
+    pub fn decimals(&self) -> u8 {
+        match self {
+            Self::Native(native) => native.decimals,
+            Self::ERC20(erc20) => erc20.decimals,
+        }
+    }
+
 }
 
 impl Default for Currency {
@@ -106,9 +122,21 @@ impl NativeCurrency {
         Self {
             chain_id: 1,
             symbol: "ETH".to_string(),
-            name: "Ether".to_string(),
+            name: "Ethereum".to_string(),
             decimals: 18,
             icon: None,
+        }
+    }
+
+    /// A Default Native Currency for a chain id
+    pub fn default_for_chain(id: &u64) -> Self {
+        match id {
+            1 => Self::default(),
+            56 => Self::new(56, "BNB".to_string(), "Binance Coin".to_string(), 18, None),
+            8453 => Self::new(8453, "ETH".to_string(), "Ethereum".to_string(), 18, None),
+            42161 => Self::new(42161, "ETH".to_string(), "Ethereum".to_string(), 18, None),
+            // * This should not happen!
+            _ => Self::default(),
         }
     }
 }

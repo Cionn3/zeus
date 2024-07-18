@@ -1,19 +1,21 @@
-use eframe::egui::{Color32, ComboBox, RichText, Ui, menu};
+use eframe::egui::{menu, Button, Color32, ComboBox, RichText, Ui, Sense, vec2};
 
 use crate::{fonts::roboto_regular, gui::swap_ui::SwapUI, theme::ZeusTheme};
 use std::sync::Arc;
 
 use wallet_ui::wallet_ui;
+use components::{send_crypto_screen::SendCryptoScreen, TokenSelectionWindow};
 use settings::networks_settings_ui;
 
 use zeus_backend::types::Request;
-use zeus_shared_types::{AppData, ErrorMsg, SHARED_UI_STATE, SWAP_UI_STATE};
+use zeus_shared_types::{AppData, SHARED_UI_STATE, SWAP_UI_STATE};
 
 use crossbeam::channel::Sender;
 
 pub mod misc;
 pub mod swap_ui;
 pub mod wallet_ui;
+pub mod components;
 pub mod settings;
 
 /// The Graphical User Interface for [crate::ZeusApp]
@@ -21,8 +23,11 @@ pub struct GUI {
     /// Send data to backend
     pub sender: Option<Sender<Request>>,
 
+    pub token_selection_window: TokenSelectionWindow,
+
     pub swap_ui: SwapUI,
 
+    pub send_screen: SendCryptoScreen,
 
     pub theme: Arc<ZeusTheme>,
 }
@@ -31,7 +36,9 @@ impl GUI {
     pub fn default() -> Self {
         Self {
             sender: None,
+            token_selection_window: TokenSelectionWindow::new(),
             swap_ui: SwapUI::default(),
+            send_screen: SendCryptoScreen::new(),
             theme: Arc::new(ZeusTheme::default()),
         }
     }
@@ -43,7 +50,7 @@ impl GUI {
                 Ok(_) => {}
                 Err(e) => {
                     let mut state = SHARED_UI_STATE.write().unwrap();
-                    state.err_msg = ErrorMsg::new(true, e);
+                    state.err_msg.show(e);
                 }
             }
         }
@@ -171,6 +178,7 @@ impl GUI {
                         let mut state = SHARED_UI_STATE.write().unwrap();
                         state.export_key_ui = true;
                     }
+                    // TODO: Rename and Hide Wallet
                 });
 
                 // Network Settings
@@ -181,5 +189,27 @@ impl GUI {
                 }
             });
         });
+    }
+
+    /// Send Button
+    /// 
+    /// If clicked user is prompted to the [SendCryptoScreen]
+    pub fn send_crypto_button(&mut self, ui: &mut Ui, data: &mut AppData) {
+        let send = RichText::new("Send")
+        .family(roboto_regular())
+        .size(14.0)
+        .color(Color32::WHITE);
+
+        let send_button = Button::new(send)
+        .rounding(10.0)
+        .sense(Sense::click())
+        .min_size(vec2(70.0, 25.0));
+
+        if ui.add(send_button).clicked() {
+            self.send_screen.open();
+        }
+
+        self.send_screen.show(ui, data, &mut self.token_selection_window);
+
     }
 }

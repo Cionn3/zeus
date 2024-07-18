@@ -79,7 +79,7 @@ use tracing::{error, trace};
                             Err(e) => {
                                 error!("Error saving RPC Endpoints: {:?}", e);
                                 let mut state = SHARED_UI_STATE.write().unwrap();
-                                state.err_msg = ErrorMsg::new(true, e);
+                                state.err_msg.show(e);
                                 state.network_settings = false;
                             }
                         }

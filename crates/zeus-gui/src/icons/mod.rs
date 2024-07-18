@@ -34,6 +34,10 @@ pub struct IconTextures {
     pub network: TextureHandle,
     pub wallet: TextureHandle,
     pub rename: TextureHandle,
+
+    // Misc Icons
+    pub send: TextureHandle,
+    pub receive: TextureHandle,
 }
 
 impl IconTextures {
@@ -60,6 +64,10 @@ impl IconTextures {
         let view_key = load_image_from_memory(include_bytes!("settings/wallet/key.png"), 16, 16)?;
         let rename = load_image_from_memory(include_bytes!("settings/wallet/rename.png"), 16, 16)?;
 
+        // Misc Icons
+        let send = load_image_from_memory(include_bytes!("misc/send.png"), 24, 24)?;
+        let receive = load_image_from_memory(include_bytes!("misc/receive.png"), 24, 24)?;
+
 
         let texture_options = TextureOptions::default();
 
@@ -79,7 +87,19 @@ impl IconTextures {
             network: ctx.load_texture("network", network, texture_options),
             wallet: ctx.load_texture("wallet", wallet, texture_options),
             rename: ctx.load_texture("rename", rename, texture_options),
+            send: ctx.load_texture("send", send, texture_options),
+            receive: ctx.load_texture("receive", receive, texture_options),
         })
+    }
+
+    /// Return the send icon as [Image]
+    pub fn send_icon(&self) -> Image<'static> {
+        Image::new(&self.send)
+    }
+
+    /// Return the receive icon as [Image]
+    pub fn receive_icon(&self) -> Image<'static> {
+        Image::new(&self.receive)
     }
 
     /// Return Network icon
