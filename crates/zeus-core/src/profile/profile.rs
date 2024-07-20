@@ -53,12 +53,11 @@ impl Profile {
     }
 
     /// Confirm again the credentials and export the givens wallet key
-    pub fn export_wallet(&self, wallet_name: String, credentials: Credentials) -> Result<String, anyhow::Error> {
+    pub fn export_wallet(&self, wallet: Wallet, credentials: Credentials) -> Result<String, anyhow::Error> {
         if let Err(e) = decrypt_data(FILENAME, credentials.clone()) {
             return Err(anyhow!("Invalid credentials: {}", e));
         }
 
-        let wallet = self.wallets.iter().find(|w| w.name == wallet_name).ok_or_else(|| anyhow!("Wallet not found"))?;
         Ok(wallet.get_key())
     }
 
@@ -84,10 +83,19 @@ impl Profile {
         Ok(())
     }
 
-    /// Get current wallet
+    /// Get current wallet name
     pub fn current_wallet_name(&self) -> String {
         if let Some(wallet) = &self.current_wallet {
             wallet.name.clone()
+        } else {
+            "No Wallet Available".to_string()
+        }
+    }
+
+    /// Get current wallet name truncated if its an ethereum address
+    pub fn current_wallet_name_truncated(&self) -> String {
+        if let Some(wallet) = &self.current_wallet {
+            wallet.truncated_name().clone()
         } else {
             "No Wallet Available".to_string()
         }

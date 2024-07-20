@@ -25,18 +25,8 @@ impl SendCryptoScreen {
         }
     }
 
-    /// Open the Send Crypto Screen
-    pub fn open(&mut self) {
-        self.state = UiState::OPEN;
-    }
 
-
-    /// Close the Send Crypto Screen
-    pub fn close(&mut self) {
-        self.state = UiState::CLOSE;
-    }
-
-    /// Show the Send Crypto Screen
+    /// Show this UI
     ///
     /// This should be called by the [eframe::App::update] method
     pub fn show(&mut self, ui: &mut Ui, data: &mut AppData, token_selection_window: &mut TokenSelectionWindow) {
@@ -91,10 +81,10 @@ impl SendCryptoScreen {
                         .min_size(vec2(75.0, 30.0));
 
                     if ui.add(currency_button).clicked() {
-                        token_selection_window.open();
+                        token_selection_window.state.open();
                     }
 
-                    let selected = token_selection_window.show(ui, data, currencies, "");
+                    let selected = token_selection_window.show(ui, data, &currencies);
                     if let Some(selected) = selected {
                         self.selected_currency = selected;
                     }
@@ -105,7 +95,7 @@ impl SendCryptoScreen {
                     }
 
                     if ui.add(cancel_button).clicked() {
-                        self.close();
+                        self.state.close();
                     }
                 });
             });

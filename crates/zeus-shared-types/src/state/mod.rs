@@ -17,6 +17,17 @@ pub enum UiState {
 }
 
 impl UiState {
+
+    /// Open this UI
+    pub fn open(&mut self) {
+        *self = UiState::OPEN;
+    }
+
+    /// Close this UI
+    pub fn close(&mut self) {
+        *self = UiState::CLOSE;
+    }
+
     /// Its closed, we should not show the UI
     pub fn is_close(&self) -> bool {
         matches!(self, UiState::CLOSE)

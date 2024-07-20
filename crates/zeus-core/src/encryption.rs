@@ -12,14 +12,16 @@ pub const IDENTIFIER: &[u8] = b"params";
 
 // * Argon2 Parameters
 
+// Default values that should not take too long to hash even on low-end machines
+
 /// Memory Cost
-pub const M_COST: u32 = 500;
+pub const M_COST: u32 = 4096;
 
 /// Iterations
 pub const T_COST: u32 = 200;
 
 /// Parallelism
-pub const P_COST: u32 = 1;
+pub const P_COST: u32 = 8;
 
 /// Hash Length
 pub const HASH_LENGTH: usize = 64;

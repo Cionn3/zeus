@@ -350,31 +350,7 @@ impl ZeusDB {
         Ok(())
     }
 
-    /// Get the balance of a token at a given block for a given chain
-    pub fn get_erc20_balance_at_block(
-        &self,
-        owner: Address,
-        token: Address,
-        chain_id: u64,
-        block: u64,
-    ) -> Result<U256, anyhow::Error> {
-        let conn = self.get_erc20_balance_conn()?;
-        let mut stmt = conn.prepare("SELECT * FROM ERC20Balance WHERE owner = ?1 AND token = ?2 AND chain_id = ?3 AND block_number = ?4")?;
-        let mut rows = stmt.query(params![
-            owner.to_string(),
-            token.to_string(),
-            chain_id,
-            block
-        ])?;
 
-        if let Some(row) = rows.next()? {
-            let balance: String = row.get(4)?;
-            let erc_balance = U256::from_str(&balance)?;
-            Ok(erc_balance)
-        } else {
-            return Err(anyhow!("Balance not found"));
-        }
-    }
 
     /// Get the latest balance of token for a given chain
     pub fn get_latest_erc20_balance(
@@ -388,7 +364,7 @@ impl ZeusDB {
         let mut rows = stmt.query(params![owner.to_string(), token.to_string(), chain_id])?;
 
         if let Some(row) = rows.next()? {
-            let balance: String = row.get(4)?;
+            let balance: String = row.get(5)?;
             let erc_balance = U256::from_str(&balance)?;
             Ok(erc_balance)
         } else {

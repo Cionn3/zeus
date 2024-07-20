@@ -1,33 +1,30 @@
+use anyhow::Context;
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use crossbeam::channel::{ unbounded, Receiver, Sender };
-use anyhow::Context;
-use tracing::{ info, error, trace };
+use tracing::{error, info, trace};
 
 use zeus_chain::{
-    ChainId,
-    Rpc,
-    WsClient,
-    start_block_oracle,
-    BlockOracle,
-    BLOCK_ORACLE,
-    OracleAction,
-    defi_types::currency::{ Currency, erc20::ERC20Token },
     alloy::{
-        primitives::{ U256, Address },
-        providers::{ Provider, ProviderBuilder },
+        primitives::{Address, U256},
+        providers::{Provider, ProviderBuilder},
+        rpc::types::eth::{BlockId, BlockNumberOrTag},
         transports::ws::WsConnect,
-        rpc::types::eth::{ BlockId, BlockNumberOrTag },
     },
+    defi_types::currency::{erc20::ERC20Token, Currency},
+    start_block_oracle, BlockOracle, ChainId, OracleAction, Rpc, WsClient, BLOCK_ORACLE,
 };
 
 use zeus_core::Profile;
-use zeus_shared_types::{ SWAP_UI_STATE, SHARED_UI_STATE, ErrorMsg, SelectedCurrency };
+use zeus_shared_types::{ErrorMsg, SelectedCurrency, SHARED_UI_STATE, SWAP_UI_STATE};
 
-use crate::{ types::{ Request, Response, SwapParams }, db::ZeusDB };
+use crate::{
+    db::ZeusDB,
+    types::{Request, Response, SwapParams},
+};
 
-pub mod types;
 pub mod db;
+pub mod types;
 
 /// A simple backend to handle async/expensive tasks without blocking the gui
 ///
@@ -67,124 +64,115 @@ impl Backend {
         rt.block_on(async {
             loop {
                 match self.front_receiver.recv() {
-                    Ok(request) => {
-                        match request {
-                            Request::OnStartup { chain_id, rpcs } => {
-                                println!("On Startup");
-                                match self.get_client(chain_id.clone(), rpcs.clone()).await {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg.show(e);
-                                    }
-                                }
-                            }
-
-                            Request::InitOracles { client, chain_id } => {
-                                match self.init_oracles(client, chain_id).await {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg.show(e);
-                                    }
-                                }
-                            }
-
-                            Request::GetERC20Balance {
-                                id,
-                                token,
-                                owner,
-                                chain_id,
-                                block,
-                                client,
-                            } => {
-                                match
-                                    self.get_erc20_balance(
-                                        id,
-                                        token,
-                                        owner,
-                                        chain_id,
-                                        block,
-                                        client
-                                    ).await
-                                {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg.show(e);
-                                    }
-                                }
-                            }
-
-                            Request::GetQuoteResult { params } => {
-                                let mut state = SHARED_UI_STATE.write().unwrap();
-                                state.err_msg.show("TODO");
-                            }
-
-                            Request::EthBalance { 
-                                owner, 
-                                chain_id, 
-                                block, 
-                                client
-                             } => {
-                                match self.get_eth_balance(
-                                    owner,
-                                    chain_id,
-                                    block,
-                                    client
-                                ).await {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg.show(e);
-                                    }
-                                }
-                            }
-
-                            Request::SaveProfile { profile } => {
-                                match self.save_profile(profile) {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg.show(e);
-                                    }
-                                }
-                            }
-
-                            Request::GetClient { chain_id, rpcs, clients } => {
-                                info!("Received Request to get client: {}", chain_id.name());
-                                if !clients.contains_key(&chain_id.id()) {
-                                    match self.get_client(chain_id, rpcs).await {
-                                        Ok(_) => {}
-                                        Err(e) => {
-                                            let mut state = SHARED_UI_STATE.write().unwrap();
-                                            state.err_msg.show(e);
-                                        }
-                                    }
-                                } else {
-                                    let client = clients.get(&chain_id.id()).unwrap().clone();
-                                    match
-                                        self.back_sender.send(Response::GetClient(client, chain_id))
-                                    {
-                                        Ok(_) => {}
-                                        Err(e) => println!("Error Sending Response: {}", e),
-                                    }
-                                }
-                            }
-
-                            Request::GetERC20Token { id, owner, address, client, chain_id } => {
-                                match
-                                    self.get_erc20_token(id, owner, address, client, chain_id).await
-                                {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        let mut state = SHARED_UI_STATE.write().unwrap();
-                                        state.err_msg.show(e);
-                                    }
+                    Ok(request) => match request {
+                        Request::OnStartup { chain_id, rpcs } => {
+                            println!("On Startup");
+                            match self.get_client(chain_id.clone(), rpcs.clone()).await {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    let mut state = SHARED_UI_STATE.write().unwrap();
+                                    state.err_msg.show(e);
                                 }
                             }
                         }
-                    }
+
+                        Request::InitOracles { client, chain_id } => {
+                            match self.init_oracles(client, chain_id).await {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    let mut state = SHARED_UI_STATE.write().unwrap();
+                                    state.err_msg.show(e);
+                                }
+                            }
+                        }
+
+                        Request::GetERC20Balance {
+                            token,
+                            owner,
+                            chain_id,
+                            block,
+                            client,
+                        } => {
+                            match self
+                                .get_erc20_balance(token, owner, chain_id, block, client)
+                                .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    let mut state = SHARED_UI_STATE.write().unwrap();
+                                    state.err_msg.show(e);
+                                }
+                            }
+                        }
+
+                        Request::GetQuoteResult { params } => {
+                            let mut state = SHARED_UI_STATE.write().unwrap();
+                            state.err_msg.show("TODO");
+                        }
+
+                        Request::EthBalance {
+                            owner,
+                            chain_id,
+                            block,
+                            client,
+                        } => match self.get_eth_balance(owner, chain_id, block, client).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                let mut state = SHARED_UI_STATE.write().unwrap();
+                                state.err_msg.show(e);
+                            }
+                        },
+
+                        Request::SaveProfile { profile } => match self.save_profile(profile) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                let mut state = SHARED_UI_STATE.write().unwrap();
+                                state.err_msg.show(e);
+                            }
+                        },
+
+                        Request::GetClient {
+                            chain_id,
+                            rpcs,
+                            clients,
+                        } => {
+                            info!("Received Request to get client: {}", chain_id.name());
+                            if !clients.contains_key(&chain_id.id()) {
+                                match self.get_client(chain_id, rpcs).await {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        let mut state = SHARED_UI_STATE.write().unwrap();
+                                        state.err_msg.show(e);
+                                    }
+                                }
+                            } else {
+                                let client = clients.get(&chain_id.id()).unwrap().clone();
+                                match self.back_sender.send(Response::GetClient(client, chain_id)) {
+                                    Ok(_) => {}
+                                    Err(e) => println!("Error Sending Response: {}", e),
+                                }
+                            }
+                        }
+
+                        Request::GetERC20Token {
+                            id,
+                            owner,
+                            address,
+                            client,
+                            chain_id,
+                        } => {
+                            match self
+                                .get_erc20_token(id, owner, address, client, chain_id)
+                                .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    let mut state = SHARED_UI_STATE.write().unwrap();
+                                    state.err_msg.show(e);
+                                }
+                            }
+                        }
+                    },
                     Err(_e) => {}
                 }
             }
@@ -194,7 +182,7 @@ impl Backend {
     async fn init_oracles(
         &mut self,
         client: Arc<WsClient>,
-        chain_id: ChainId
+        chain_id: ChainId,
     ) -> Result<(), anyhow::Error> {
         info!("Initializing Oracles for Chain: {}", chain_id.name());
         self.kill_oracle().await;
@@ -228,14 +216,14 @@ impl Backend {
     }
 
     /// Get the eth balance of an address
-    /// 
+    ///
     /// If the balance is not found in the database, we make an rpc call
     async fn get_eth_balance(
         &mut self,
         owner: Address,
         chain_id: u64,
         block: u64,
-        client: Arc<WsClient>
+        client: Arc<WsClient>,
     ) -> Result<(), anyhow::Error> {
         let balance = if let Ok(balance) = self.db.get_eth_balance(owner, chain_id, block) {
             balance
@@ -256,7 +244,7 @@ impl Backend {
     ///
     /// ### Arguments:
     ///
-    /// `id:` Which token to update in the UI ("token_in" or "token_out")
+    /// `id:` Which token to update in the Swap UI ("token_in" or "token_out")
     ///
     /// `address:` The address of the token
     ///
@@ -265,97 +253,61 @@ impl Backend {
     /// `chain_id:` The chain id
     async fn get_erc20_token(
         &self,
-        id: String,
+        currency_id: String,
         owner: Address,
         token_address: Address,
         client: Arc<WsClient>,
-        chain_id: u64
+        chain_id: u64,
     ) -> Result<(), anyhow::Error> {
         let token = if let Ok(token) = self.db.get_erc20(token_address, chain_id) {
             token
         } else {
-            let token = ERC20Token::new(token_address, client, chain_id, None).await?;
+            let token = ERC20Token::new(token_address, client.clone(), chain_id, None).await?;
             self.db.insert_erc20(token.clone(), chain_id)?;
             token
         };
 
-        let balance = if
-            let Ok(balance) = self.db.get_latest_erc20_balance(owner, token_address, chain_id)
-        {
-            balance
-        } else {
-            U256::ZERO
-        };
+        let balance = token.balance_of(owner, client).await?;
 
-        let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
-        let selected_currency = SelectedCurrency::new_from_erc(token.clone());
-        let currency = Currency::new_erc20(token.clone());
-        trace!("Got ERC20 Token: {} With Balance {}", token.symbol, balance);
+        self.back_sender.send(Response::GetERC20Token {
+            currency_id,
+            owner,
+            token,
+            balance,
+            chain_id,
+        })?;
 
-        // Update SwapUI with the selected currency
-        swap_ui_state.replace_currency(&id, selected_currency);
-
-        // close the token list window
-        swap_ui_state.update_token_list_status(&id, false);
-
-        // update the Currency Map in the cache
-        swap_ui_state.shared_cache.write().unwrap().add_currency(chain_id, currency);
         Ok(())
     }
 
     /// Get the balance of an erc20 token
-    /// 
+    ///
     /// We first check if the balance is in the database, if not we make an rpc call
     async fn get_erc20_balance(
         &self,
-        id: String,
         token: ERC20Token,
         owner: Address,
         chain_id: u64,
         block: u64,
-        client: Arc<WsClient>
+        client: Arc<WsClient>,
     ) -> Result<(), anyhow::Error> {
-        // check if the balance is in the database
-        let balance = if
-            let Ok(balance) = self.db.get_erc20_balance_at_block(
-                owner,
-                token.address,
-                chain_id,
-                block
-            )
+        let balance = token.balance_of(owner, client.clone()).await?;
+        if let Err(e) = self
+            .db
+            .insert_erc20_balance(owner, token.address, balance, chain_id, block)
         {
-            balance
-        } else {
-            let balance = token.balance_of(owner, client.clone()).await?;
-            if
-                let Err(e) = self.db.insert_erc20_balance(
-                    owner,
-                    token.address,
-                    balance,
-                    chain_id,
-                    block
-                )
-            {
-                error!("Failed to insert balance into db: {}", e);
-            }
+            error!("Failed to insert balance into db: {}", e);
+        }
 
-            balance
-        };
-        trace!("Got ERC20 Balance: {} \n For {}", balance, token.address);
+        trace!("Got Balance {} For Token: {}", balance, token.address);
 
-        let mut swap_state = SWAP_UI_STATE.write().unwrap();
-
-        // update the balance in the map
-        swap_state.update_erc20_balance(chain_id, owner, token.address, balance);
-
-        // update the balance in the SharedCache
-        swap_state.shared_cache.write().unwrap().update_erc20_balance(
-            chain_id,
+        self.back_sender.send(Response::GetERC20Balance {
             owner,
-            token.address,
-            balance
-        );
-        trace!("ERC20 Balance updated in UI State");
+            token: token.address,
+            chain_id,
+            balance,
+        })?;
+
         Ok(())
     }
 
@@ -370,179 +322,181 @@ impl Backend {
             .iter()
             .find(|rpc| rpc.chain_id == chain_id.id())
             .context(format!("Failed to find RPC for {}", chain_id.name()))?
-            .url.clone();
+            .url
+            .clone();
 
         let client = ProviderBuilder::new().on_ws(WsConnect::new(url)).await?;
         let client = Arc::new(client);
 
-        self.back_sender.send(Response::GetClient(client, chain_id))?;
+        self.back_sender
+            .send(Response::GetClient(client, chain_id))?;
         Ok(())
     }
 }
 
-/* 
+/*
 
-    /// Dummy implementation
-    async fn get_swap_result(&self, params: SwapParams) -> Result<QuoteResult, anyhow::Error> {
-        let block_id = BlockId::Number(
-            BlockNumberOrTag::Number(params.block.header.number.unwrap())
-        );
-        let cache_db = CacheDB::new(EmptyDB::default());
+/// Dummy implementation
+async fn get_swap_result(&self, params: SwapParams) -> Result<QuoteResult, anyhow::Error> {
+    let block_id = BlockId::Number(
+        BlockNumberOrTag::Number(params.block.header.number.unwrap())
+    );
+    let cache_db = CacheDB::new(EmptyDB::default());
 
-        let mut fork_factory = ForkFactory::new_sandbox_factory(
-            params.client.clone(),
-            cache_db,
-            Some(block_id)
-        );
+    let mut fork_factory = ForkFactory::new_sandbox_factory(
+        params.client.clone(),
+        cache_db,
+        Some(block_id)
+    );
 
-        let dummy_caller = DummyAccount::new(
-            AccountType::EOA,
-            parse_ether("10")?,
-            parse_ether("10")?
-        );
-        let dummy_contract = DummyAccount::new(
-            AccountType::Contract(swap_router_bytecode()),
-            U256::ZERO,
-            U256::ZERO
-        );
-        if
-            let Err(e) = insert_dummy_account(
-                &dummy_caller,
-                params.chain_id.clone(),
-                &mut fork_factory
-            )
-        {
-            return Err(e);
-        }
-        if
-            let Err(e) = insert_dummy_account(
-                &dummy_contract,
-                params.chain_id.clone(),
-                &mut fork_factory
-            )
-        {
-            return Err(e);
-        }
-        let fork_db = fork_factory.new_sandbox_fork();
-
-        let result = self.swap(dummy_contract, dummy_caller, params, fork_db).await?;
-        Ok(result)
+    let dummy_caller = DummyAccount::new(
+        AccountType::EOA,
+        parse_ether("10")?,
+        parse_ether("10")?
+    );
+    let dummy_contract = DummyAccount::new(
+        AccountType::Contract(swap_router_bytecode()),
+        U256::ZERO,
+        U256::ZERO
+    );
+    if
+        let Err(e) = insert_dummy_account(
+            &dummy_caller,
+            params.chain_id.clone(),
+            &mut fork_factory
+        )
+    {
+        return Err(e);
     }
-    */
+    if
+        let Err(e) = insert_dummy_account(
+            &dummy_contract,
+            params.chain_id.clone(),
+            &mut fork_factory
+        )
+    {
+        return Err(e);
+    }
+    let fork_db = fork_factory.new_sandbox_fork();
 
-/* 
-    /// Simulate a swap on Uniswap V2/V3
-    ///
-    /// The pool with the highest output is selected
-    async fn swap(
-        &self,
-        contract: DummyAccount,
-        caller: DummyAccount,
-        params: SwapParams,
-        fork_db: ForkDB
-    ) -> Result<QuoteResult, anyhow::Error> {
-        let slippage: f32 = params.slippage.parse().unwrap_or(1.0);
-        let amount_in = parse_wei(&params.amount_in, params.token_in.token.decimals)?;
+    let result = self.swap(dummy_contract, dummy_caller, params, fork_db).await?;
+    Ok(result)
+}
+*/
 
-        let pools = self.collect_pools(params.clone()).await?;
+/*
+/// Simulate a swap on Uniswap V2/V3
+///
+/// The pool with the highest output is selected
+async fn swap(
+    &self,
+    contract: DummyAccount,
+    caller: DummyAccount,
+    params: SwapParams,
+    fork_db: ForkDB
+) -> Result<QuoteResult, anyhow::Error> {
+    let slippage: f32 = params.slippage.parse().unwrap_or(1.0);
+    let amount_in = parse_wei(&params.amount_in, params.token_in.token.decimals)?;
 
-        let best_pool = Arc::new(Mutex::new(pools[0].clone()));
-        let best_amount_out = Arc::new(Mutex::new(U256::ZERO));
+    let pools = self.collect_pools(params.clone()).await?;
 
-        let mut evm = new_evm(fork_db, params.block.clone(), params.chain_id.clone());
+    let best_pool = Arc::new(Mutex::new(pools[0].clone()));
+    let best_amount_out = Arc::new(Mutex::new(U256::ZERO));
 
-        // approve the contract to spend token_in
-        evm.tx_mut().caller = caller.address;
-        evm.tx_mut().transact_to = TransactTo::Call(params.token_in.token.address);
-        evm.tx_mut().value = U256::ZERO;
-        evm.tx_mut().data = params.token_in.token
-            .encode_approve(contract.address, amount_in)
-            .into();
+    let mut evm = new_evm(fork_db, params.block.clone(), params.chain_id.clone());
 
-        evm.transact_commit()?;
+    // approve the contract to spend token_in
+    evm.tx_mut().caller = caller.address;
+    evm.tx_mut().transact_to = TransactTo::Call(params.token_in.token.address);
+    evm.tx_mut().value = U256::ZERO;
+    evm.tx_mut().data = params.token_in.token
+        .encode_approve(contract.address, amount_in)
+        .into();
 
-        let fork_db = evm.db().clone();
+    evm.transact_commit()?;
 
-        let time = std::time::Instant::now();
-        let mut handles = Vec::new();
-        for pool in pools {
-            let pool = pool.clone();
-            let params = params.clone();
-            let fork_db = fork_db.clone();
-            let contract = contract.clone();
-            let caller = caller.clone();
-            let best_pool = best_pool.clone();
-            let best_amount_out = best_amount_out.clone();
+    let fork_db = evm.db().clone();
 
-            handles.push(
-                tokio::spawn(async move {
-                    let amount_out;
-                    {
-                        let mut evm = new_evm(
-                            fork_db,
-                            params.block.clone(),
-                            params.chain_id.clone()
-                        );
-                        amount_out = sim_swap(
-                            pool.clone(),
-                            contract,
-                            caller,
-                            params,
-                            &mut evm
-                        ).unwrap();
-                    }
-                    let mut best_pool = best_pool.lock().await;
-                    let mut best_amount_out = best_amount_out.lock().await;
-                    if amount_out > *best_amount_out {
-                        *best_amount_out = amount_out;
-                        *best_pool = pool;
-                    }
-                })
-            );
-        }
+    let time = std::time::Instant::now();
+    let mut handles = Vec::new();
+    for pool in pools {
+        let pool = pool.clone();
+        let params = params.clone();
+        let fork_db = fork_db.clone();
+        let contract = contract.clone();
+        let caller = caller.clone();
+        let best_pool = best_pool.clone();
+        let best_amount_out = best_amount_out.clone();
 
-        for handle in handles {
-            handle.await?;
-        }
+        handles.push(
+            tokio::spawn(async move {
+                let amount_out;
+                {
+                    let mut evm = new_evm(
+                        fork_db,
+                        params.block.clone(),
+                        params.chain_id.clone()
+                    );
+                    amount_out = sim_swap(
+                        pool.clone(),
+                        contract,
+                        caller,
+                        params,
+                        &mut evm
+                    ).unwrap();
+                }
+                let mut best_pool = best_pool.lock().await;
+                let mut best_amount_out = best_amount_out.lock().await;
+                if amount_out > *best_amount_out {
+                    *best_amount_out = amount_out;
+                    *best_pool = pool;
+                }
+            })
+        );
+    }
 
-        info!("Time to simulate swap: {:?}ms", time.elapsed().as_millis());
+    for handle in handles {
+        handle.await?;
+    }
 
-        let best_pool = best_pool.lock().await;
-        let best_amount_out = best_amount_out.lock().await;
-        let pool_to_swap = best_pool.clone();
-        let amount_out = best_amount_out.clone();
+    info!("Time to simulate swap: {:?}ms", time.elapsed().as_millis());
 
-        let minimum_received = amount_out - (amount_out * U256::from(slippage)) / U256::from(100);
+    let best_pool = best_pool.lock().await;
+    let best_amount_out = best_amount_out.lock().await;
+    let pool_to_swap = best_pool.clone();
+    let amount_out = best_amount_out.clone();
 
-        let router_params = Params {
-            input_token: params.token_in.token.address,
-            output_token: params.token_out.token.address,
-            amount_in,
-            pool: pool_to_swap.address,
-            pool_variant: pool_to_swap.variant(),
-            minimum_received,
-        };
+    let minimum_received = amount_out - (amount_out * U256::from(slippage)) / U256::from(100);
 
-        let call_data = encode_swap(router_params);
+    let router_params = Params {
+        input_token: params.token_in.token.address,
+        output_token: params.token_out.token.address,
+        amount_in,
+        pool: pool_to_swap.address,
+        pool_variant: pool_to_swap.variant(),
+        minimum_received,
+    };
 
-        Ok(QuoteResult {
-            block_number: params.block.header.number.unwrap(),
-            input_token: params.token_in.clone(),
-            output_token: params.token_out.clone(),
-            input_token_usd_worth: "TODO".to_string(),
-            output_token_usd_worth: "TODO".to_string(),
-            price_impact: "TODO".to_string(),
-            slippage: slippage.to_string(),
-            real_amount: amount_out.to_string(),
-            minimum_received: minimum_received.to_string(),
-            token_tax: "TODO".to_string(),
-            pool_fee: "TODO".to_string(),
-            gas_cost: "TODO".to_string(),
-            data: call_data,
-        })
-    }*/
+    let call_data = encode_swap(router_params);
 
-/* 
+    Ok(QuoteResult {
+        block_number: params.block.header.number.unwrap(),
+        input_token: params.token_in.clone(),
+        output_token: params.token_out.clone(),
+        input_token_usd_worth: "TODO".to_string(),
+        output_token_usd_worth: "TODO".to_string(),
+        price_impact: "TODO".to_string(),
+        slippage: slippage.to_string(),
+        real_amount: amount_out.to_string(),
+        minimum_received: minimum_received.to_string(),
+        token_tax: "TODO".to_string(),
+        pool_fee: "TODO".to_string(),
+        gas_cost: "TODO".to_string(),
+        data: call_data,
+    })
+}*/
+
+/*
     async fn collect_pools(&self, params: SwapParams) -> Result<Vec<Pool>, anyhow::Error> {
         let pools = Arc::new(Mutex::new(Vec::new()));
 
@@ -628,7 +582,7 @@ impl Backend {
 }
     */
 
-/* 
+/*
 fn sim_swap(
     pool: Pool,
     contract: DummyAccount,
@@ -672,15 +626,15 @@ fn sim_swap(
 }
     */
 
-/* 
+/*
 /// Calculate token out price in usd
-/// 
+///
 /// This only works if `base_token` is WETH and `quote_token` is anything except of a stable coin
-/// 
+///
 /// ## Arguments
-/// 
+///
 /// `base_token` - ([ERC20Token], amount_in, price_in_usd)
-/// 
+///
 /// `quote_token` - ([ERC20Token], amount_out)
 pub fn calc_quote_token_price(
     base_token: (ERC20Token, U256, BigDecimal),

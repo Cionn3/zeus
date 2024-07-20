@@ -65,6 +65,14 @@ impl Currency {
         matches!(self, Self::Native(_))
     }
 
+    /// Get the ERC20 Token
+    pub fn erc20(&self) -> Option<&ERC20Token> {
+        match self {
+            Self::ERC20(erc20) => Some(erc20),
+            _ => None,
+        }
+    }
+
     /// Get currency symbol
     pub fn symbol(&self) -> String {
         match self {

@@ -204,6 +204,8 @@ impl ZeusApp {
         app.gui.sender = Some(front_sender.clone());
         app.gui.swap_ui.front_sender = Some(front_sender.clone());
         app.gui.token_selection_window.front_sender = Some(front_sender.clone());
+        app.gui.wallet_ui.import_wallet_ui.sender = Some(front_sender.clone());
+        app.gui.wallet_ui.create_wallet_ui.sender = Some(front_sender.clone());
 
         std::thread::spawn(move || {
             Backend::new(back_sender, front_receiver).init();
@@ -308,28 +310,24 @@ impl ZeusApp {
             return;
         }
 
-        // compare the latest block from oracle with the swap ui state block
-        let swap_state_block;
-        {
-            let swap_state = SWAP_UI_STATE.read().unwrap();
-            swap_state_block = swap_state.block;
-        }
+        // compare the latest block from oracle with the swap ui block
+        let swap_ui_block = self.gui.swap_ui.block;
         let latest_block = self.data.latest_block().number;
 
         // if the block is the same, skip
-        if swap_state_block == latest_block {
+        if swap_ui_block == latest_block {
             return;
         }
 
-        let mut swap_state = SWAP_UI_STATE.write().unwrap();
         let client = self.data.client().unwrap();
+        let currency_in = self.gui.swap_ui.currency_in.clone();
+        let currency_out = self.gui.swap_ui.currency_out.clone();
 
-        if !swap_state.currency_in.is_native() {
+        if !currency_in.is_native() {
             // currency is an ERC20 token
-            let token = swap_state.currency_in.get_erc20().unwrap();
+            let token = currency_in.erc20().unwrap();
 
             let req = Request::GetERC20Balance {
-                id: "input".to_string(),
                 token: token.clone(),
                 owner: self.data.wallet_address(),
                 chain_id: self.data.chain_id.id(),
@@ -340,11 +338,10 @@ impl ZeusApp {
             info!("Request sent for input token: {:?}", token.symbol);
         }
 
-        if !swap_state.currency_out.is_native() {
-            let token = swap_state.currency_out.get_erc20().unwrap();
+        if !currency_out.is_native() {
+            let token = currency_out.erc20().unwrap();
 
             let req = Request::GetERC20Balance {
-                id: "output".to_string(),
                 token: token.clone(),
                 owner: self.data.wallet_address(),
                 chain_id: self.data.chain_id.id(),
@@ -357,8 +354,9 @@ impl ZeusApp {
 
         // update the last request time
         self.last_erc20_request = now;
-        // update the swap state block
-        swap_state.block = latest_block;
+
+        // update the swap ui block
+        self.gui.swap_ui.block = latest_block;
     }
 
     fn update_eth_balance(&mut self, balance: U256) {
@@ -372,6 +370,56 @@ impl ZeusApp {
             (self.data.latest_block().number, balance),
         );
     }
+
+    fn handle_response(&mut self, res: Response) {
+        match res {
+            Response::EthBalance(balance) => {
+                self.update_eth_balance(balance);
+            }
+
+            Response::GetClient(client, chain_id) => {
+                self.data.ws_client.insert(chain_id.id(), client.clone());
+                trace!("Changed Chain: {:?}", chain_id.name().clone());
+
+                self.gui.swap_ui.default_input(chain_id.id());
+                self.gui.swap_ui.default_output(chain_id.id());
+
+                // setup block oracle
+                self.send_request(Request::InitOracles {
+                    client,
+                    chain_id: chain_id.clone(),
+                });
+            }
+
+            Response::GetERC20Token {
+                currency_id,
+                owner,
+                token,
+                balance,
+                chain_id,
+            } => {
+                let currency = Currency::new_erc20(token.clone());
+                self.gui.swap_ui.replace_currency(&currency_id, currency.clone());
+
+                let mut shared_cache = SHARED_CACHE.write().unwrap();
+                shared_cache.erc20_balance.insert(
+                        (chain_id, owner, token.address),
+                        balance,
+                    );
+                
+                shared_cache.add_currency(chain_id, currency);
+            }
+
+            Response::GetERC20Balance { owner, token, chain_id, balance } => {
+                let mut shared_cache = SHARED_CACHE.write().unwrap();
+                shared_cache.erc20_balance.insert(
+                    (chain_id, owner, token),
+                    balance,
+                );
+                trace!("ERC20 Balance Updated For: {:?}", token);
+        }
+    }
+}
 }
 
 // Main Event Loop Of The Window
@@ -381,22 +429,7 @@ impl eframe::App for ZeusApp {
         if let Some(receive) = &self.back_receiver {
             match receive.try_recv() {
                 Ok(response) => {
-                    match response {
-                        Response::EthBalance(balance) => {
-                            self.update_eth_balance(balance);
-                        }
-
-                        Response::GetClient(client, chain_id) => {
-                            self.data.ws_client.insert(chain_id.id(), client.clone());
-                            trace!("Changed Chain: {:?}", chain_id.name().clone());
-
-                            // setup block oracle
-                            self.send_request(Request::InitOracles {
-                                client,
-                                chain_id: chain_id.clone(),
-                            });
-                        }
-                    }
+                    self.handle_response(response);
                 }
                 Err(_) => {}
             }
@@ -451,7 +484,7 @@ impl eframe::App for ZeusApp {
                 ui.add_space(100.0);
                 self.gui
                     .swap_ui
-                    .swap_panel(ui, &mut self.data, self.gui.theme.icons.clone());
+                    .show(ui, &mut self.data, &mut self.gui.token_selection_window, self.gui.theme.icons.clone());
             });
         });
 

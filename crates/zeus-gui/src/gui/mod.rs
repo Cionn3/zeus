@@ -1,10 +1,9 @@
 use eframe::egui::{menu, Button, Color32, ComboBox, RichText, Ui, Sense, vec2};
 
-use crate::{fonts::roboto_regular, gui::swap_ui::SwapUI, theme::ZeusTheme};
+use crate::{fonts::roboto_regular, theme::ZeusTheme};
 use std::sync::Arc;
 
-use wallet_ui::wallet_ui;
-use components::{send_crypto_screen::SendCryptoScreen, TokenSelectionWindow};
+use components::{send_crypto_screen::SendCryptoScreen, TokenSelectionWindow, swap_ui::SwapUI, wallet::*};
 use settings::networks_settings_ui;
 
 use zeus_backend::types::Request;
@@ -13,8 +12,6 @@ use zeus_shared_types::{AppData, SHARED_UI_STATE, SWAP_UI_STATE};
 use crossbeam::channel::Sender;
 
 pub mod misc;
-pub mod swap_ui;
-pub mod wallet_ui;
 pub mod components;
 pub mod settings;
 
@@ -29,6 +26,8 @@ pub struct GUI {
 
     pub send_screen: SendCryptoScreen,
 
+    pub wallet_ui: WalletUI,
+
     pub theme: Arc<ZeusTheme>,
 }
 
@@ -39,6 +38,7 @@ impl GUI {
             token_selection_window: TokenSelectionWindow::new(),
             swap_ui: SwapUI::default(),
             send_screen: SendCryptoScreen::new(),
+            wallet_ui: WalletUI::new(),
             theme: Arc::new(ZeusTheme::default()),
         }
     }
@@ -76,18 +76,35 @@ impl GUI {
             ui.add_space(10.0);
 
             if ui.label(swap).clicked() {
-                self.swap_ui.open = true;
+                self.swap_ui.state.open();
             }           
         });
     }
 
 
 
-    /// Show the wallet selection UI
+    /// Show the wallet UI
     /// 
     /// This should be called by the [eframe::App::update] method
     pub fn wallet_ui(&mut self, ui: &mut Ui, data: &mut AppData) {
-        wallet_ui(ui, data, &self);
+
+        if data.logged_in {
+            self.wallet_ui.state.open();
+        }
+
+        // show the available wallets
+        self.wallet_ui.show(ui, data, self.theme.icons.clone());
+
+        // show the create new wallet ui
+        self.wallet_ui.create_wallet_ui.show(ui, data);
+
+        // show the import wallet ui
+        self.wallet_ui.import_wallet_ui.show(ui, data);
+
+        // show the view key ui
+        self.wallet_ui.view_key_ui.show(ui, data);
+
+
     }
 
     /// Show Network Settings UI
@@ -163,20 +180,17 @@ impl GUI {
                 ui.menu_button(wallet_settings, |ui| {
                     if ui.button("New Wallet").clicked() {
                         ui.close_menu();
-                        let mut state = SHARED_UI_STATE.write().unwrap();
-                        state.new_wallet_window_on = true;
+                        self.wallet_ui.create_wallet_ui.state.open();
                     }
 
                     if ui.button("Import Wallet").clicked() {
                         ui.close_menu();
-                        let mut state = SHARED_UI_STATE.write().unwrap();
-                        state.import_wallet_window_on = true;
+                        self.wallet_ui.import_wallet_ui.state.open();
                     }
 
                     if ui.button("View Key").clicked() {
                         ui.close_menu();
-                        let mut state = SHARED_UI_STATE.write().unwrap();
-                        state.export_key_ui = true;
+                        self.wallet_ui.view_key_ui.state.open();
                     }
                     // TODO: Rename and Hide Wallet
                 });
@@ -206,7 +220,7 @@ impl GUI {
         .min_size(vec2(70.0, 25.0));
 
         if ui.add(send_button).clicked() {
-            self.send_screen.open();
+            self.send_screen.state.open();
         }
 
         self.send_screen.show(ui, data, &mut self.token_selection_window);
