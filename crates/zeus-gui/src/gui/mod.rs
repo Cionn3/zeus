@@ -3,8 +3,7 @@ use eframe::egui::{menu, Button, Color32, ComboBox, RichText, Ui, Sense, vec2};
 use crate::{fonts::roboto_regular, theme::ZeusTheme};
 use std::sync::Arc;
 
-use components::{send_crypto_screen::SendCryptoScreen, TokenSelectionWindow, swap_ui::SwapUI, wallet::*};
-use settings::networks_settings_ui;
+use components::{*, send_crypto_screen::SendCryptoScreen, swap_ui::SwapUI, wallet::*};
 
 use zeus_backend::types::Request;
 use zeus_shared_types::{AppData, SHARED_UI_STATE, SWAP_UI_STATE};
@@ -13,14 +12,15 @@ use crossbeam::channel::Sender;
 
 pub mod misc;
 pub mod components;
-pub mod settings;
 
 /// The Graphical User Interface for [crate::ZeusApp]
 pub struct GUI {
     /// Send data to backend
-    pub sender: Option<Sender<Request>>,
+    pub sender: Sender<Request>,
 
     pub token_selection_window: TokenSelectionWindow,
+
+    pub network_settings: NetworkSettings,
 
     pub swap_ui: SwapUI,
 
@@ -32,28 +32,28 @@ pub struct GUI {
 }
 
 impl GUI {
-    pub fn default() -> Self {
+    pub fn new(sender: Sender<Request>) -> Self {
         Self {
-            sender: None,
-            token_selection_window: TokenSelectionWindow::new(),
-            swap_ui: SwapUI::default(),
-            send_screen: SendCryptoScreen::new(),
-            wallet_ui: WalletUI::new(),
+            sender: sender.clone(),
+            token_selection_window: TokenSelectionWindow::new(sender.clone()),
+            network_settings: NetworkSettings::new(),
+            swap_ui: SwapUI::new(sender.clone()),
+            send_screen: SendCryptoScreen::new(sender.clone()),
+            wallet_ui: WalletUI::new(sender.clone()),
             theme: Arc::new(ZeusTheme::default()),
         }
     }
 
     /// Send a request to the backend
     pub fn send_request(&self, request: Request) {
-        if let Some(sender) = &self.sender {
-            match sender.send(request) {
+            match self.sender.send(request) {
                 Ok(_) => {}
                 Err(e) => {
                     let mut state = SHARED_UI_STATE.write().unwrap();
                     state.err_msg.show(e);
                 }
             }
-        }
+        
     }
 
     /// Show the Side Panel Menu
@@ -110,10 +110,8 @@ impl GUI {
     /// Show Network Settings UI
     /// 
     /// This should be called by the [eframe::App::update] method
-    /// 
-    /// Depending on the state of the [SHARED_UI_STATE], this will show the network settings UI
     pub fn show_network_settings_ui(&mut self, ui: &mut Ui, data: &mut AppData) {
-        networks_settings_ui(ui, data, self.theme.icons.clone());
+        self.network_settings.show(ui, data, self.theme.icons.clone());
     }
 
     /// Chain Selection
@@ -198,8 +196,7 @@ impl GUI {
                 // Network Settings
                 if ui.button(network_settings).clicked() {
                     ui.close_menu();
-                    let mut state = SHARED_UI_STATE.write().unwrap();
-                    state.network_settings = true;
+                    self.network_settings.state.open();
                 }
             });
         });
@@ -211,19 +208,21 @@ impl GUI {
     pub fn send_crypto_button(&mut self, ui: &mut Ui, data: &mut AppData) {
         let send = RichText::new("Send")
         .family(roboto_regular())
-        .size(14.0)
+        .size(18.0)
         .color(Color32::WHITE);
 
-        let send_button = Button::new(send)
+        let send_icon = self.theme.icons.clone().send_icon();
+
+        let send_button = Button::image_and_text(send_icon, send)
         .rounding(10.0)
         .sense(Sense::click())
-        .min_size(vec2(70.0, 25.0));
+        .min_size(vec2(75.0, 25.0));
 
         if ui.add(send_button).clicked() {
             self.send_screen.state.open();
         }
 
-        self.send_screen.show(ui, data, &mut self.token_selection_window);
+        self.send_screen.show(ui, data);
 
     }
 }

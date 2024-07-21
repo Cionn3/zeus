@@ -18,7 +18,7 @@ use zeus_shared_types::{
 
 pub struct SwapUI {
     /// Send Request to the backend
-    pub front_sender: Option<Sender<Request>>,
+    pub sender: Sender<Request>,
 
     pub state: UiState,
 
@@ -36,10 +36,11 @@ pub struct SwapUI {
     pub block: u64,
 }
 
-impl Default for SwapUI {
-    fn default() -> Self {
+impl SwapUI {
+
+    pub fn new(sender: Sender<Request>) -> Self {
         Self {
-            front_sender: None,
+            sender,
             state: UiState::OPEN,
             currency_in: Currency::new_native(1),
             currency_out: Currency::default_erc20(1),
@@ -48,9 +49,6 @@ impl Default for SwapUI {
             block: 0,
         }
     }
-}
-
-impl SwapUI {
 
     pub fn amount_in(&mut self) -> &mut String {
         &mut self.amount_in
@@ -148,7 +146,7 @@ impl SwapUI {
                 self.amount_field(ui, "input");
                 ui.add_space(10.0);
                 ui.vertical(|ui| {
-                    self.token_button(ui, "input", data, token_selection);
+                    self.token_button(ui, "input", token_selection);
                     self.currency_balance(ui, data, "input");
                 });
             });
@@ -161,7 +159,7 @@ impl SwapUI {
                 self.amount_field(ui, "output");
                 ui.add_space(10.0);
                 ui.vertical(|ui| {
-                    self.token_button(ui, "output", data, token_selection);
+                    self.token_button(ui, "output", token_selection);
                     self.currency_balance(ui, data, "output");
                 });
             });
@@ -208,7 +206,6 @@ impl SwapUI {
         &mut self,
         ui: &mut Ui,
         currency_id: &str,
-        data: &mut AppData,
         token_selection: &mut TokenSelectionWindow
     ) {
         ui.push_id(currency_id, |ui| {
@@ -282,8 +279,7 @@ impl SwapUI {
 
         let button = Button::new(text)
             .min_size(vec2(100.0, 30.0))
-            .rounding(10.0)
-            .stroke((0.3, Color32::WHITE));
+            .rounding(10.0);
 
         if ui.add(button).clicked() {
             trace!("Swap button clicked, TODO!");

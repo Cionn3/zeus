@@ -2,12 +2,12 @@ pub mod send_crypto_screen;
 pub mod swap_ui;
 pub mod wallet;
 
-use crate::fonts::roboto_regular;
+use crate::{fonts::roboto_regular, icons::IconTextures, theme::THEME};
 use crossbeam::channel::Sender;
 use eframe::egui::{
-    emath::Vec2b, vec2, Align2, Button, Color32, RichText, ScrollArea, Sense, TextEdit, Ui, Window,
+    emath::Vec2b, vec2, Align2, FontId, Button, Color32, RichText, ScrollArea, Sense, TextEdit, Ui, Window,
 };
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 use tracing::trace;
 use zeus_backend::types::Request;
 use zeus_chain::{alloy::primitives::Address, defi_types::currency::Currency, utils::format_wei};
@@ -18,17 +18,17 @@ pub struct TokenSelectionWindow {
 
     pub search_query: String,
 
-    pub front_sender: Option<Sender<Request>>,
+    pub sender: Sender<Request>,
 
     pub currency_id: String,
 }
 
 impl TokenSelectionWindow {
-    pub fn new() -> Self {
+    pub fn new(sender: Sender<Request>) -> Self {
         Self {
             state: UiState::default(),
             search_query: String::new(),
-            front_sender: None,
+            sender,
             currency_id: String::new(),
         }
     }
@@ -43,14 +43,13 @@ impl TokenSelectionWindow {
 
     /// Send a request to the backend
     pub fn send_request(&self, request: Request) {
-        if let Some(sender) = &self.front_sender {
-            match sender.send(request) {
+            match self.sender.send(request) {
                 Ok(_) => {}
                 Err(e) => {
                     trace!("Error sending request: {}", e);
                 }
             }
-        }
+        
     }
 
     /// Show This [TokenSelectionWindow] UI
@@ -131,7 +130,11 @@ impl TokenSelectionWindow {
                                                 .family(roboto_regular())
                                                 .color(Color32::WHITE);
 
-                                            let button = Button::new(name)
+                                            // Use the currency icon cause the
+                                            // erc20 placeholder is diplayed blurry    
+                                            let icon = THEME.icons.currency_icon(chain_id);
+
+                                            let button = Button::image_and_text(icon, name)
                                                 .rounding(10.0)
                                                 .sense(Sense::click())
                                                 .min_size(vec2(70.0, 25.0));
@@ -173,7 +176,9 @@ impl TokenSelectionWindow {
                                                 .family(roboto_regular())
                                                 .color(Color32::WHITE);
 
-                                            let button = Button::new(name)
+                                            let icon = THEME.icons.currency_icon(chain_id);
+
+                                            let button = Button::image_and_text(icon, name)
                                                 .rounding(10.0)
                                                 .sense(Sense::click())
                                                 .min_size(vec2(70.0, 25.0));
@@ -232,4 +237,96 @@ impl TokenSelectionWindow {
             });
         selected_currency
     }
+}
+
+
+
+pub struct NetworkSettings {
+    pub state: UiState,
+}
+
+impl NetworkSettings {
+    pub fn new() -> Self {
+        Self {
+            state: UiState::default(),
+        }
+    }
+
+    /// Show This [NetworkSettings] UI
+    ///
+    /// # Arguments
+    ///
+    /// * `ui` - The egui Ui
+    /// * `data` - The AppData
+    /// * `icons` - The IconTextures
+    pub fn show(&mut self, ui: &mut Ui, data: &mut AppData, icons: Arc<IconTextures>) {
+        if self.state.is_close() {
+            return;
+        }
+
+        let settings = RichText::new("Network Settings")
+            .family(roboto_regular())
+            .size(20.0)
+            .color(Color32::WHITE);
+
+        let save = RichText::new("Save")
+            .family(roboto_regular())
+            .size(15.0)
+            .color(Color32::WHITE);
+
+        let save_button = Button::new(save)
+            .rounding(10.0)
+            .sense(Sense::click())
+            .min_size(vec2(70.0, 25.0));
+
+        let font = FontId::new(15.0, roboto_regular());
+
+
+        Window::new(settings)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+            .collapsible(false)
+            .show(ui.ctx(), |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.set_min_size(vec2(250.0, 320.0));
+
+                    ui.add_space(20.0);
+
+                    for network in data.rpc.iter_mut() {
+                        ui.horizontal(|ui| {
+                            ui.add_space(60.0);
+                            ui.add(icons.chain_icon(&network.chain_id));
+                            ui.add_space(3.0);
+                            let text = RichText::new(network.chain_name())
+                                .family(roboto_regular())
+                                .size(15.0)
+                                .color(Color32::WHITE);
+                            ui.label(text);
+                        });
+
+                        ui.add_space(10.0);
+                        let text_edit = TextEdit::singleline(&mut network.url)
+                            .font(font.clone())
+                            .text_color(Color32::WHITE)
+                            .desired_width(200.0);
+                        ui.add(text_edit);
+                        ui.add_space(10.0);
+                    }
+
+                    if ui.add(save_button).clicked() {
+                        match data.save_rpc() {
+                            Ok(_) => {
+                                trace!("Network settings saved");
+                                self.state.close();
+                            }
+                            Err(e) => {
+                                let mut state = SHARED_UI_STATE.write().unwrap();
+                                state.err_msg.show(&format!("Error saving network settings: {}", e));
+                                self.state.close();
+                            }
+                        }
+                    }
+                });
+            });                      
+}
 }

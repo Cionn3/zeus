@@ -27,7 +27,7 @@ use zeus_chain::{
     defi_types::currency::Currency,
     BLOCK_ORACLE,
 };
-use zeus_shared_types::{cache::SHARED_CACHE, AppData, ErrorMsg, SHARED_UI_STATE, SWAP_UI_STATE};
+use zeus_shared_types::{cache::SHARED_CACHE, AppData, SHARED_UI_STATE};
 
 use tracing_subscriber::{
     fmt, layer::SubscriberExt, prelude::*, util::SubscriberInitExt, EnvFilter,
@@ -53,10 +53,10 @@ pub struct ZeusApp {
     pub gui: GUI,
 
     /// Send Data to backend
-    pub front_sender: Option<Sender<Request>>,
+    pub front_sender: Sender<Request>,
 
     /// Receive Data from backend
-    pub back_receiver: Option<Receiver<Response>>,
+    pub back_receiver: Receiver<Response>,
 
     /// The app data of the application
     pub data: AppData,
@@ -116,12 +116,20 @@ impl ZeusApp {
     pub fn new(cc: &CreationContext) -> Self {
         let _guard = setup_logging();
 
-        let gui = GUI::default();
+        let (front_sender, front_receiver) = unbounded();
+        let (back_sender, back_receiver) = unbounded();
+
+        std::thread::spawn(move || {
+            Backend::new(back_sender, front_receiver).init();
+        });
+
+
+        let gui = GUI::new(front_sender.clone());
 
         let mut app = Self {
             gui,
-            front_sender: None,
-            back_receiver: None,
+            front_sender: front_sender.clone(),
+            back_receiver,
             data: AppData::default(),
             last_eth_request: Instant::now(),
             last_erc20_request: Instant::now(),
@@ -198,21 +206,6 @@ impl ZeusApp {
         shared_cache.erc20_balance = erc20_balances;
         shared_cache.eth_balance = eth_balances;
 
-        let (front_sender, front_receiver) = unbounded();
-        let (back_sender, back_receiver) = unbounded();
-
-        app.gui.sender = Some(front_sender.clone());
-        app.gui.swap_ui.front_sender = Some(front_sender.clone());
-        app.gui.token_selection_window.front_sender = Some(front_sender.clone());
-        app.gui.wallet_ui.import_wallet_ui.sender = Some(front_sender.clone());
-        app.gui.wallet_ui.create_wallet_ui.sender = Some(front_sender.clone());
-
-        std::thread::spawn(move || {
-            Backend::new(back_sender, front_receiver).init();
-        });
-
-        app.front_sender = Some(front_sender);
-        app.back_receiver = Some(back_receiver);
 
         app
     }
@@ -230,15 +223,13 @@ impl ZeusApp {
 
     /// Send a request to backend
     fn send_request(&mut self, request: Request) {
-        if let Some(sender) = &self.front_sender {
-            match sender.send(request) {
+            match self.front_sender.send(request) {
                 Ok(_) => {}
                 Err(e) => {
                     let mut state = SHARED_UI_STATE.write().unwrap();
                     state.err_msg.show(e);
                 }
             }
-        }
     }
 
     fn request_eth_balance(&mut self) {
@@ -426,13 +417,12 @@ impl ZeusApp {
 // This is where we draw the UI
 impl eframe::App for ZeusApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if let Some(receive) = &self.back_receiver {
-            match receive.try_recv() {
+         
+            match self.back_receiver.try_recv() {
                 Ok(response) => {
                     self.handle_response(response);
                 }
                 Err(_) => {}
-            }
         }
 
         // this is a temp solution
@@ -514,6 +504,7 @@ impl eframe::App for ZeusApp {
                 self.gui.select_chain(ui, &mut self.data);
                 ui.add_space(10.0);
                 self.gui.side_panel_menu(ui, &mut self.data);
+                ui.add_space(10.0);
                 self.gui.send_crypto_button(ui, &mut self.data);
 
 

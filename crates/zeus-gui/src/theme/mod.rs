@@ -7,6 +7,11 @@ use eframe::egui::{
 };
 use gradient::vertical_gradient_mesh_2;
 use std::sync::Arc;
+use lazy_static::lazy_static;
+
+lazy_static! {
+    pub static ref THEME: ZeusTheme = ZeusTheme::default();
+}
 
 pub mod gradient;
 

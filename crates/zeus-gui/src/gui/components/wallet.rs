@@ -200,28 +200,26 @@ pub struct ImportWalletUI {
     pub state: UiState,
     pub wallet_name: String,
     pub private_key: String,
-    pub sender: Option<Sender<Request>>,
+    pub sender: Sender<Request>,
 }
 
 impl ImportWalletUI {
-    pub fn new() -> Self {
+    pub fn new(sender: Sender<Request>) -> Self {
         Self {
             state: UiState::default(),
             wallet_name: String::new(),
             private_key: String::new(),
-            sender: None,
+            sender,
         }
     }
 
     /// Send a request to the backend
     pub fn send_request(&self, request: Request) {
-        if let Some(sender) = &self.sender {
-            match sender.send(request) {
+            match self.sender.send(request) {
                 Ok(_) => {}
                 Err(e) => {
                     trace!("Error sending request: {}", e);
                 }
-            }
         }
     }
 
@@ -329,27 +327,25 @@ impl ImportWalletUI {
 pub struct CreateNewWalletUI {
     pub state: UiState,
     pub wallet_name: String,
-    pub sender: Option<Sender<Request>>,
+    pub sender: Sender<Request>,
 }
 
 impl CreateNewWalletUI {
-    pub fn new() -> Self {
+    pub fn new(sender: Sender<Request>) -> Self {
         Self {
             state: UiState::default(),
             wallet_name: String::new(),
-            sender: None,
+            sender
         }
     }
 
     /// Send a request to the backend
     pub fn send_request(&self, request: Request) {
-        if let Some(sender) = &self.sender {
-            match sender.send(request) {
+            match self.sender.send(request) {
                 Ok(_) => {}
                 Err(e) => {
                     trace!("Error sending request: {}", e);
                 }
-            }
         }
     }
 
@@ -456,13 +452,13 @@ pub struct WalletUI {
 }
 
 impl WalletUI {
-    pub fn new() -> Self {
+    pub fn new(sender: Sender<Request>) -> Self {
         Self {
             state: UiState::default(),
             new_wallet_ui: UiState::default(),
             view_key_ui: ViewPrivateKeyUI::new(),
-            import_wallet_ui: ImportWalletUI::new(),
-            create_wallet_ui: CreateNewWalletUI::new(),
+            import_wallet_ui: ImportWalletUI::new(sender.clone()),
+            create_wallet_ui: CreateNewWalletUI::new(sender.clone()),
         }
     }
 

@@ -28,29 +28,6 @@ lazy_static! {
 #[derive(Clone)]
 pub struct SharedUiState {
 
-    /// Search Query for a token
-    pub search_query: String,
-
-    /// New/Import Wallet UI on/off
-    ///
-    /// (on/off, "New"/"Import Wallet")
-    pub wallet_popup: (bool, &'static str),
-
-    /// New Wallet Window
-    pub new_wallet_window_on: bool,
-
-    /// Generate Wallet UI
-    pub generate_wallet_on: bool,
-
-    /// Import Wallet UI
-    pub import_wallet_window_on: bool,
-
-    /// Export wallet Key UI on/off
-    pub export_key_ui: bool,
-
-    /// Exported key window on/off
-    pub exported_key_window: (bool, String),
-
     /// Network Settings
     pub network_settings: bool,
 
@@ -67,14 +44,7 @@ pub struct SharedUiState {
 impl Default for SharedUiState {
     fn default() -> Self {
         Self {
-            search_query: String::new(),
-            wallet_popup: (false, "New"),
-            new_wallet_window_on: false,
-            generate_wallet_on: false,
-            import_wallet_window_on: false,
             network_settings: false,
-            export_key_ui: false,
-            exported_key_window: (false, String::new()),
             tx_settings_on: false,
             err_msg: ErrorMsg::default(),
             info_msg: InfoMsg::default(),

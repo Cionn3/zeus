@@ -1,10 +1,12 @@
-use crate::fonts::roboto_regular;
+use crate::{fonts::roboto_regular, theme::THEME};
 use eframe::egui::{vec2, Align2, Button, Color32, RichText, Sense, Ui, Window};
 
 use zeus_shared_types::{
     cache::SHARED_CACHE, AppData, UiState};
 use zeus_chain::defi_types::currency::Currency;
 use super::TokenSelectionWindow;
+use crossbeam::channel::Sender;
+use zeus_backend::types::Request;
 
 
 
@@ -13,15 +15,15 @@ use super::TokenSelectionWindow;
 pub struct SendCryptoScreen {
     pub state: UiState,
     pub selected_currency: Currency,
-    pub search_query: String,
+    token_selection_window: TokenSelectionWindow,
 }
 
 impl SendCryptoScreen {
-    pub fn new() -> Self {
+    pub fn new(sender: Sender<Request>) -> Self {
         Self {
             state: UiState::default(),
             selected_currency: Currency::default(),
-            search_query: String::new(),
+            token_selection_window: TokenSelectionWindow::new(sender),
         }
     }
 
@@ -29,7 +31,7 @@ impl SendCryptoScreen {
     /// Show this UI
     ///
     /// This should be called by the [eframe::App::update] method
-    pub fn show(&mut self, ui: &mut Ui, data: &mut AppData, token_selection_window: &mut TokenSelectionWindow) {
+    pub fn show(&mut self, ui: &mut Ui, data: &mut AppData) {
         if self.state.is_close() {
             return;
         }
@@ -81,10 +83,10 @@ impl SendCryptoScreen {
                         .min_size(vec2(75.0, 30.0));
 
                     if ui.add(currency_button).clicked() {
-                        token_selection_window.state.open();
+                        self.token_selection_window.state.open();
                     }
 
-                    let selected = token_selection_window.show(ui, data, &currencies);
+                    let selected = self.token_selection_window.show(ui, data, &currencies);
                     if let Some(selected) = selected {
                         self.selected_currency = selected;
                     }

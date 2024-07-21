@@ -8,6 +8,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-eframe = "0.28.1"
+eframe = {version = "0.28.1", features = ["wgpu"]}
 egui_extras = {version = "0.28.1", features = ["svg", "image"]}
 zeus-gui = { path = "crates/zeus-gui" }

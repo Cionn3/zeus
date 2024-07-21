@@ -38,6 +38,10 @@ pub struct IconTextures {
     // Misc Icons
     pub send: TextureHandle,
     pub receive: TextureHandle,
+
+    // Erc20 placeholder icons
+    pub erc20: TextureHandle,
+    pub bep20: TextureHandle,
 }
 
 impl IconTextures {
@@ -65,8 +69,11 @@ impl IconTextures {
         let rename = load_image_from_memory(include_bytes!("settings/wallet/rename.png"), 16, 16)?;
 
         // Misc Icons
-        let send = load_image_from_memory(include_bytes!("misc/send.png"), 24, 24)?;
-        let receive = load_image_from_memory(include_bytes!("misc/receive.png"), 24, 24)?;
+        let send = load_image_from_memory(include_bytes!("misc/send.png"), 16, 16)?;
+        let receive = load_image_from_memory(include_bytes!("misc/receive.png"), 16, 16)?;
+
+        let erc20 = load_image_from_memory(include_bytes!("currency/erc20.png"), 24, 24)?;
+        let bep20 = load_image_from_memory(include_bytes!("currency/bep20.png"), 36, 36)?;
 
 
         let texture_options = TextureOptions::default();
@@ -89,6 +96,8 @@ impl IconTextures {
             rename: ctx.load_texture("rename", rename, texture_options),
             send: ctx.load_texture("send", send, texture_options),
             receive: ctx.load_texture("receive", receive, texture_options),
+            erc20: ctx.load_texture("erc20", erc20, texture_options),
+            bep20: ctx.load_texture("bep20", bep20, texture_options),
         })
     }
 
@@ -146,6 +155,25 @@ impl IconTextures {
     /// Return the rename icon as [Image]
     pub fn rename(&self) -> Image<'static> {
         Image::new(&self.rename)
+    }
+
+    /// Return the erc20 icon as [Image]
+    pub fn erc20_icon(&self) -> Image<'static> {
+        Image::new(&self.erc20)
+    }
+
+    /// Return the bep20 icon as [Image]
+    pub fn bep20_icon(&self) -> Image<'static> {
+        Image::new(&self.bep20)
+    }
+
+    /// Return Token Placeholder icon based on the chain_id
+    pub fn token_icon(&self, id: u64) -> Image<'static> {
+        match id {
+            1 => Image::new(&self.erc20),
+            56 => Image::new(&self.bep20),
+            _ => Image::new(&self.erc20),
+        }
     }
 
 
