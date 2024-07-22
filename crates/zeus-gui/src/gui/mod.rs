@@ -131,11 +131,8 @@ impl GUI {
                             .clicked()
                         {
                             // Send a request to the backend to get the client
-                            self.send_request(Request::GetClient {
-                                chain_id: chain_id.clone(),
-                                rpcs: data.rpc.clone(),
-                                clients: data.ws_client.clone(),
-                            });
+                            let req = Request::client(chain_id.clone(), data.rpc.clone());
+                            self.send_request(req);
 
                             let mut swap_ui_state = SWAP_UI_STATE.write().unwrap();
                             swap_ui_state.default_input(chain_id.id());
@@ -146,7 +143,7 @@ impl GUI {
             ui.add(
                 self.theme
                     .icons
-                    .connected_icon(data.connected(data.chain_id.id())),
+                    .connected_icon(data.connected()),
             );
         });
     }

@@ -2,7 +2,7 @@ use std::{ path::Path, str::FromStr };
 use std::sync::{Arc, RwLock};
 use std::collections::HashMap;
 
-use zeus_core::{anyhow, Profile, Credentials};
+use zeus_core::{anyhow, Profile};
 use zeus_chain::{alloy::primitives::{U256, Address}, ChainId, Rpc, BlockInfo, WsClient, serde_json};
 use crate::cache::{SHARED_CACHE, SharedCache};
 use tracing::trace;
@@ -54,8 +54,11 @@ pub struct AppData {
 
     pub next_block: BlockInfo,
 
-    /// A map of all connected websocket clients
-    pub ws_client: HashMap<u64, Arc<WsClient>>,
+    /// The current client
+    pub client: Option<Arc<WsClient>>,
+
+    /// Are we connected to the client?
+    pub connected: bool,
 
     /// The current selected chain id
     pub chain_id: ChainId,
@@ -84,21 +87,12 @@ pub struct AppData {
     ///
     /// We lookup for a `profile.data` file in the current directory of the executable
     pub profile_exists: bool,
-
-    /// Currently Copy/Pasted private key (Used in Import Wallet button)
-    pub private_key: String,
-
-    /// Current input Name of a wallet (Used in New Wallet button)
-    pub wallet_name: String,
-
-    /// Confirm credentials for exporting a private key
-    pub confirm_credentials: Credentials,
 }
 
 impl AppData {
     /// Get current client
-    pub fn client(&self) -> Option<Arc<WsClient>> {
-        self.ws_client.get(&self.chain_id.id()).cloned()
+    pub fn client(&self) -> &Option<Arc<WsClient>> {
+        &self.client
     }
 
     pub fn supported_networks(&self) -> Vec<u64> {
@@ -109,12 +103,8 @@ impl AppData {
             .collect()
     }
 
-    /// Are we connected to the provided chain id?
-    ///
-    /// We check if a ws_client exists for the provided chain id
-    // ! Not 100% reliable as we may lose connection to the client
-    pub fn connected(&self, chain_id: u64) -> bool {
-        self.ws_client.contains_key(&chain_id)
+    pub fn connected(&self) -> bool {
+        self.client.is_some()
     }
 
     /// Return the latest block
@@ -192,7 +182,8 @@ impl Default for AppData {
         Self {
             latest_block: BlockInfo::default(),
             next_block: BlockInfo::default(),
-            ws_client: HashMap::new(),
+            client: None,
+            connected: false,
             chain_id: ChainId::default(),
             chain_ids: NETWORKS.to_vec(),
             rpc,
@@ -202,9 +193,6 @@ impl Default for AppData {
             logged_in: false,
             new_profile_screen,
             profile_exists,
-            private_key: "".to_string(),
-            wallet_name: "".to_string(),
-            confirm_credentials: Credentials::default(),
         }
     }
 }

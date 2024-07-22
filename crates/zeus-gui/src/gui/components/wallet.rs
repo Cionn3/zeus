@@ -310,7 +310,7 @@ impl ImportWalletUI {
                             }
                         }
 
-                        self.send_request(Request::SaveProfile { profile: data.profile.clone() });
+                        self.send_request(Request::SaveProfile(data.profile.clone()));
                     }
                     ui.add_space(15.0);
 
@@ -416,7 +416,7 @@ impl CreateNewWalletUI {
                             }
                         }
 
-                        self.send_request(Request::SaveProfile { profile: data.profile.clone() });
+                        self.send_request(Request::SaveProfile(data.profile.clone()));
                     }
                     ui.add_space(15.0);
 

@@ -3,6 +3,7 @@ pub mod evm_types;
 pub mod utils;
 pub mod chain_id;
 pub mod rpc;
+pub mod tx;
 
 
 // * Re-exports

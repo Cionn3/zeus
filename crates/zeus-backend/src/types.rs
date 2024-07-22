@@ -12,107 +12,151 @@ use zeus_chain::{
     ChainId, Rpc, WsClient,
 };
 use zeus_core::Profile;
-use zeus_shared_types::SelectedCurrency;
+
+pub struct EthBalanceParams {
+    pub owner: Address,
+    pub chain_id: u64,
+    pub block: u64,
+    pub client: Arc<WsClient>
+}
+
+pub struct ERC20BalanceParams {
+    pub token: ERC20Token,
+    pub owner: Address,
+    pub chain_id: u64,
+    pub block: u64,
+    pub client: Arc<WsClient>
+}
+pub struct ERC20TokenParams {
+    pub currency_id: String,
+    pub owner: Address,
+    pub token: Address,
+    pub chain_id: u64,
+    pub client: Arc<WsClient>
+}
+
+pub struct ERC20BalanceRes {
+    pub owner: Address,
+    pub token: Address,
+    pub balance: U256,
+    pub chain_id: u64
+}
+
+pub struct ERC20TokenRes {
+    pub currency_id: String,
+    pub owner: Address,
+    pub token: ERC20Token,
+    pub balance: U256,
+    pub chain_id: u64
+}
+
 
 /// Request received from the frontend
 pub enum Request {
     /// Thing to do on the startup of the application
     ///
     /// For now we just connect on the default chain and initialize the oracles
-    OnStartup { chain_id: ChainId, rpcs: Vec<Rpc> },
+    OnStartup(ChainId, Vec<Rpc>),
 
     /// Initialize the Oracles
-    InitOracles {
-        client: Arc<WsClient>,
-        chain_id: ChainId,
-    },
-
-    /// Simulate a swap
-    GetQuoteResult {
-        /// Parameters needed to simulate a swap
-        params: SwapParams,
-    },
+    InitOracles(Arc<WsClient>, ChainId),
 
     /// Get the eth balance of an address on a chain at a specific block
-    EthBalance {
-        owner: Address,
-        chain_id: u64,
-        block: u64,
-        client: Arc<WsClient>,
-    },
+    EthBalance(EthBalanceParams),
 
     /// Get the ERC20 Balance
-    GetERC20Balance {
-        token: ERC20Token,
-        owner: Address,
-        chain_id: u64,
-        block: u64,
-        client: Arc<WsClient>,
-    },
+    ERC20Balance(ERC20BalanceParams),
 
     /// Encrypt and save the profile
-    SaveProfile { profile: Profile },
+    SaveProfile(Profile),
 
-    GetClient {
-        chain_id: ChainId,
-        rpcs: Vec<Rpc>,
-        clients: HashMap<u64, Arc<WsClient>>,
-    },
+    Client(ChainId, Vec<Rpc>),
 
-    GetERC20Token {
-        id: String,
-        owner: Address,
-        address: Address,
-        client: Arc<WsClient>,
-        chain_id: u64,
-    },
+    ERC20Token(ERC20TokenParams)
 
+}
+
+impl Request {
+
+    pub fn client(chain_id: ChainId, rpcs: Vec<Rpc>) -> Self {
+        Request::Client(chain_id, rpcs)
+    }
+
+    pub fn on_startup(chain_id: ChainId, rpcs: Vec<Rpc>) -> Self {
+        Request::OnStartup(chain_id, rpcs)
+    }
+
+    pub fn init_oracles(client: Arc<WsClient>, chain_id: ChainId) -> Self {
+        Request::InitOracles(client, chain_id)
+    }
+
+    pub fn erc20_token(currency_id: String, owner: Address, token: Address, chain_id: u64, client: Arc<WsClient>) -> Self {
+        Request::ERC20Token(ERC20TokenParams {
+            currency_id,
+            owner,
+            token,
+            chain_id,
+            client
+        })
+    }
+
+    pub fn eth_balance(owner: Address, chain_id: u64, block: u64, client: Arc<WsClient>) -> Self {
+        Request::EthBalance(EthBalanceParams {
+            owner,
+            chain_id,
+            block,
+            client
+        })
+    }
+
+    pub fn erc20_balance(token: ERC20Token, owner: Address, chain_id: u64, block: u64, client: Arc<WsClient>) -> Self {
+        Request::ERC20Balance(ERC20BalanceParams {
+            token,
+            owner,
+            chain_id,
+            block,
+            client
+        })
+    }
 }
 
 /// The response from the backend
 pub enum Response {
     EthBalance(U256),
 
-    GetClient(Arc<WsClient>, ChainId),
+    Client(Option<Arc<WsClient>>, ChainId),
 
-    GetERC20Token{
-        currency_id: String,
-        owner: Address,
-        token: ERC20Token,
-        balance: U256,
-        chain_id: u64
-    },
+    ERC20Token(ERC20TokenRes),
 
-    GetERC20Balance {
-        owner: Address,
-        token: Address,
-        chain_id: u64,
-        balance: U256
-    }
+    ERC20Balance(ERC20BalanceRes)
 }
 
-/// Parameters needed to simulate a swap
-#[derive(Clone)]
-pub struct SwapParams {
-    /// The target Chain id
-    pub chain_id: ChainId,
+impl Response {
 
-    /// Latest block
-    pub block: Block,
+    pub fn eth_balance(balance: U256) -> Self {
+        Response::EthBalance(balance)
+    }
 
-    /// Client to make rpc calls
-    pub client: Arc<RootProvider<PubSubFrontend>>,
+    pub fn client(client: Option<Arc<WsClient>>, chain_id: ChainId) -> Self {
+        Response::Client(client, chain_id)
+    }
 
-    pub token_in: SelectedCurrency,
+    pub fn erc20_token(currency_id: String, owner: Address, token: ERC20Token, balance: U256, chain_id: u64) -> Self {
+        Response::ERC20Token(ERC20TokenRes {
+            currency_id,
+            owner,
+            token,
+            balance,
+            chain_id
+        })
+    }
 
-    pub token_out: SelectedCurrency,
-
-    /// Amount of tokens we want to swap
-    pub amount_in: String,
-
-    /// Address of the caller
-    pub caller: Address,
-
-    /// Slippage
-    pub slippage: String,
+    pub fn erc20_balance(owner: Address, token: Address, balance: U256, chain_id: u64) -> Self {
+        Response::ERC20Balance(ERC20BalanceRes {
+            owner,
+            token,
+            balance,
+            chain_id
+        })
+    }
 }

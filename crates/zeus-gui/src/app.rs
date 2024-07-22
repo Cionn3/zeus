@@ -19,7 +19,7 @@ use crate::{
 
 use zeus_backend::{
     db::ZeusDB,
-    types::{Request, Response},
+    types::*,
     Backend,
 };
 use zeus_chain::{
@@ -261,12 +261,10 @@ impl ZeusApp {
             return;
         }
 
-        let req = Request::EthBalance {
-            owner: self.data.wallet_address(),
-            chain_id: self.data.chain_id.id(),
-            block: self.data.latest_block().number,
-            client: self.data.client().unwrap(),
-        };
+        let client = self.data.client().clone().unwrap();
+
+        let req = Request::eth_balance(owner, chain, latest_block, client);
+
         self.send_request(req);
         self.last_eth_request = now;
         // insert just the latest block to avoid duplicate requests
@@ -310,21 +308,18 @@ impl ZeusApp {
             return;
         }
 
-        let client = self.data.client().unwrap();
+        let client = self.data.client().clone().unwrap();
         let currency_in = self.gui.swap_ui.currency_in.clone();
         let currency_out = self.gui.swap_ui.currency_out.clone();
+        let owner = self.data.wallet_address();
+        let chain_id = self.data.chain_id.id();
 
         if !currency_in.is_native() {
             // currency is an ERC20 token
             let token = currency_in.erc20().unwrap();
 
-            let req = Request::GetERC20Balance {
-                token: token.clone(),
-                owner: self.data.wallet_address(),
-                chain_id: self.data.chain_id.id(),
-                block: latest_block,
-                client: client.clone(),
-            };
+            let req = Request::erc20_balance(token.clone(), owner, chain_id, latest_block, client.clone());
+
             self.send_request(req);
             info!("Request sent for input token: {:?}", token.symbol);
         }
@@ -332,13 +327,8 @@ impl ZeusApp {
         if !currency_out.is_native() {
             let token = currency_out.erc20().unwrap();
 
-            let req = Request::GetERC20Balance {
-                token: token.clone(),
-                owner: self.data.wallet_address(),
-                chain_id: self.data.chain_id.id(),
-                block: latest_block,
-                client,
-            };
+            let req = Request::erc20_balance(token.clone(), owner, chain_id, latest_block, client);
+
             self.send_request(req);
             info!("Request sent for output token: {:?}", token.symbol);
         }
@@ -368,46 +358,42 @@ impl ZeusApp {
                 self.update_eth_balance(balance);
             }
 
-            Response::GetClient(client, chain_id) => {
-                self.data.ws_client.insert(chain_id.id(), client.clone());
+            Response::Client(client, chain_id) => {
                 trace!("Changed Chain: {:?}", chain_id.name().clone());
 
+                self.data.client = client.clone();
                 self.gui.swap_ui.default_input(chain_id.id());
                 self.gui.swap_ui.default_output(chain_id.id());
+                self.gui.send_screen.default_input(chain_id.id());
 
                 // setup block oracle
-                self.send_request(Request::InitOracles {
-                    client,
-                    chain_id: chain_id.clone(),
-                });
+                if client.is_some() {
+                let client = client.unwrap();
+                let req = Request::init_oracles(client.clone(), chain_id.clone());
+                self.send_request(req);
+            }
             }
 
-            Response::GetERC20Token {
-                currency_id,
-                owner,
-                token,
-                balance,
-                chain_id,
-            } => {
-                let currency = Currency::new_erc20(token.clone());
-                self.gui.swap_ui.replace_currency(&currency_id, currency.clone());
+            Response::ERC20Token(res) => {
+                let currency = Currency::new_erc20(res.token.clone());
+                self.gui.swap_ui.replace_currency(&res.currency_id, currency.clone());
 
                 let mut shared_cache = SHARED_CACHE.write().unwrap();
                 shared_cache.erc20_balance.insert(
-                        (chain_id, owner, token.address),
-                        balance,
+                        (res.chain_id, res.owner, res.token.address),
+                        res.balance,
                     );
                 
-                shared_cache.add_currency(chain_id, currency);
+                shared_cache.add_currency(res.chain_id, currency);
             }
 
-            Response::GetERC20Balance { owner, token, chain_id, balance } => {
+            Response::ERC20Balance(res) => {
                 let mut shared_cache = SHARED_CACHE.write().unwrap();
                 shared_cache.erc20_balance.insert(
-                    (chain_id, owner, token),
-                    balance,
+                    (res.chain_id, res.owner, res.token),
+                    res.balance,
                 );
-                trace!("ERC20 Balance Updated For: {:?}", token);
+                trace!("ERC20 Balance Updated For: {:?}", res.token);
         }
     }
 }
@@ -433,10 +419,8 @@ impl eframe::App for ZeusApp {
 
         if self.on_startup {
             if self.data.logged_in {
-                self.send_request(Request::OnStartup {
-                    chain_id: self.data.chain_id.clone(),
-                    rpcs: self.data.rpc.clone(),
-                });
+                let req = Request::on_startup(self.data.chain_id.clone(), self.data.rpc.clone());
+                self.send_request(req);
 
                 // run only once
                 self.on_startup = false;

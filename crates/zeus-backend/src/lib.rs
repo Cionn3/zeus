@@ -17,11 +17,8 @@ use zeus_chain::{
 
 use zeus_core::Profile;
 use zeus_shared_types::{ErrorMsg, SelectedCurrency, SHARED_UI_STATE, SWAP_UI_STATE};
-
-use crate::{
-    db::ZeusDB,
-    types::{Request, Response, SwapParams},
-};
+use anyhow::anyhow;
+use crate::{db::ZeusDB, types::*};
 
 pub mod db;
 pub mod types;
@@ -65,18 +62,20 @@ impl Backend {
             loop {
                 match self.front_receiver.recv() {
                     Ok(request) => match request {
-                        Request::OnStartup { chain_id, rpcs } => {
+                        Request::OnStartup(chain_id, rpcs) => {
                             println!("On Startup");
                             match self.get_client(chain_id.clone(), rpcs.clone()).await {
                                 Ok(_) => {}
                                 Err(e) => {
+                                    let res = Response::client(None, chain_id);
+                                    self.send_response(res);
                                     let mut state = SHARED_UI_STATE.write().unwrap();
                                     state.err_msg.show(e);
                                 }
                             }
                         }
 
-                        Request::InitOracles { client, chain_id } => {
+                        Request::InitOracles(client, chain_id) => {
                             match self.init_oracles(client, chain_id).await {
                                 Ok(_) => {}
                                 Err(e) => {
@@ -86,15 +85,9 @@ impl Backend {
                             }
                         }
 
-                        Request::GetERC20Balance {
-                            token,
-                            owner,
-                            chain_id,
-                            block,
-                            client,
-                        } => {
+                        Request::ERC20Balance(params) => {
                             match self
-                                .get_erc20_balance(token, owner, chain_id, block, client)
+                                .get_erc20_balance(params.token, params.owner, params.chain_id, params.block, params.client)
                                 .await
                             {
                                 Ok(_) => {}
@@ -105,17 +98,15 @@ impl Backend {
                             }
                         }
 
-                        Request::GetQuoteResult { params } => {
-                            let mut state = SHARED_UI_STATE.write().unwrap();
-                            state.err_msg.show("TODO");
-                        }
-
-                        Request::EthBalance {
-                            owner,
-                            chain_id,
-                            block,
-                            client,
-                        } => match self.get_eth_balance(owner, chain_id, block, client).await {
+                        Request::EthBalance(params) => match self
+                            .get_eth_balance(
+                                params.owner,
+                                params.chain_id,
+                                params.block,
+                                params.client,
+                            )
+                            .await
+                        {
                             Ok(_) => {}
                             Err(e) => {
                                 let mut state = SHARED_UI_STATE.write().unwrap();
@@ -123,7 +114,7 @@ impl Backend {
                             }
                         },
 
-                        Request::SaveProfile { profile } => match self.save_profile(profile) {
+                        Request::SaveProfile(profile) => match self.save_profile(profile) {
                             Ok(_) => {}
                             Err(e) => {
                                 let mut state = SHARED_UI_STATE.write().unwrap();
@@ -131,38 +122,24 @@ impl Backend {
                             }
                         },
 
-                        Request::GetClient {
-                            chain_id,
-                            rpcs,
-                            clients,
-                        } => {
+                        Request::Client(chain_id, rpcs) => {
                             info!("Received Request to get client: {}", chain_id.name());
-                            if !clients.contains_key(&chain_id.id()) {
-                                match self.get_client(chain_id, rpcs).await {
+                            
+                                match self.get_client(chain_id.clone(), rpcs).await {
                                     Ok(_) => {}
                                     Err(e) => {
+                                        let res = Response::client(None, chain_id);
+                                        self.send_response(res);
                                         let mut state = SHARED_UI_STATE.write().unwrap();
                                         state.err_msg.show(e);
                                     }
                                 }
-                            } else {
-                                let client = clients.get(&chain_id.id()).unwrap().clone();
-                                match self.back_sender.send(Response::GetClient(client, chain_id)) {
-                                    Ok(_) => {}
-                                    Err(e) => println!("Error Sending Response: {}", e),
-                                }
-                            }
+                            
                         }
 
-                        Request::GetERC20Token {
-                            id,
-                            owner,
-                            address,
-                            client,
-                            chain_id,
-                        } => {
+                        Request::ERC20Token(params) => {
                             match self
-                                .get_erc20_token(id, owner, address, client, chain_id)
+                                .get_erc20_token(params.currency_id, params.owner, params.token, params.client, params.chain_id)
                                 .await
                             {
                                 Ok(_) => {}
@@ -177,6 +154,13 @@ impl Backend {
                 }
             }
         })
+    }
+
+    fn send_response(&self, response: Response) {
+        match self.back_sender.send(response)  {
+            Ok(_) => {}
+            Err(e) => error!("Error sending response to front: {}", e),
+        }     
     }
 
     async fn init_oracles(
@@ -268,14 +252,9 @@ impl Backend {
         };
 
         let balance = token.balance_of(owner, client).await?;
+        let res = Response::erc20_token(currency_id, owner, token, balance, chain_id);
 
-        self.back_sender.send(Response::GetERC20Token {
-            currency_id,
-            owner,
-            token,
-            balance,
-            chain_id,
-        })?;
+        self.back_sender.send(res)?;
 
         Ok(())
     }
@@ -300,13 +279,9 @@ impl Backend {
         }
 
         trace!("Got Balance {} For Token: {}", balance, token.address);
+        let res = Response::erc20_balance(owner, token.address, balance, chain_id);
 
-        self.back_sender.send(Response::GetERC20Balance {
-            owner,
-            token: token.address,
-            chain_id,
-            balance,
-        })?;
+        self.back_sender.send(res)?;
 
         Ok(())
     }
@@ -328,8 +303,13 @@ impl Backend {
         let client = ProviderBuilder::new().on_ws(WsConnect::new(url)).await?;
         let client = Arc::new(client);
 
-        self.back_sender
-            .send(Response::GetClient(client, chain_id))?;
+        let client_chain_id = client.get_chain_id().await?;
+        if client_chain_id != chain_id.id() {
+            return Err(anyhow!("Chain ID Mismatch, Expected: {}, Got: {}", chain_id.id(), client_chain_id));
+        }
+
+        let res = Response::client(Some(client), chain_id);
+        self.back_sender.send(res)?;
         Ok(())
     }
 }

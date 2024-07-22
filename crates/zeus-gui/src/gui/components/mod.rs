@@ -5,11 +5,11 @@ pub mod wallet;
 use crate::{fonts::roboto_regular, icons::IconTextures, theme::THEME};
 use crossbeam::channel::Sender;
 use eframe::egui::{
-    emath::Vec2b, vec2, Align2, FontId, Button, Color32, RichText, ScrollArea, Sense, TextEdit, Ui, Window,
+    emath::Vec2b, vec2, Align, Align2, Button, Color32, FontId, Layout, RichText, ScrollArea, Sense, TextEdit, Ui, Window
 };
 use std::{str::FromStr, sync::Arc};
 use tracing::trace;
-use zeus_backend::types::Request;
+use zeus_backend::types::*;
 use zeus_chain::{alloy::primitives::Address, defi_types::currency::Currency, utils::format_wei};
 use zeus_shared_types::{cache::SHARED_CACHE, AppData, UiState, SHARED_UI_STATE};
 
@@ -121,7 +121,7 @@ impl TokenSelectionWindow {
                                                 "{} {}",
                                                 formated_balance, native.symbol
                                             ))
-                                            .size(12.0)
+                                            .size(15.0)
                                             .family(roboto_regular())
                                             .color(Color32::WHITE);
 
@@ -130,8 +130,7 @@ impl TokenSelectionWindow {
                                                 .family(roboto_regular())
                                                 .color(Color32::WHITE);
 
-                                            // Use the currency icon cause the
-                                            // erc20 placeholder is diplayed blurry    
+   
                                             let icon = THEME.icons.currency_icon(chain_id);
 
                                             let button = Button::image_and_text(icon, name)
@@ -139,13 +138,18 @@ impl TokenSelectionWindow {
                                                 .sense(Sense::click())
                                                 .min_size(vec2(70.0, 25.0));
 
-                                            ui.vertical_centered(|ui| {
+                                           
+                                                ui.horizontal(|ui| {
+                                        
                                                 if ui.add(button).clicked() {
                                                     selected_currency = Some(currency.clone());
                                                     self.state.close();
                                                 }
+                                                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                                                 ui.label(balance_text);
                                             });
+                                        });
+                                           
 
                                             ui.add_space(5.0);
                                         });
@@ -160,6 +164,8 @@ impl TokenSelectionWindow {
                                                 &owner,
                                                 &token.address,
                                             );
+                                            // TODO: use something like numformat
+                                            // to deal with very large numbers
                                             let balance =
                                                 format_wei(&balance.to_string(), token.decimals);
                                             let formated_balance = format!("{:.4}", balance);
@@ -167,7 +173,7 @@ impl TokenSelectionWindow {
                                                 "{} {}",
                                                 formated_balance, token.symbol
                                             ))
-                                            .size(12.0)
+                                            .size(15.0)
                                             .family(roboto_regular())
                                             .color(Color32::WHITE);
 
@@ -176,6 +182,8 @@ impl TokenSelectionWindow {
                                                 .family(roboto_regular())
                                                 .color(Color32::WHITE);
 
+                                            // Use the currency icon cause the
+                                            // erc20 placeholder is diplayed blurry 
                                             let icon = THEME.icons.currency_icon(chain_id);
 
                                             let button = Button::image_and_text(icon, name)
@@ -183,15 +191,20 @@ impl TokenSelectionWindow {
                                                 .sense(Sense::click())
                                                 .min_size(vec2(70.0, 25.0));
 
-                                            ui.vertical_centered(|ui| {
+                                            
+                                                ui.horizontal(|ui| {
                                                 if ui.add(button).clicked() {
                                                     selected_currency = Some(currency.clone());
                                                     self.state.close();
                                                 }
+                                                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                                                 ui.label(balance_text);
                                             });
-                                            ui.add_space(5.0);
                                         });
+                                           
+                                            ui.add_space(5.0);
+                                        
+                                    });
                                     }
                                 }
                             }
@@ -213,7 +226,7 @@ impl TokenSelectionWindow {
 
                             if ui.add(add_token_button).clicked() {
                                 trace!("Adding Token: {:?}", address);
-                                let client = match data.client() {
+                                let client = match data.client().clone() {
                                     Some(client) => client,
                                     None => {
                                         let mut state = SHARED_UI_STATE.write().unwrap();
@@ -221,13 +234,11 @@ impl TokenSelectionWindow {
                                         return;
                                     }
                                 };
-                                self.send_request(Request::GetERC20Token {
-                                    id: self.get_id(),
-                                    owner: data.wallet_address(),
-                                    address,
-                                    client,
-                                    chain_id: data.chain_id.id(),
-                                });
+                                let owner = data.wallet_address();
+                                let chain_id = data.chain_id.id();
+
+                                let req = Request::erc20_token(self.get_id(), owner, address, chain_id, client );
+                                self.send_request(req);
 
                                 self.state.close();
                             }
