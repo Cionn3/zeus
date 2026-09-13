@@ -20,7 +20,7 @@ use egui::{
    Align, CornerRadius, CursorIcon, FontId, Layout, Margin, OpenUrl, Order, RichText, Slider,
    Spinner, Ui, vec2,
 };
-use egui_elements::{Button, Modal, SecureTextEdit, Theme, visuals::ButtonVisuals};
+use egui_elements::{Button, Label, Modal, SecureTextEdit, Theme, visuals::ButtonVisuals};
 use egui_lucide::Lucide;
 use elegance::{Badge, BadgeTone};
 use std::time::Duration;
@@ -58,6 +58,12 @@ Across relayers and contracts deliver it on the destination.\n\
 Zeus does not custody or control that step.\n\
 If a fill never happens you should get a refund after the deadline, but delays, downtime, or a contract bug can still cost you money.\n\
 Only bridge what you can afford to lose.";
+
+const ACROSS_API_NOTICE: [&str; 3] = [
+   "Zeus uses the Across API to request the fee calculation.",
+   "The URL can be changed or disabled from the Bridge settings.",
+   "No telemetry or data collection is involved. This is a simple HTTP request.",
+];
 
 type ChainPath = (u64, u64);
 
@@ -97,6 +103,9 @@ struct Settings {
    api_url: String,
    use_api: bool,
    fee_to_pay: f64,
+   /// Set after the first-open API notice is dismissed.
+   #[serde(default)]
+   api_notice_shown: bool,
 }
 
 impl Default for Settings {
@@ -105,6 +114,7 @@ impl Default for Settings {
          api_url: String::from("https://app.across.to/api/suggested-fees"),
          use_api: true,
          fee_to_pay: 0.1,
+         api_notice_shown: false,
       }
    }
 }
@@ -220,6 +230,10 @@ impl AcrossBridge {
       contacts_ui: &mut ContactsUi,
       ui: &mut Ui,
    ) {
+      if self.open && !self.settings.api_notice_shown {
+         self.api_notice_window(theme, ui);
+      }
+
       if self.settings_open {
          self.settings_window(theme, ui);
       }
@@ -747,6 +761,49 @@ impl AcrossBridge {
             }
          }
       }
+   }
+
+   fn api_notice_window(&mut self, theme: &Theme, ui: &mut Ui) {
+      let mut open = true;
+      let title = RichText::new("Across API").size(theme.typography.heading);
+      let frame = theme.window_frame.fill(theme.frame1.fill);
+
+      Modal::new("across_api_notice", &mut open)
+         .backdrop_order(Order::Middle)
+         .content_order(Order::Foreground)
+         .heading(title)
+         .header_separator(false)
+         .center_header(true)
+         .closable(false)
+         .frame(frame)
+         .show(ui.ctx(), |ui| {
+            ui.set_width(450.0);
+            ui.spacing_mut().item_spacing.y = theme.spacing.md;
+            ui.spacing_mut().button_padding = theme.button_padding;
+
+            let content_width = ui.available_width();
+            ui.vertical(|ui| {
+               ui.set_width(content_width);
+               for line in ACROSS_API_NOTICE {
+                  let text = RichText::new(line).size(theme.typography.normal);
+                  ui.add(Label::new(text, None).wrap().fill_width(true).interactive(false));
+               }
+            });
+
+            ui.vertical_centered(|ui| {
+               let text = RichText::new("OK").size(theme.typography.normal);
+               let ok_button = Button::new(text).min_size(vec2(content_width * 0.9, 45.0));
+               if ui.add(ok_button).clicked() {
+                  self.settings.api_notice_shown = true;
+                  let settings = self.settings.clone();
+                  RT.spawn_blocking(move || {
+                     if let Err(e) = save_settings(settings) {
+                        tracing::error!("Error saving settings: {:?}", e);
+                     }
+                  });
+               }
+            });
+         });
    }
 
    fn settings_window(&mut self, theme: &Theme, ui: &mut Ui) {
