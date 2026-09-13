@@ -7,15 +7,18 @@ use egui::{
    Align, FontId, Layout, Margin, Order, RichText, ScrollArea, TextEdit, Ui,
    scroll_area::ScrollBarVisibility, vec2,
 };
-use egui_elements::{Label, Modal, MultiLabel, Theme};
+use egui_elements::{
+   Button, Label, Modal, MultiLabel, Theme,
+   widgets::{Badge as CornerBadge, BadgeCorner},
+};
 use egui_lucide::Lucide;
 use elegance::{Badge, BadgeTone};
 use zeus_eth::alloy_primitives::TxHash;
 
 use crate::assets::icons::Icons;
-use crate::core::ZeusContext;
 use crate::core::clear_signing::{ClearDisplay, FormattedValue};
 use crate::core::tx::{ApprovalChange, ApprovalDiff, ApprovalKind, BalanceChange, BalanceDiff};
+use crate::core::{TransactionAnalysis, ZeusContext};
 use crate::gui::SHARED_GUI;
 use crate::utils::{RT, truncate_address, truncate_hash};
 use zeus_eth::{
@@ -391,6 +394,85 @@ pub fn show_approval_diff_rows(
    }
 }
 
+/// Which of the [`show_analysis_buttons`] buttons were clicked
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AnalysisButtons {
+   pub events: bool,
+   pub calldata: bool,
+   pub balance_and_approvals: bool,
+}
+
+/// The Events / Calldata / Balance & Approvals buttons.
+///
+/// A [`CornerBadge`] is painted on top of the button and reserves no layout
+/// space, so the row relies on `button_padding` for the badge to clear the
+/// label. Note that `Button::min_size` is only a floor: a button grows past its
+/// share of the row as soon as its label plus that padding is wider than the
+/// share, which stretches the whole column. "Balance & Approvals" at
+/// `theme.typography.large` takes ~202 points that way, so [`width`] must be
+/// wide enough for `n * 202 + gap` — the modals hosting this row are sized for
+/// it.
+pub fn show_analysis_buttons(
+   analysis: &TransactionAnalysis,
+   theme: &Theme,
+   width: f32,
+   ui: &mut Ui,
+) -> AnalysisButtons {
+   let mut clicked = AnalysisButtons::default();
+
+   let has_diffs = !analysis.balance_diff.is_empty() || !analysis.approval_diff.is_empty();
+
+   let n = match has_diffs {
+      true => 3.0,
+      false => 2.0,
+   };
+
+   let height = 30.0;
+   let gap = theme.spacing.sm * (n - 1.0);
+   let size = vec2((width - gap) / n, height);
+   let button_visuals = theme.button_visuals();
+
+   ui.allocate_ui(vec2(width, height), |ui| {
+      ui.set_width(width);
+      ui.horizontal(|ui| {
+         ui.spacing_mut().item_spacing.x = theme.spacing.sm;
+         // room for the badge, which is painted over the button
+         ui.spacing_mut().button_padding.x = theme.spacing.md;
+
+         let text = RichText::new("Events").size(theme.typography.large);
+         let mut button = Button::new(text).visuals(button_visuals).min_size(size);
+
+         let event_count = analysis.decoded_events.len();
+         if event_count > 0 {
+            let text = RichText::new(event_count.to_string()).size(theme.typography.very_small);
+            let badge = CornerBadge::new(text).corner(BadgeCorner::TopRight);
+            button = button.badge(badge);
+         }
+
+         clicked.events = ui.add(button).clicked();
+
+         let text = RichText::new("Calldata").size(theme.typography.large);
+         let button = Button::new(text).visuals(button_visuals).min_size(size);
+
+         clicked.calldata = ui.add(button).clicked();
+
+         if has_diffs {
+            let diff_count = analysis.balance_diff.len() + analysis.approval_diff.changes.len();
+
+            let text = RichText::new(diff_count.to_string()).size(theme.typography.very_small);
+            let badge = CornerBadge::new(text).corner(BadgeCorner::TopRight);
+
+            let text = RichText::new("State").size(theme.typography.large);
+            let button = Button::new(text).badge(badge).visuals(button_visuals).min_size(size);
+
+            clicked.balance_and_approvals = ui.add(button).clicked();
+         }
+      });
+   });
+
+   clicked
+}
+
 pub fn show_tx_diffs_modal(
    open: &mut bool,
    theme: &Theme,
@@ -401,7 +483,7 @@ pub fn show_tx_diffs_modal(
    approval_diff: &ApprovalDiff,
    ui: &mut Ui,
 ) {
-   let heading = RichText::new("Balance & Approvals").size(theme.typography.heading);
+   let heading = RichText::new("State Changes").size(theme.typography.heading);
    let modal_frame = theme.window_frame.fill(theme.frame1.fill);
    let modal_width = 720.0;
 

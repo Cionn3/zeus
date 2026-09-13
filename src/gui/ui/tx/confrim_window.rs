@@ -2,8 +2,9 @@ use egui::{Align, Id, Layout, Margin, Order, RichText, ScrollArea, Ui, vec2};
 use egui_elements::{Button, Label, Modal, SecureTextEdit, Theme};
 
 use super::{
-   address, chain, clear_display_ui, eth_received, events::*, show_approval_diff_rows,
-   show_balance_diff_rows, show_calldata_modal, show_tx_diffs_modal, tx_cost, value,
+   address, chain, clear_display_ui, eth_received, events::*, show_analysis_buttons,
+   show_approval_diff_rows, show_balance_diff_rows, show_calldata_modal, show_tx_diffs_modal,
+   tx_cost, value,
 };
 use crate::assets::icons::Icons;
 use crate::core::clear_signing::{self, ClearDisplay};
@@ -512,45 +513,20 @@ impl TxConfirmationWindow {
                }
 
                // Decoded Events / Calldata / Balance & Approvals
-               let ui_size = vec2(ui.available_width() * avail_width_margin, 45.0);
-               ui.allocate_ui(ui_size, |ui| {
-                  ui.set_width(ui_size.x);
-                  ui.horizontal(|ui| {
-                     ui.spacing_mut().item_spacing.x = theme.spacing.sm;
-                     let has_diffs =
-                        !analysis.balance_diff.is_empty() || !analysis.approval_diff.is_empty();
+               let buttons_size = ui.available_width() * avail_width_margin;
+               let buttons = show_analysis_buttons(analysis, theme, buttons_size, ui);
 
-                     let n = match has_diffs {
-                        true => 3.0,
-                        false => 2.0,
-                     };
-                     let gap = theme.spacing.sm * (n - 1.0);
-                     let button_size = vec2((ui.available_width() - gap) / n, 30.0);
+               if buttons.events {
+                  self.decoded_events.open();
+               }
 
-                     let text = RichText::new("Events").size(theme.typography.large);
-                     let button =
-                        Button::new(text).visuals(theme.button_visuals()).min_size(button_size);
-                     if ui.add(button).clicked() {
-                        self.decoded_events.open();
-                     }
+               if buttons.calldata {
+                  self.show_calldata = true;
+               }
 
-                     let text = RichText::new("Calldata").size(theme.typography.large);
-                     let button = Button::new(text).visuals(button_visuals).min_size(button_size);
-                     if ui.add(button).clicked() {
-                        self.show_calldata = true;
-                     }
-
-                     if has_diffs {
-                        let text =
-                           RichText::new("Balance & Approvals").size(theme.typography.large);
-                        let button =
-                           Button::new(text).visuals(button_visuals).min_size(button_size);
-                        if ui.add(button).clicked() {
-                           self.show_diffs = true;
-                        }
-                     }
-                  });
-               });
+               if buttons.balance_and_approvals {
+                  self.show_diffs = true;
+               }
 
                let sufficient_balance =
                   self.sufficient_balance(ctx, analysis.value_sent().wei(), analysis.sender);
@@ -666,7 +642,12 @@ impl TxConfirmationWindow {
                   ui.horizontal(|ui| {
                      ui.spacing_mut().item_spacing.x = theme.spacing.xl;
 
-                     let button_size = vec2(ui.available_width() * 0.5, 45.0);
+                     // leave room for the gap between the two buttons,
+                     // otherwise the row overflows to the right
+                     let button_size = vec2(
+                        (ui.available_width() - theme.spacing.xl) * 0.5,
+                        45.0,
+                     );
 
                      let text = RichText::new("Confirm").size(theme.typography.large);
                      let confirm = Button::new(text).min_size(button_size).visuals(button_visuals);

@@ -2,8 +2,9 @@ use egui::{Id, Order, RichText, ScrollArea, Spinner, Ui, vec2};
 use egui_elements::{Button, Modal, Theme};
 
 use super::{
-   address, chain, clear_display_ui, eth_received, events::*, show_approval_diff_rows,
-   show_balance_diff_rows, show_calldata_modal, show_tx_diffs_modal, tx_cost, tx_hash, value,
+   address, chain, clear_display_ui, eth_received, events::*, show_analysis_buttons,
+   show_approval_diff_rows, show_balance_diff_rows, show_calldata_modal, show_tx_diffs_modal,
+   tx_cost, tx_hash, value,
 };
 use crate::assets::icons::Icons;
 use crate::core::clear_signing;
@@ -331,45 +332,21 @@ impl TxWindow {
                   });
                }
 
-               let ui_size = vec2(ui.available_width() * 0.9, 45.0);
-               ui.allocate_ui(ui_size, |ui| {
-                  ui.set_width(ui_size.x);
-                  ui.horizontal(|ui| {
-                     ui.spacing_mut().item_spacing.x = theme.spacing.sm;
-                     let has_diffs = !tx.analysis.balance_diff.is_empty()
-                        || !tx.analysis.approval_diff.is_empty();
+               // the row needs the width, see show_analysis_buttons()
+               let buttons_size = ui.available_width() * 0.95;
+               let buttons = show_analysis_buttons(&tx.analysis, theme, buttons_size, ui);
 
-                     let n = match has_diffs {
-                        true => 3.0,
-                        false => 2.0,
-                     };
-                     let gap = theme.spacing.sm * (n - 1.0);
-                     let button_size = vec2((ui.available_width() - gap) / n, 30.0);
+               if buttons.events {
+                  self.decoded_events.open();
+               }
 
-                     let text = RichText::new("Events").size(theme.typography.large);
-                     let button =
-                        Button::new(text).visuals(theme.button_visuals()).min_size(button_size);
-                     if ui.add(button).clicked() {
-                        self.decoded_events.open();
-                     }
+               if buttons.calldata {
+                  self.show_calldata = true;
+               }
 
-                     let text = RichText::new("Calldata").size(theme.typography.large);
-                     let button = Button::new(text).visuals(button_visuals).min_size(button_size);
-                     if ui.add(button).clicked() {
-                        self.show_calldata = true;
-                     }
-
-                     if has_diffs {
-                        let text =
-                           RichText::new("Balance & Approvals").size(theme.typography.large);
-                        let button =
-                           Button::new(text).visuals(button_visuals).min_size(button_size);
-                        if ui.add(button).clicked() {
-                           self.show_diffs = true;
-                        }
-                     }
-                  });
-               });
+               if buttons.balance_and_approvals {
+                  self.show_diffs = true;
+               }
 
                ui.add_space(30.0);
 
