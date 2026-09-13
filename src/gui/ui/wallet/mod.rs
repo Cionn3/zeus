@@ -233,17 +233,17 @@ impl WalletUi {
                let enabled = !wallet.is_master();
 
                Menu::new(id).show_below(&more, |ui| {
-                  if ui.add(MenuItem::new("Export").shortcut("⌘ E")).clicked() {
+                  if ui.add(MenuItem::new("Export")).clicked() {
                      let wallet = ctx.get_wallet(wallet.address);
                      self.export_key_ui.open(wallet);
                   }
 
-                  if ui.add(MenuItem::new("Rename").shortcut("⌘ R")).clicked() {
+                  if ui.add(MenuItem::new("Rename")).clicked() {
                      let wallet_opt = ctx.get_wallet(wallet.address);
                      self.open_rename_wallet(wallet_opt);
                   }
 
-                  if ui.add(MenuItem::new("Show QR Code").shortcut("⌘ Q")).clicked() {
+                  if ui.add(MenuItem::new("Show QR Code")).clicked() {
                      let wallet_clone = wallet.clone();
                      RT.spawn_blocking(move || {
                         SHARED_GUI.write(|gui| {
@@ -253,7 +253,7 @@ impl WalletUi {
                      });
                   }
 
-                  if ui.add_enabled(enabled, MenuItem::new("Delete").shortcut("⌘ D")).clicked() {
+                  if ui.add_enabled(enabled, MenuItem::new("Delete")).clicked() {
                      self.delete_wallet_ui.open(wallet.clone());
                   }
                });

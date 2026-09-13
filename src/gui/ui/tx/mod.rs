@@ -36,6 +36,9 @@ pub use confrim_window::TxConfirmationWindow;
 pub use spent_note_window::{SpentHistoryRow, SpentNoteWindow};
 pub use tx_window::TxWindow;
 
+const NULL_ADDRESS_TIP: &str =
+   "Recipient is null, any tokens sent to this address will be lost forever.";
+
 /// Show the transaction cost in a horizontal layout from left to right
 pub fn tx_cost(
    chain: ChainId,
@@ -123,9 +126,25 @@ pub fn address(
    theme: &Theme,
    ui: &mut Ui,
 ) {
+   let is_recipient = label.contains("Recipient");
+
+   let q_mark = RichText::new("?").size(theme.typography.normal);
+   let danger = Badge::new(q_mark, BadgeTone::Danger);
+   let tip_text = RichText::new(NULL_ADDRESS_TIP).size(theme.typography.large);
+
    ui.horizontal(|ui| {
       ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-         ui.label(RichText::new(label).size(theme.typography.large));
+         let mut text = RichText::new(label).size(theme.typography.large);
+         if is_recipient && address.is_zero() {
+            text = text.color(theme.colors.error);
+            ui.horizontal(|ui| {
+               ui.label(text);
+               ui.add_space(5.0);
+               ui.add(danger).on_hover_text(tip_text);
+            });
+         } else {
+            ui.label(text);
+         }
       });
 
       ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
@@ -251,7 +270,8 @@ pub fn balance_change_row(
       });
       ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
          ui.label(
-            RichText::new(format!("~ ${:.10}", usd_value.abbreviated())).size(theme.typography.large),
+            RichText::new(format!("~ ${:.10}", usd_value.abbreviated()))
+               .size(theme.typography.large),
          );
       });
    });

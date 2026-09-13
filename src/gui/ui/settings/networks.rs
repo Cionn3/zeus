@@ -181,6 +181,17 @@ impl NetworkSettings {
          });
       });
 
+      let p = "Zeus supports load-balancing across enabled RPCs.";
+      let p2 = "You can keep more than one RPC enabled and Zeus will automatically load-balance requests across them.";
+      let text = RichText::new(p).size(theme.typography.small).color(theme.colors.text_muted);
+      let text2 = RichText::new(p2).size(theme.typography.small).color(theme.colors.text_muted);
+
+      ui.scope(|ui| {
+         ui.spacing_mut().item_spacing.y = theme.spacing.xs;
+         ui.label(text);
+         ui.label(text2);
+      });
+
       ui.add_space(12.0);
 
       // Status columns + actions are fixed; leftover width goes to the URL so

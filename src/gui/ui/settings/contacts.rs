@@ -732,23 +732,23 @@ impl ContactsUi {
                let id = format!("{}_more_options", contact.evm_address);
 
                Menu::new(id).show_below(&more, |ui| {
-                  if ui.add(MenuItem::new("Edit").shortcut("⌘ E")).clicked() {
+                  if ui.add(MenuItem::new("Edit")).clicked() {
                      self.view = ContactsPageView::Edit;
                      self.edit_contact.contact_to_edit = contact.clone();
                      self.edit_contact.old_contact = contact.clone();
                   }
 
-                  if ui.add(MenuItem::new("Delete").shortcut("⌘ D")).clicked() {
+                  if ui.add(MenuItem::new("Delete")).clicked() {
                      self.view = ContactsPageView::Delete;
                      self.delete_contact.contact_to_delete = contact.clone();
                   }
 
-                  if ui.add(MenuItem::new("Show QR Code").shortcut("⌘ Q")).clicked() {
+                  if ui.add(MenuItem::new("Show QR Code")).clicked() {
                      self.view = ContactsPageView::Qr;
                      self.qr_window.open(contact.clone());
                   }
 
-                  if ui.add(MenuItem::new("See on Block Explorer").shortcut("⌘ S")).clicked() {
+                  if ui.add(MenuItem::new("See on Block Explorer")).clicked() {
                      let chain = ctx.chain;
                      let explorer = chain.block_explorer();
                      let link = format!("{}/address/{}", explorer, &contact.evm_address);

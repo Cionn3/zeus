@@ -127,6 +127,13 @@ impl SignMsgWindow {
 
                   ui.label(heading);
 
+                  if msg.is_other() {
+                     let p = "Unknown message, review the details below carefully.";
+                     let text =
+                        RichText::new(p).size(theme.typography.normal).color(theme.colors.warning);
+                     ui.label(text);
+                  }
+
                   if msg.is_permit2_single() {
                      ui.allocate_ui(frame_size, |ui| {
                         frame.show(ui, |ui| {
@@ -136,12 +143,7 @@ impl SignMsgWindow {
                   }
 
                   if msg.is_permit2612() {
-                     // Don't pin this card to 45px — EIP-2612 has more rows
-                     // than Permit2, and allocate_ui's max_rect was clipping
-                     // the last (Spender) hyperlink on Walletbeat prompts.
-                     ui.set_min_width(ui.available_width());
                      frame.show(ui, |ui| {
-                        ui.set_min_width(ui.available_width());
                         permit2612_approval(ctx, self.chain, &msg, theme, icons.clone(), ui);
                      });
                   }
@@ -167,14 +169,14 @@ impl SignMsgWindow {
                   // Show the msg
                   if let Some(mut formatted) = self.formatted_msg.clone() {
                      let text_edit = TextEdit::multiline(&mut formatted)
-                        .font(FontId::proportional(theme.typography.large))
+                        .font(FontId::proportional(theme.typography.normal))
                         .margin(Margin::same(10))
-                        .desired_width(ui.available_width() * 0.90);
+                        .desired_width(ui.available_width() * 0.95);
 
                      ui.label(RichText::new("Message").size(theme.typography.large));
 
                      let height = if msg.is_known() { 300.0 } else { 450.0 };
-                     ScrollArea::vertical().max_height(height).show(ui, |ui| {
+                     ScrollArea::vertical().max_height(height).content_margin(5).show(ui, |ui| {
                         ui.add(text_edit);
                      });
                   }
@@ -222,6 +224,7 @@ fn permit2_single_approval(
 ) {
    let details = msg.permit2_details();
    let tint = theme.image_tint_recommended;
+   let icon_size = vec2(24.0, 24.0);
 
    let size = vec2(ui.available_width(), 30.0);
 
@@ -238,11 +241,13 @@ fn permit2_single_approval(
          ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
             let amount = details.amount();
             let text = format!("{:.10} {}", amount, details.token.symbol);
-            let icon = icons.token_icon_x32(
-               details.token.address,
-               details.token.chain_id,
-               tint,
-            );
+            let icon = icons
+               .token_icon_x32(
+                  details.token.address,
+                  details.token.chain_id,
+                  tint,
+               )
+               .fit_to_exact_size(icon_size);
 
             let mut text = RichText::new(text).size(theme.typography.large);
 
@@ -311,6 +316,7 @@ fn permit2612_approval(
 ) {
    let details = msg.permit2612_details();
    let tint = theme.image_tint_recommended;
+   let icon_size = vec2(24.0, 24.0);
 
    chain(chain_id, theme, icons.clone(), ui);
 
@@ -321,19 +327,25 @@ fn permit2612_approval(
 
       ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
          let text = format!("{} {}", details.amount(), details.token.symbol);
-         let icon = icons.token_icon_x32(
-            details.token.address,
-            details.token.chain_id,
-            tint,
-         );
+         let icon = icons
+            .token_icon_x32(
+               details.token.address,
+               details.token.chain_id,
+               tint,
+            )
+            .fit_to_exact_size(icon_size);
+
          let mut text = RichText::new(text).size(theme.typography.large);
+
          if details.is_unlimited() {
             text = text.color(theme.colors.warning);
          }
+
          let label = Label::new(text, Some(icon))
             .wrap()
             .visuals(theme.label_visuals())
             .interactive(false);
+
          ui.add(label);
       });
    });
@@ -381,6 +393,7 @@ fn clear_signed_ui(
    let details = msg.clear_signed_details();
    let display = &details.display;
    let tint = theme.image_tint_recommended;
+   let icon_size = vec2(24.0, 24.0);
 
    if let Some(owner) = display.owner.as_ref() {
       let name = match &display.contract_name {
@@ -422,7 +435,10 @@ fn clear_signed_ui(
                   };
 
                   let text = format!("{:.10} {}", amount_txt, token.symbol);
-                  let icon = icons.token_icon_x32(token.address, token.chain_id, tint);
+                  let icon = icons
+                     .token_icon_x32(token.address, token.chain_id, tint)
+                     .fit_to_exact_size(icon_size);
+
                   let mut text = RichText::new(text).size(theme.typography.large);
 
                   if *unlimited {
@@ -587,12 +603,12 @@ fn format_permit2_single_approval(msg: &SignMsgType) -> String {
 
    // Domain
    writeln!(formatted, "Domain:").unwrap();
-   writeln!(formatted, "  Name: {}", "Uniswap Permit2").unwrap();
-   writeln!(formatted, "  Version: 2").unwrap();
-   writeln!(formatted, "  Chain: {}", details.token.chain_id).unwrap();
+   writeln!(formatted, "Name: {}", "Uniswap Permit2").unwrap();
+   writeln!(formatted, "Version: 2").unwrap();
+   writeln!(formatted, "Chain: {}", details.token.chain_id).unwrap();
    writeln!(
       formatted,
-      "  Verifying Contract: {}",
+      "Verifying Contract: {}",
       details.permit2_contract.to_string()
    )
    .unwrap();
@@ -600,27 +616,22 @@ fn format_permit2_single_approval(msg: &SignMsgType) -> String {
 
    // Message details
    writeln!(formatted, "Message:").unwrap();
+   writeln!(formatted, "Token: {}", details.token.address).unwrap();
    writeln!(
       formatted,
-      "  Token: {} ({})",
-      details.token.symbol, details.token.address
-   )
-   .unwrap();
-   writeln!(
-      formatted,
-      "  Amount: {}",
+      "Amount: {}",
       details.amount.wei().to_string()
    )
    .unwrap();
    writeln!(
       formatted,
-      "  Expiration: {}",
-      details.expiration.to_relative()
+      "Expiration: {}",
+      details.expiration.timestamp().to_string()
    )
    .unwrap();
    writeln!(
       formatted,
-      "  Spender: {}",
+      "Spender: {}",
       details.spender.to_string()
    )
    .unwrap();
@@ -638,8 +649,7 @@ fn format_permit2612(msg: &SignMsgType) -> String {
 
    writeln!(
       formatted,
-      "Token: {} ({})",
-      details.token.symbol,
+      "Token: {}",
       details.token.address.to_string()
    )
    .unwrap();
@@ -653,7 +663,7 @@ fn format_permit2612(msg: &SignMsgType) -> String {
       writeln!(
          formatted,
          "Deadline: {}",
-         details.deadline_label()
+         details.deadline.to_string()
       )
       .unwrap();
    }

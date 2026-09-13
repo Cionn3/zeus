@@ -11,7 +11,7 @@ use crate::assets::icons::Icons;
 use crate::core::{WalletInfo, ZeusContext, delegate_to};
 use crate::gui::{
    SHARED_GUI, SettingsPage,
-   ui::{ChainSelect, WalletSelect, common::*},
+   ui::{ChainSelect, WalletSelect, common::*, tx::address},
 };
 use crate::utils::RT;
 use egui::{
@@ -27,9 +27,12 @@ use zeus_eth::{
 
 use zeus_wallet::Wallet;
 
-use egui_elements::{Button, Modal, QrImage, SecureTextEdit, Theme, visuals::ButtonVisuals};
+use egui_elements::{
+   Button, CredentialsForm, Modal, QrImage, SecureTextEdit, Theme, visuals::ButtonVisuals,
+};
 use egui_lucide::Lucide;
 use elegance::{Badge, BadgeTone, Indicator, IndicatorState, Menu, MenuItem, TabBar};
+use ncrypt_me::Credentials;
 
 const DELEGATE_TIP1: &str = "This wallet has been temporarily upgraded to a smart contract";
 const DELEGATE_TIP2: &str = "This wallet is not upgraded to a smart contract";
@@ -51,6 +54,7 @@ pub struct Header {
    pub qrcode_window: QRCodeWindow,
    delegate_window_open: bool,
    delegate_to: String,
+   credentials_form: CredentialsForm,
    syncing: bool,
    /// Active header tab: 0 = Overview, 1 = Services.
    tab: usize,
@@ -62,6 +66,9 @@ impl Header {
 
       let chain_select = ChainSelect::new("main_chain_select", 1).size(vec2(220.0, 20.0));
       let wallet_select = WalletSelect::new("main_wallet_select").size(vec2(220.0, 20.0));
+      let form_size = vec2(550.0 * 0.6, 20.0);
+      let credentials_form =
+         CredentialsForm::new().with_min_size(form_size).with_enabled_virtual_keyboard();
 
       Self {
          open: false,
@@ -72,6 +79,7 @@ impl Header {
          qrcode_window: QRCodeWindow::new(),
          delegate_window_open: false,
          delegate_to: String::new(),
+         credentials_form,
          syncing: false,
          tab: 0,
       }
@@ -79,6 +87,7 @@ impl Header {
 
    pub fn erase(&mut self) {
       self.wallet_select.wallet.erase();
+      self.credentials_form.erase();
    }
 
    pub fn is_open(&self) -> bool {
@@ -99,6 +108,8 @@ impl Header {
 
    pub fn close_delegate_window(&mut self) {
       self.delegate_window_open = false;
+      self.credentials_form.close();
+      self.credentials_form.erase();
    }
 
    pub fn set_wallet_info(&mut self, wallet_info: WalletInfo) {
@@ -130,6 +141,7 @@ impl Header {
       let evm_addr = self.wallet_info.address;
 
       self.show_deleg_settings_window(ctx, theme, evm_addr, ui);
+      self.verify_credentials_ui(theme, ui);
 
       self.qrcode_window.show(ctx, theme, ui);
 
@@ -323,7 +335,7 @@ impl Header {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                let more = dots_button(theme, ui);
                Menu::new(("svc_menu", "railgun_id")).show_below(&more, |ui| {
-                  if ui.add(MenuItem::new("View last error").shortcut("⌘ E")).clicked() {
+                  if ui.add(MenuItem::new("View last error")).clicked() {
                      let error_opt = ctx.railgun_status().sync_error(chain.id());
                      let error = error_opt.map_or(
                         "No errors for now everything looks good".to_string(),
@@ -338,7 +350,7 @@ impl Header {
                      });
                   }
 
-                  if ui.add(MenuItem::new("Settings").shortcut("⌘ S")).clicked() {
+                  if ui.add(MenuItem::new("Settings")).clicked() {
                      RT.spawn_blocking(move || {
                         SHARED_GUI.write(|gui| {
                            gui.ctx.clone().write(|ctx| {
@@ -375,7 +387,7 @@ impl Header {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                let more = dots_button(theme, ui);
                Menu::new(("svc_menu", "wallet_connector_id")).show_below(&more, |ui| {
-                  if ui.add(MenuItem::new("Settings").shortcut("⌘ S")).clicked() {
+                  if ui.add(MenuItem::new("Settings")).clicked() {
                      RT.spawn_blocking(move || {
                         SHARED_GUI.write(|gui| {
                            gui.msg_window.open("Not implemented yet");
@@ -510,6 +522,12 @@ impl Header {
          });
 
       self.delegate_window_open = open;
+
+      if !open {
+         self.delegate_to.clear();
+         self.credentials_form.close();
+         self.credentials_form.erase();
+      }
    }
 
    fn refresh(&mut self, theme: &Theme, wallet: Address, ui: &mut Ui) {
@@ -552,8 +570,9 @@ impl Header {
       }
    }
 
-   // ? Maybe ask for credentials before proceeding
-   fn delegate_ui(&mut self, ctx: &mut ZeusContext, theme: &Theme, wallet: Address, ui: &mut Ui) {
+   fn delegate_ui(&mut self, _ctx: &mut ZeusContext, theme: &Theme, _wallet: Address, ui: &mut Ui) {
+      ui.spacing_mut().item_spacing = vec2(0.0, theme.spacing.lg);
+
       let text_edit_visuals = theme.text_edit_visuals();
       let button_visuals = theme.button_visuals();
       let field_width = ui.available_width() * 0.9;
@@ -562,6 +581,8 @@ impl Header {
       let hint = RichText::new("Enter a smart contract address")
          .color(theme.colors.text_muted)
          .size(theme.typography.normal);
+
+      ui.add_space(10.0);
 
       ui.allocate_ui(field_size, |ui| {
          let text = SecureTextEdit::singleline(&mut self.delegate_to)
@@ -573,56 +594,166 @@ impl Header {
          ui.add(text);
       });
 
+      ui.add_space(10.0);
+
       let text = RichText::new("Delegate").size(theme.typography.large);
       let button = Button::new(text).visuals(button_visuals).min_size(field_size);
 
-      let clicked = ui.add(button).clicked();
+      if ui.add(button).clicked() {
+         let delegate_to_addr = self.delegate_to.clone();
+         if Address::from_str(&delegate_to_addr).is_err() {
+            RT.spawn(async move {
+               SHARED_GUI.write(|gui| {
+                  let msg = format!(
+                     "Not a valid Ethereum address: {}",
+                     delegate_to_addr
+                  );
+                  gui.open_msg_window(msg);
+                  gui.request_repaint();
+               });
+            });
+            return;
+         }
+
+         self.credentials_form.open();
+      }
+   }
+
+   fn verify_credentials_ui(&mut self, theme: &Theme, ui: &mut Ui) {
+      if !self.credentials_form.is_open() || !self.delegate_window_open {
+         return;
+      }
+
+      let mut open = self.credentials_form.is_open();
+      let mut clicked = false;
+      let frame = theme.window_frame.fill(theme.frame1.fill);
+      let title = RichText::new("Verify Credentials").size(theme.typography.heading);
+      let id = Id::new("verify_credentials_delegate_ui");
+
+      Modal::new(id, &mut open)
+         .backdrop_order(Order::Middle)
+         .content_order(Order::Foreground)
+         .heading(title)
+         .header_separator(false)
+         .center_header(true)
+         .closable(true)
+         .frame(frame)
+         .show(ui.ctx(), |ui| {
+            ui.set_min_size(vec2(550.0, 350.0));
+
+            let button_visuals = theme.button_visuals();
+
+            ui.vertical_centered(|ui| {
+               ui.spacing_mut().item_spacing.y = theme.spacing.xl;
+               ui.spacing_mut().button_padding = theme.button_padding;
+
+               ui.scope(|ui| {
+                  ui.spacing_mut().button_padding = vec2(theme.spacing.xs, theme.spacing.xs);
+                  self.credentials_form.show(ui);
+               });
+
+               let text = RichText::new("Confirm").size(theme.typography.normal);
+               let button = Button::new(text)
+                  .visuals(button_visuals)
+                  .min_size(vec2(ui.available_width() * 0.8, 45.0));
+
+               if ui.add(button).clicked() {
+                  clicked = true;
+               }
+            });
+         });
 
       if clicked {
-         let delegate_to_addr = self.delegate_to.clone();
-         let chain = ctx.chain;
-         RT.spawn(async move {
-            let ctx = SHARED_GUI.read(|gui| gui.ctx.clone());
+         let username = self.credentials_form.username();
+         let password = self.credentials_form.password();
+         let confirm_password = self.credentials_form.confirm_password();
+         let credentials = Credentials::new(username, password, confirm_password);
 
-            let delegate_address = match Address::from_str(&delegate_to_addr) {
-               Ok(address) => address,
-               Err(_) => {
-                  SHARED_GUI.write(|gui| {
-                     let msg = format!(
-                        "Not a valid Ethereum address: {}",
-                        delegate_to_addr
-                     );
-                     gui.open_msg_window(msg);
-                  });
-                  return;
-               }
-            };
-
-            SHARED_GUI.write(|gui| {
-               gui.loading_window.open("Wait while magic happens");
-               gui.header.close_delegate_window();
+         RT.spawn_blocking(move || {
+            let ctx = SHARED_GUI.write(|gui| {
+               gui.loading_window.open("Checking credentials...");
                gui.request_repaint();
+               gui.ctx.clone()
             });
 
-            let source_is_zeus = true;
+            let creds_match = ctx.read_vault(|vault| vault.credentials_match(&credentials));
 
-            match delegate_to(ctx, source_is_zeus, chain, wallet, delegate_address).await {
-               Ok(_) => {
+            match creds_match {
+               true => {
+                  let (delegate_to_addr, wallet, chain) = SHARED_GUI.write(|gui| {
+                     gui.header.credentials_form.erase();
+                     gui.header.credentials_form.close();
+                     (
+                        gui.header.delegate_to.clone(),
+                        gui.header.wallet_info.address,
+                        ctx.chain(),
+                     )
+                  });
+
+                  let delegate_address = match Address::from_str(&delegate_to_addr) {
+                     Ok(address) => address,
+                     Err(_) => {
+                        SHARED_GUI.write(|gui| {
+                           let msg = format!(
+                              "Not a valid Ethereum address: {}",
+                              delegate_to_addr
+                           );
+                           gui.open_msg_window(msg);
+                           gui.loading_window.reset();
+                           gui.request_repaint();
+                        });
+                        return;
+                     }
+                  };
+
                   SHARED_GUI.write(|gui| {
-                     gui.loading_window.reset();
+                     gui.loading_window.open("Wait while magic happens");
+                     gui.header.close_delegate_window();
+                     gui.request_repaint();
+                  });
+
+                  RT.spawn(async move {
+                     let source_is_zeus = true;
+                     match delegate_to(
+                        ctx,
+                        source_is_zeus,
+                        chain,
+                        wallet,
+                        delegate_address,
+                     )
+                     .await
+                     {
+                        Ok(_) => {
+                           SHARED_GUI.write(|gui| {
+                              gui.loading_window.reset();
+                           });
+                        }
+                        Err(e) => {
+                           SHARED_GUI.write(|gui| {
+                              let msg = format!("Error while delegating: {}", e);
+                              gui.open_msg_window(msg);
+                              gui.loading_window.reset();
+                              gui.header.open_delegate_window();
+                              gui.notification.reset();
+                           });
+                        }
+                     }
                   });
                }
-               Err(e) => {
+               false => {
                   SHARED_GUI.write(|gui| {
-                     let msg = format!("Error while delegating: {}", e);
-                     gui.open_msg_window(msg);
+                     gui.open_msg_window("Credentials do not match");
                      gui.loading_window.reset();
-                     gui.header.open_delegate_window();
-                     gui.notification.reset();
+                     gui.request_repaint();
                   });
                }
             }
          });
+      }
+
+      if !open {
+         self.credentials_form.close();
+         self.credentials_form.erase();
       }
    }
 
@@ -634,20 +765,23 @@ impl Header {
       delegated_address: Address,
       ui: &mut Ui,
    ) {
-      let button_visuals = theme.button_visuals();
+      ui.spacing_mut().item_spacing = vec2(0.0, theme.spacing.lg);
+
+      let frame = theme.frame2;
       let chain = ctx.chain;
-      let explorer = chain.block_explorer();
-      let link = format!("{}/address/{}", explorer, delegated_address);
-      let text = RichText::new(delegated_address.to_string())
-         .size(theme.typography.small)
-         .color(theme.colors.info)
-         .monospace();
-      ui.hyperlink_to(text, link);
+      let label = "Contract";
+
+      ui.add_space(10.0);
+
+      frame.show(ui, |ui| {
+         address(ctx, chain, label, delegated_address, theme, ui);
+      });
+
+      ui.add_space(10.0);
 
       let text = RichText::new("Undelegate").size(theme.typography.large);
-      let button = Button::new(text)
-         .visuals(button_visuals)
-         .min_size(vec2(ui.available_width() * 0.9, 45.0));
+      let btn_size = vec2(ui.available_width() * 0.9, 45.0);
+      let button = Button::new(text).min_size(btn_size);
 
       let clicked = ui.add(button).clicked();
       if clicked {
@@ -826,7 +960,7 @@ impl QRCodeWindow {
                   ui.add(image);
                }
 
-               ui.add_space(10.0);
+               ui.add_space(20.0);
 
                self.close_button(theme, ui);
             });
@@ -834,8 +968,9 @@ impl QRCodeWindow {
    }
 
    fn close_button(&mut self, theme: &Theme, ui: &mut Ui) {
-      let text = RichText::new("Close").size(theme.typography.normal);
-      let button = Button::new(text).visuals(theme.button_visuals());
+      let size = vec2(ui.available_width() * 0.9, 45.0);
+      let text = RichText::new("Close").size(theme.typography.large);
+      let button = Button::new(text).min_size(size);
 
       if ui.add(button).clicked() {
          self.evm_address_qr.clear(ui.ctx());

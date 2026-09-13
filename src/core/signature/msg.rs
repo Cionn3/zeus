@@ -331,6 +331,20 @@ impl Permit2Details {
       let token_addr = Address::from_str(token_address)?;
 
       let token = ctx.get_token(chain, token_addr).await?;
+      let price_manager = ctx.price_manager();
+      let pool_manager = ctx.pool_manager();
+
+      if let Err(e) = price_manager
+         .calculate_prices(
+            ctx.clone(),
+            chain,
+            pool_manager,
+            vec![token.clone()],
+         )
+         .await
+      {
+         tracing::error!("Error updating prices: {:?}", e);
+      }
 
       let amount = message["details"]["amount"].as_str().ok_or(anyhow!("Missing amount"))?;
       let amount = U256::from_str(amount)?;
@@ -522,6 +536,22 @@ impl Permit2612Details {
       let data = parse_typed_data(msg.clone())?;
       let fields = parse_permit2612_fields(&data, chain)?;
       let token = ctx.get_token(fields.chain, fields.token).await?;
+
+      let price_manager = ctx.price_manager();
+      let pool_manager = ctx.pool_manager();
+
+      if let Err(e) = price_manager
+         .calculate_prices(
+            ctx.clone(),
+            chain,
+            pool_manager,
+            vec![token.clone()],
+         )
+         .await
+      {
+         tracing::error!("Error updating prices: {:?}", e);
+      }
+
       let amount = NumericValue::format_wei(fields.value, token.decimals);
       let amount_usd = if fields.value == U256::MAX {
          None

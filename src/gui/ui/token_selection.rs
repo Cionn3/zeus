@@ -330,10 +330,7 @@ impl TokenSelectionWindow {
 
                                     let id = format!("{}_more_options", token_address);
                                     Menu::new(id).show_below(&more, |ui| {
-                                       if ui
-                                          .add(MenuItem::new("Copy Address").shortcut("⌘ C"))
-                                          .clicked()
-                                       {
+                                       if ui.add(MenuItem::new("Copy Address")).clicked() {
                                           ui.ctx().copy_text(token_address.to_string());
                                        }
 
@@ -351,12 +348,7 @@ impl TokenSelectionWindow {
                                           }
                                        }
 
-                                       if ui
-                                          .add(
-                                             MenuItem::new("See on Block Explorer").shortcut("⌘ S"),
-                                          )
-                                          .clicked()
-                                       {
+                                       if ui.add(MenuItem::new("See on Block Explorer")).clicked() {
                                           let chain = ChainId::from(chain_id);
                                           let explorer = chain.block_explorer();
                                           let link =

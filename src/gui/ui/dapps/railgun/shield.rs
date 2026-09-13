@@ -4,6 +4,7 @@ use eframe::egui::{
 
 use std::{
    collections::HashMap,
+   str::FromStr,
    sync::Arc,
    time::{Duration, Instant},
 };
@@ -682,6 +683,11 @@ impl ShieldUi {
       self.open_broadcast_options = open;
    }
 
+   fn valid_recipient(&self, recipient: &str) -> bool {
+      let addr = Address::from_str(recipient).unwrap_or(Address::ZERO);
+      !addr.is_zero()
+   }
+
    fn action_button(
       &mut self,
       ctx: &mut ZeusContext,
@@ -697,6 +703,7 @@ impl ShieldUi {
       let has_balance = self.sufficient_balance(ctx, owner);
       let has_entered_amount = !self.amount_field.amount.is_empty();
       let has_recipient = !recipient.trim().is_empty();
+      let valid_recipient = self.valid_recipient(&recipient);
       let valid_token = if self.mode == RailgunMode::Unshield {
          self.currency.is_erc20()
       } else {
@@ -708,6 +715,7 @@ impl ShieldUi {
          && valid_amount
          && valid_token
          && has_recipient
+         && valid_recipient
          && !sending_tx
          && is_synced;
 
@@ -736,6 +744,10 @@ impl ShieldUi {
 
       if !has_recipient {
          button_text = "Enter Recipient".to_string();
+      }
+
+      if !valid_recipient {
+         button_text = "Invalid Recipient".to_string();
       }
 
       if !is_synced {
@@ -1145,9 +1157,7 @@ async fn shield(
    accounts.push(AccountPrefetch::contract(railgun_address));
    accounts.push(AccountPrefetch::contract(interact_to));
    accounts.push(AccountPrefetch::contract(relay_adapt));
-   accounts.push(AccountPrefetch::eoa(
-      block.header.beneficiary,
-   ));
+   accounts.push(AccountPrefetch::eoa(block.header.beneficiary));
 
    let common_accounts = railgun_common_accounts(chain.id());
    accounts.extend(common_accounts.into_iter().map(AccountPrefetch::contract));
