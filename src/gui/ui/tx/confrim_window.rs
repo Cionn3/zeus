@@ -22,6 +22,8 @@ use std::sync::Arc;
 
 pub struct TxConfirmationWindow {
    open: bool,
+   /// True if the tx is coming from Zeus
+   source_is_zeus: bool,
    decoded_events: DecodedEvents,
    /// True to confirm, false to reject
    confirmed_or_rejected: Option<bool>,
@@ -54,6 +56,7 @@ impl TxConfirmationWindow {
    pub fn new() -> Self {
       Self {
          open: false,
+         source_is_zeus: false,
          decoded_events: DecodedEvents::new(),
          confirmed_or_rejected: None,
          open_generation: 0,
@@ -94,6 +97,7 @@ impl TxConfirmationWindow {
    pub fn open(
       &mut self,
       ctx: ZeusCtx,
+      source_is_zeus: bool,
       dapp: String,
       chain: ChainId,
       tx: TransactionAnalysis,
@@ -103,6 +107,7 @@ impl TxConfirmationWindow {
    ) {
       self.open_inner(
          ctx,
+         source_is_zeus,
          dapp,
          chain,
          tx,
@@ -127,6 +132,7 @@ impl TxConfirmationWindow {
    ) {
       self.open_inner(
          ctx,
+         false,
          dapp,
          chain,
          tx,
@@ -140,6 +146,7 @@ impl TxConfirmationWindow {
    fn open_inner(
       &mut self,
       ctx: ZeusCtx,
+      source_is_zeus: bool,
       dapp: String,
       chain: ChainId,
       tx: TransactionAnalysis,
@@ -149,6 +156,7 @@ impl TxConfirmationWindow {
       prebuilt_display: Option<ClearDisplay>,
    ) {
       self.sponsored = sponsored;
+      self.source_is_zeus = source_is_zeus;
       // `send_transaction` polls this immediately. Confirm/Reject only `close()`
       // the window, so the previous answer stays in this field and would be
       // treated as the new prompt (auto-confirm + spinner while this task
@@ -227,7 +235,6 @@ impl TxConfirmationWindow {
       self.clear_display.clone()
    }
 
-   // TODO: Adjust the UI for txs that are sponsored by another account
    /// Calculate the cost of the transaction
    fn calculate_tx_cost(&mut self, ctx: &mut ZeusContext, gas_used: u64) {
       if self.sponsored {
@@ -341,7 +348,23 @@ impl TxConfirmationWindow {
                   main_event.name()
                };
 
-               ui.label(RichText::new(action_name).size(theme.typography.heading));
+               let mut title_text = RichText::new(action_name).size(theme.typography.heading);
+
+               if !self.source_is_zeus {
+                  if main_event.is_permit() {
+                     if main_event.permit_params().is_unlimited() {
+                        title_text = title_text.color(theme.colors.error);
+                     }
+                  }
+
+                  if main_event.is_token_approval() {
+                     if main_event.token_approval_params().is_unlimited() {
+                        title_text = title_text.color(theme.colors.error);
+                     }
+                  }
+               }
+
+               ui.label(title_text);
 
                // Main event details
                if !main_event.is_other() {

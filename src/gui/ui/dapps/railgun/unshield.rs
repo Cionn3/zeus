@@ -382,10 +382,12 @@ async fn unshield_self_broadcast(
    let dapp = "Railgun".to_string();
    let mev_protect = false;
    let sponsored = false;
+   let source_is_zeus = true;
 
    SHARED_GUI.write(|gui| {
       gui.tx_confirmation_window.open(
          ctx.clone(),
+         source_is_zeus,
          dapp,
          chain,
          tx_analysis.clone(),
@@ -1056,10 +1058,12 @@ async fn unshield_via_paymaster(
    let dapp = "Railgun".to_string();
    let mev_protect = false;
    let sponsored = true;
+   let source_is_zeus = true;
 
    SHARED_GUI.write(|gui| {
       gui.tx_confirmation_window.open(
          ctx.clone(),
+         source_is_zeus,
          dapp,
          chain,
          tx_analysis.clone(),

@@ -604,7 +604,9 @@ impl Header {
                gui.request_repaint();
             });
 
-            match delegate_to(ctx, chain, wallet, delegate_address).await {
+            let source_is_zeus = true;
+
+            match delegate_to(ctx, source_is_zeus, chain, wallet, delegate_address).await {
                Ok(_) => {
                   SHARED_GUI.write(|gui| {
                      gui.loading_window.reset();
@@ -657,7 +659,9 @@ impl Header {
                gui.ctx.clone()
             });
 
-            match delegate_to(ctx, chain, wallet, Address::ZERO).await {
+            let source_is_zeus = true;
+
+            match delegate_to(ctx, source_is_zeus, chain, wallet, Address::ZERO).await {
                Ok(_) => {
                   SHARED_GUI.write(|gui| {
                      gui.loading_window.reset();

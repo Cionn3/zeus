@@ -23,6 +23,18 @@ pub struct PermitParams {
 }
 
 impl PermitParams {
+   pub fn is_unlimited(&self) -> bool {
+      self.amount.wei() == U256::MAX
+   }
+
+   pub fn title(&self) -> String {
+      if self.is_unlimited() {
+         format!("Unlimited {}", self.event_name)
+      } else {
+         self.event_name.clone()
+      }
+   }
+
    pub async fn from_log(ctx: ZeusCtx, chain: u64, log: &Log) -> Result<Self, anyhow::Error> {
       let mut decoded_permit = None;
       let mut decoded_approval = None;
@@ -30,12 +42,12 @@ impl PermitParams {
 
       if let Ok(decoded_log) = permit::decode_permit_log(log) {
          decoded_permit = Some(decoded_log);
-         name = "Permit".to_string();
+         name = "Token Permit".to_string();
       }
 
       if let Ok(decoded_log) = permit::decode_approval_log(log) {
          decoded_approval = Some(decoded_log);
-         name = "Permit Approval".to_string();
+         name = "Token Permit Approval".to_string();
       }
 
       if decoded_permit.is_none() && decoded_approval.is_none() {

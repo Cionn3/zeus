@@ -1058,6 +1058,7 @@ async fn shield(
    if !is_native {
       let client = ctx.get_client(chain.id()).await?;
       let allowance = token.allowance(client, from, railgun_address).await?;
+      let source_is_zeus = true;
 
       if allowance < amount.wei() {
          SHARED_GUI.write(|gui| {
@@ -1068,6 +1069,7 @@ async fn shield(
          let calldata = token.encode_approve(railgun_address, amount.wei());
          let (_, _) = send_transaction(
             ctx.clone(),
+            source_is_zeus,
             "Railgun".to_string(),
             None,
             chain,
@@ -1244,10 +1246,12 @@ async fn shield(
    let sponsored = false;
    let dapp = "Railgun".to_string();
    let mev_protect = false;
+   let source_is_zeus = true;
 
    SHARED_GUI.write(|gui| {
       gui.tx_confirmation_window.open(
          ctx.clone(),
+         source_is_zeus,
          dapp,
          chain,
          tx_analysis.clone(),

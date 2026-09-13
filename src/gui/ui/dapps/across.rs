@@ -1067,6 +1067,7 @@ async fn across_bridge(
    });
 
    let mev_protect = false;
+   let source_is_zeus = true;
    let auth_list = Vec::new();
    let value = input_amount.wei();
 
@@ -1119,6 +1120,7 @@ async fn across_bridge(
 
    let (_, _) = send_transaction(
       ctx.clone(),
+      source_is_zeus,
       "".to_string(),
       Some(tx_analysis),
       chain,

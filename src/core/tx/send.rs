@@ -116,6 +116,7 @@ async fn wait_confirm_window() -> bool {
 
 pub async fn send_transaction(
    ctx: ZeusCtx,
+   source_is_zeus: bool,
    dapp: String,
    tx_analysis: Option<TransactionAnalysis>,
    chain: ChainId,
@@ -202,6 +203,7 @@ pub async fn send_transaction(
    SHARED_GUI.write(|gui| {
       gui.tx_confirmation_window.open(
          ctx.clone(),
+         source_is_zeus,
          dapp,
          chain,
          tx_analysis.clone(),
@@ -455,6 +457,7 @@ pub async fn send_transaction(
 
 pub async fn delegate_to(
    ctx: ZeusCtx,
+   source_is_zeus: bool,
    chain: ChainId,
    from: Address,
    delegate_to: Address,
@@ -491,6 +494,7 @@ pub async fn delegate_to(
 
    send_transaction(
       ctx.clone(),
+      source_is_zeus,
       String::new(),
       None,
       chain,

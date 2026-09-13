@@ -362,7 +362,7 @@ impl DecodedEvent {
          Self::SwapToken(_) => "Swap".to_string(),
          Self::UniswapPositionOperation(p) => p.name(),
          Self::EOADelegate(_) => "Wallet Delegation".to_string(),
-         Self::Permit(p) => p.event_name.clone(),
+         Self::Permit(p) => p.title(),
          Self::TokenApprove(p) => p.name().to_string(),
          Self::Shield(_) => "Shield".to_string(),
          Self::Unshield(_) => "Unshield".to_string(),

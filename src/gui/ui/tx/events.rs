@@ -143,6 +143,7 @@ pub fn permit_event_ui(
    ui: &mut Ui,
 ) {
    let is_unlimited = params.amount.wei() == U256::MAX;
+
    let amount = if is_unlimited {
       "Unlimited".to_string()
    } else {
@@ -156,18 +157,27 @@ pub fn permit_event_ui(
    let icon_size = vec2(24.0, 24.0);
 
    let icon = icons.currency_icon_x32(&params.token, tint).fit_to_exact_size(icon_size);
-   let text = if show_usd_value {
+   let mut text = if show_usd_value {
       let amount_usd = params.amount_usd.as_ref().unwrap();
       RichText::new(format!(
-         "{} {} ~ ${}",
+         "{:.10} {} ~ ${:.10}",
          amount,
          params.token.symbol(),
          amount_usd.abbreviated()
       ))
       .size(theme.typography.large)
    } else {
-      RichText::new(format!("{} {}", amount, params.token.symbol())).size(theme.typography.large)
+      RichText::new(format!(
+         "{:.10} {}",
+         amount,
+         params.token.symbol()
+      ))
+      .size(theme.typography.large)
    };
+
+   if is_unlimited {
+      text = text.color(theme.colors.warning);
+   }
 
    let label = Label::new(text, Some(icon)).interactive(false);
    ui.add(label);
@@ -204,7 +214,8 @@ pub fn token_approval_event_ui(
    params: &TokenApproveParams,
    ui: &mut Ui,
 ) {
-   let is_unlimited = params.amount.wei() == U256::MAX;
+   let is_unlimited = params.is_unlimited();
+
    let amount = if is_unlimited {
       "Unlimited".to_string()
    } else {
@@ -218,10 +229,10 @@ pub fn token_approval_event_ui(
    let icon = icons
       .currency_icon_x32(&Currency::from(params.token.clone()), tint)
       .fit_to_exact_size(icon_size);
-   let text = if show_usd_value {
+   let mut text = if show_usd_value {
       let amount_usd = params.amount_usd.as_ref().unwrap();
       RichText::new(format!(
-         "{} {} ~ ${}",
+         "{:.10} {} ~ ${:.10}",
          amount,
          params.token.symbol,
          amount_usd.abbreviated()
@@ -230,6 +241,10 @@ pub fn token_approval_event_ui(
    } else {
       RichText::new(format!("{} {}", amount, params.token.symbol)).size(theme.typography.large)
    };
+
+   if is_unlimited {
+      text = text.color(theme.colors.warning);
+   }
 
    let label = Label::new(text, Some(icon)).interactive(false);
    ui.add(label);

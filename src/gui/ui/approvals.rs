@@ -824,6 +824,7 @@ async fn revoke_erc20_approval(
    let mev_protect = false;
    let auth_list = vec![];
    let interact_to = token.address;
+   let source_is_zeus = true;
 
    let simulated = simulate_for_analysis(
       ctx.clone(),
@@ -863,6 +864,7 @@ async fn revoke_erc20_approval(
 
    let (_, _) = send_transaction(
       ctx,
+      source_is_zeus,
       dapp,
       Some(analysis),
       chain,
@@ -985,8 +987,11 @@ async fn revoke_permit2_approval(
    .await?;
    analysis.set_main_event(DecodedEvent::Permit(params));
 
+   let source_is_zeus = true;
+
    let (_, _) = send_transaction(
       ctx,
+      source_is_zeus,
       "".to_string(),
       Some(analysis),
       chain,

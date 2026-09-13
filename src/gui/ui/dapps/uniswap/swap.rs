@@ -1484,9 +1484,11 @@ pub async fn wrap_eth(
    tx_analysis.set_main_event(main_event);
 
    let mev_protect = false;
+   let source_is_zeus = true;
 
    let (_, _) = send_transaction(
       ctx.clone(),
+      source_is_zeus,
       "".to_string(),
       Some(tx_analysis),
       chain,
@@ -1654,9 +1656,11 @@ pub async fn unwrap_weth(
    tx_analysis.set_main_event(main_event);
 
    let mev_protect = false;
+   let source_is_zeus = true;
 
    let (_, _) = send_transaction(
       ctx.clone(),
+      source_is_zeus,
       "".to_string(),
       Some(tx_analysis),
       chain,
@@ -1747,6 +1751,7 @@ async fn handle_approve(
       let amount = NumericValue::format_wei(U256::MAX, token.decimals);
       let auth_list = Vec::new();
       let contract_interact = Some(true);
+      let source_is_zeus = true;
 
       let params = TokenApproveParams {
          token: token.clone(),
@@ -1777,6 +1782,7 @@ async fn handle_approve(
 
       let (receipt, _) = send_transaction(
          ctx.clone(),
+         source_is_zeus,
          dapp,
          Some(analysis),
          chain,
@@ -2110,9 +2116,11 @@ async fn swap_via_ur(
    let value = execute_params.value;
    let dapp = "".to_string();
    let auth_list = Vec::new();
+   let source_is_zeus = true;
 
    let (_, _) = send_transaction(
       ctx.clone(),
+      source_is_zeus,
       dapp,
       Some(swap_tx_analysis),
       chain,

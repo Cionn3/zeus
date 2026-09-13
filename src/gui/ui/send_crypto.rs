@@ -923,6 +923,7 @@ async fn send_eth(
 
    let contract_interact = Some(false);
    let auth_list = Vec::new();
+   let source_is_zeus = true;
 
    let mut tx_analysis = TransactionAnalysis::new(
       ctx.clone(),
@@ -944,6 +945,7 @@ async fn send_eth(
 
    let (_, _) = send_transaction(
       ctx.clone(),
+      source_is_zeus,
       dapp,
       Some(tx_analysis),
       chain,
@@ -1094,6 +1096,7 @@ async fn send_token(
 
    let contract_interact = Some(true);
    let auth_list = Vec::new();
+   let source_is_zeus = true;
 
    let mut tx_analysis = TransactionAnalysis::new(
       ctx.clone(),
@@ -1115,6 +1118,7 @@ async fn send_token(
 
    let (_, _) = send_transaction(
       ctx.clone(),
+      source_is_zeus,
       dapp,
       Some(tx_analysis),
       chain,

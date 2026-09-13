@@ -3,7 +3,7 @@ use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use zeus_eth::{
    abi::erc20,
-   alloy_primitives::{Address, Log},
+   alloy_primitives::{Address, U256, Log},
    currency::{Currency, ERC20Token},
    utils::NumericValue,
 };
@@ -18,9 +18,15 @@ pub struct TokenApproveParams {
 }
 
 impl TokenApproveParams {
+   pub fn is_unlimited(&self) -> bool {
+      self.amount.wei() == U256::MAX
+   }
+
    pub fn name(&self) -> &str {
       if self.amount.is_zero() {
          "Revoke Token Approval"
+      } else if self.is_unlimited() {
+         "Unlimited Token Approval"
       } else {
          "Token Approval"
       }

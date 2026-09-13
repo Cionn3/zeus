@@ -395,6 +395,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -417,6 +418,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -439,6 +441,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -462,6 +465,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -486,6 +490,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -545,6 +550,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -567,6 +573,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -589,6 +596,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -611,6 +619,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -633,6 +642,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -655,6 +665,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -676,6 +687,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -698,6 +710,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,
@@ -720,6 +733,7 @@ impl UiTesting {
 
                      gui.tx_confirmation_window.open(
                         ctx.clone(),
+                        true,
                         "".to_string(),
                         ctx.chain(),
                         analysis,

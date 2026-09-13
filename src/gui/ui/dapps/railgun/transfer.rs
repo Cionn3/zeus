@@ -448,10 +448,12 @@ async fn exec_private_transfer(
    let dapp = "Railgun".to_string();
    let mev_protect = false;
    let sponsored = false;
+   let source_is_zeus = true;
 
    SHARED_GUI.write(|gui| {
       gui.tx_confirmation_window.open(
          ctx.clone(),
+         source_is_zeus,
          dapp,
          chain,
          tx_analysis.clone(),

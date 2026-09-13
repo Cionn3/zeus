@@ -53,6 +53,7 @@ pub fn encode_execute_batch(calls: &[WalletCall]) -> Bytes {
 /// `executeBatch` on [`SIMPLE_7702_ACCOUNT`].
 pub async fn send_wallet_calls(
    ctx: ZeusCtx,
+   source_is_zeus: bool,
    dapp: String,
    chain: ChainId,
    from: Address,
@@ -66,6 +67,7 @@ pub async fn send_wallet_calls(
       let call = &calls[0];
       return send_transaction(
          ctx,
+         source_is_zeus,
          dapp,
          None,
          chain,
@@ -90,6 +92,7 @@ pub async fn send_wallet_calls(
 
    let result = send_transaction(
       ctx.clone(),
+      source_is_zeus,
       dapp,
       None,
       chain,

@@ -1413,9 +1413,11 @@ async fn eth_send_transaction(
    };
 
    let chain = ctx.chain();
+   let source_is_zeus = false;
 
    let (receipt, tx_rich) = match send_transaction(
       ctx.clone(),
+      source_is_zeus,
       origin,
       None,
       chain,
@@ -1668,8 +1670,9 @@ async fn wallet_send_calls(
    }
 
    let transact_to = if calls.len() == 1 { calls[0].to } else { from };
+   let source_is_zeus = false;
 
-   let (receipt, tx_rich) = match send_wallet_calls(ctx.clone(), origin, chain, from, calls).await {
+   let (receipt, tx_rich) = match send_wallet_calls(ctx.clone(), source_is_zeus, origin, chain, from, calls).await {
       Ok(res) => res,
       Err(e) => return Ok(json_rpc_from_send_err(e, payload.id)),
    };
