@@ -125,6 +125,12 @@ bincode-next = "=3.1.1"
 [target.'cfg(unix)'.dependencies]
 libc = "=0.2.189"
 
+[profile.dev]
+# Default debug=2 emits full DWARF and a ~1GB zeus binary. Line tables are
+# enough for backtraces and keep incremental artifacts / linking much smaller.
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
 [profile.prod]
 inherits = "release"
 codegen-units = 32
