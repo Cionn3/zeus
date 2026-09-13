@@ -11,7 +11,7 @@ use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
 use crate::core::ctx::{railgun_db_file, railgun_dir};
 use zeus_eth::utils::client::RpcClient;
@@ -23,8 +23,20 @@ use zeus_railgun::{
 use anyhow::anyhow;
 
 lazy_static! {
-   pub static ref RT: Runtime = Runtime::new().unwrap();
+   pub static ref RT: Runtime = build_runtime();
 }
+
+fn build_runtime() -> Runtime {
+   // Tokio workers default to 2 MiB. Debug codegen keeps huge stack frames
+   // (async state machines, revm, Railgun circuits), so those workers overflow.
+   // 8 MiB matches the usual Linux pthread default and is virtual until used.
+   Builder::new_multi_thread()
+      .enable_all()
+      .thread_stack_size(8 * 1024 * 1024)
+      .build()
+      .expect("failed to build tokio runtime")
+}
+
 
 pub async fn create_railgun_provider(
    client: RpcClient,
