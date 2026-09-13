@@ -548,10 +548,10 @@ impl ApprovalsUi {
                   // padding) so header cells line up with body cells and the
                   // row actually fills the card — leftover used to live after
                   // Revoke because body spacing/padding did not match the header.
-                  let row_height = 48.0;
+                  let row_height = 40.0;
                   let col_spacing = 20.0;
                   let n_cols = 7.0;
-                  let row_frame = theme.frame2.outer_margin(Margin::ZERO);
+                  let row_frame = theme.frame1.outer_margin(Margin::ZERO);
                   let inner_left = row_frame.inner_margin.leftf();
                   let inner_right = row_frame.inner_margin.rightf();
                   let inner_y = row_frame.inner_margin.topf() + row_frame.inner_margin.bottomf();
@@ -608,7 +608,7 @@ impl ApprovalsUi {
                   };
 
                   ui.vertical_centered(|ui| {
-                     ui.spacing_mut().item_spacing.y = theme.spacing.sm;
+                     ui.spacing_mut().item_spacing.y = theme.spacing.md;
 
                      for row in rows {
                         ui.allocate_ui(vec2(row_width, row_height + inner_y), |ui| {

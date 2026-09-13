@@ -79,8 +79,7 @@ impl PortfolioUi {
       show_remove: bool,
    ) -> bool {
       let label_visuals = theme.label_visuals();
-      let button_visuals = theme.button_visuals();
-      let row_frame = theme.frame2.outer_margin(Margin::ZERO);
+      let row_frame = theme.frame1.outer_margin(Margin::ZERO);
       let mut remove_clicked = false;
 
       ui.allocate_ui(vec2(row_width, row_height + 16.0), |ui| {
@@ -123,9 +122,7 @@ impl PortfolioUi {
 
                Self::row_cell(ui, column_widths[4], row_height, |ui| {
                   if show_remove {
-                     let button = Button::new(RichText::new("X").size(theme.typography.small))
-                        .visuals(button_visuals)
-                        .small();
+                     let button = Button::new(RichText::new("X").size(theme.typography.normal));
                      remove_clicked = ui.add(button).clicked();
                   }
                });
@@ -277,7 +274,8 @@ impl PortfolioUi {
                   num_rows,
                   |ui, row_range| {
                      ui.vertical_centered(|ui| {
-                        ui.spacing_mut().item_spacing.y = theme.spacing.sm;
+                        ui.spacing_mut().item_spacing.y = theme.spacing.md;
+                        ui.spacing_mut().button_padding = vec2(theme.spacing.sm, theme.spacing.xs);
 
                         for row_index in row_range {
                            if show_native && row_index == 0 {
