@@ -1365,7 +1365,7 @@ impl ZeusCtx {
       }
 
       let book = self.address_book();
-      
+
       if !book.mark_pending(chain, address) {
          return false;
       }
@@ -2001,6 +2001,12 @@ pub struct ZeusContext {
    /// Last time checked for available RPCs
    pub last_checked_for_available_rpcs: HashMap<u64, u64>,
 
+   /// Last time checked for malfunctioning RPCs
+   pub last_checked_for_malfunction: HashMap<u64, u64>,
+
+   /// Last time we detected a malfunctioning RPC
+   pub last_detected_malfunction: HashMap<u64, u64>,
+
    /// Mapped available RPCs for each chain
    ///
    /// - `Key`: chain_id
@@ -2130,6 +2136,8 @@ impl ZeusContext {
          server_port: SERVER_PORT,
          server_running: false,
          last_checked_for_available_rpcs: HashMap::new(),
+         last_checked_for_malfunction: HashMap::new(),
+         last_detected_malfunction: HashMap::new(),
          railgun_provider_sync_last_check: HashMap::new(),
          available_rpcs: HashMap::new(),
          disabled_chains,
@@ -2391,6 +2399,41 @@ impl ZeusContext {
       }
 
       self.available_rpcs.get(&chain).cloned().unwrap_or(false)
+   }
+
+   /// Check if any enabled, already-tested RPC is not fully functional.
+   ///
+   /// Returns true at most once per `toast_duration_ms` while the problem lasts, so the
+   /// caller can enqueue a toast without stacking a new one every frame.
+   pub fn check_for_malfunction(
+      &mut self,
+      toast_duration_ms: u64,
+      now_millis: u64,
+      chain: u64,
+      threshold: u64,
+   ) -> bool {
+      if self.state_sync.get(&chain).copied().unwrap_or(false) {
+         return false;
+      }
+
+      let last_checked = self.last_checked_for_malfunction.get(&chain).copied().unwrap_or(0);
+      if now_millis.saturating_sub(last_checked) <= threshold {
+         return false;
+      }
+
+      self.last_checked_for_malfunction.insert(chain, now_millis);
+
+      if self.client.rpcs_fully_functional(chain) {
+         return false;
+      }
+
+      let last_detected = self.last_detected_malfunction.get(&chain).copied().unwrap_or(0);
+      if now_millis.saturating_sub(last_detected) <= toast_duration_ms {
+         return false;
+      }
+
+      self.last_detected_malfunction.insert(chain, now_millis);
+      true
    }
 
    /// Returns true if we need to check if a Railgun provider is syncing

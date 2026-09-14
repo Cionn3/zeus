@@ -9,6 +9,7 @@ use zeus_eth::{
    alloy_primitives::Address,
    alloy_provider::Provider,
    alloy_rpc_types::{BlockId, BlockNumberOrTag},
+   alloy_signer_local::PrivateKeySigner,
    alloy_sol_types::SolEvent,
    amm::uniswap::UniswapPool,
    currency::ERC20Token,
@@ -40,8 +41,8 @@ const REQUEST_TIMEOUT: u64 = 15;
 /// Default client timeout
 const CLIENT_TIMEOUT: u64 = 5;
 
-/// 3 Days in seconds
-const THREE_DAYS: u64 = 259_200;
+/// 8 hours in seconds
+const EIGHT_HOURS: u64 = 28_800;
 
 /// Request per second
 const CLIENT_RPS: u32 = 10;
@@ -75,6 +76,9 @@ const V3_POOL_STATE_BATCH: usize = 40;
 
 /// Batch size for fetching V4 pool state
 const V4_POOL_STATE_BATCH: usize = 45;
+
+/// Batch size for probing Multicall3 via ERC-20 allowances
+const MULTICALL_BATCH: usize = 20;
 
 /// A default value for the block range to query for logs
 ///
@@ -110,6 +114,10 @@ pub struct RpcCheck {
    ///
    /// All requests should work perfect
    pub fully_functional: bool,
+
+   /// True if the rpc can call Multicall3
+   #[serde(default)]
+   pub multicall: bool,
 
    /// The block range to query for logs that the specific rpc can take it
    pub logs_block_range: u64,
@@ -155,6 +163,7 @@ impl Default for RpcCheck {
          archive: false,
          working: false,
          fully_functional: false,
+         multicall: false,
          logs_block_range: DEFAULT_BLOCK_RANGE,
          static_gas_limit: 0,
          eth_balance_batch: ETH_BALANCE_BATCH,
@@ -223,6 +232,10 @@ impl Rpc {
       self.check.fully_functional
    }
 
+   pub fn is_multicall(&self) -> bool {
+      self.check.multicall
+   }
+
    pub fn is_mev_protect(&self) -> bool {
       self.mev_protect
    }
@@ -243,7 +256,7 @@ impl Rpc {
       let now = TimeStamp::now_as_secs().unwrap_or_default();
       if let Some(last_check) = self.check.last_check {
          let passed = now.timestamp().saturating_sub(last_check);
-         passed > THREE_DAYS
+         passed > EIGHT_HOURS
       } else {
          true
       }
@@ -609,6 +622,17 @@ impl ZeusClient {
       self.get_rpcs(chain).values().any(|rpc| rpc.is_enabled() && rpc.is_working())
    }
 
+   /// Returns true if every enabled RPC that has been checked is fully functional.
+   ///
+   /// Unchecked endpoints are ignored so a first-run probe does not look like a malfunction.
+   pub fn rpcs_fully_functional(&self, chain: u64) -> bool {
+      self
+         .get_rpcs(chain)
+         .values()
+         .filter(|rpc| rpc.is_enabled() && rpc.check.last_check.is_some())
+         .all(|rpc| rpc.is_fully_functional())
+   }
+
    pub fn rpc_archive_available(&self, chain: u64) -> bool {
       self.get_rpcs(chain).values().any(|rpc| rpc.is_working() && rpc.is_archive())
    }
@@ -776,6 +800,7 @@ impl ZeusClient {
          };
          let now_ms = TimeStamp::now_as_millis().unwrap_or_default().timestamp();
          let mut best_key = None;
+         let mut best_fully = false;
          let mut best_score = u128::MAX;
 
          for (url, rpc) in rpcs.iter_mut() {
@@ -800,8 +825,15 @@ impl ZeusClient {
                }
             }
 
-            if score < best_score {
+            let fully = rpc.is_fully_functional();
+            let better = match best_key {
+               None => true,
+               Some(_) => (fully && !best_fully) || (fully == best_fully && score < best_score),
+            };
+
+            if better {
                best_score = score;
+               best_fully = fully;
                best_key = Some(url.clone());
             }
          }
@@ -926,6 +958,13 @@ async fn rpc_test(ctx: ZeusCtx, rpc: Rpc) -> Result<(Duration, RpcCheck), anyhow
       .await;
    }));
 
+   let client_clone = client.clone();
+   let result_clone = result.clone();
+   let weth_address = weth.address;
+   tasks.push(RT.spawn(async move {
+      multicall_check(client_clone, weth_address, result_clone).await;
+   }));
+
    sleep(Duration::from_millis(100)).await;
 
    let client_clone = client.clone();
@@ -973,7 +1012,8 @@ async fn rpc_test(ctx: ZeusCtx, rpc: Rpc) -> Result<(Duration, RpcCheck), anyhow
          && guard.v2_pool_reserves_batch > 0
          && guard.v3_pool_state_batch > 0
          && guard.v4_pool_state_batch > 0
-         && guard.validate_v4_pools_batch > 0;
+         && guard.validate_v4_pools_batch > 0
+         && guard.multicall;
    }
 
    let result = result.lock().unwrap().clone();
@@ -986,6 +1026,28 @@ async fn rpc_test(ctx: ZeusCtx, rpc: Rpc) -> Result<(Duration, RpcCheck), anyhow
    );
 
    Ok((latency, result))
+}
+
+async fn multicall_check(client: RpcClient, weth: Address, result: Arc<Mutex<RpcCheck>>) {
+   let owner = Address::ZERO;
+   let pairs: Vec<(Address, Address)> = (1..=MULTICALL_BATCH)
+      .map(|_i| {
+         let signer = PrivateKeySigner::random();
+         (weth, signer.address())
+      })
+      .collect();
+
+   let ok = match batch::get_erc20_allowances(client, owner, pairs, None).await {
+      Ok(rows) => rows.len() == MULTICALL_BATCH,
+      Err(_e) => {
+         #[cfg(feature = "dev")]
+         tracing::debug!("Multicall Check Error: {:?}", _e);
+         false
+      }
+   };
+
+   let mut guard = result.lock().unwrap();
+   guard.multicall = ok;
 }
 
 async fn archive_check(client: RpcClient, block_to_query: u64, result: Arc<Mutex<RpcCheck>>) {
@@ -1242,5 +1304,68 @@ mod tests {
       let loaded: HashMap<u64, RpcMapByUrl> = key.open_json(&sealed, PROVIDER_AAD).unwrap();
       assert!(!loaded.is_empty());
       assert!(key.open_json::<HashMap<u64, RpcMapByUrl>>(&sealed, b"wrong-aad").is_err());
+   }
+
+   fn rpc_for_select(url: &str, fully: bool, latency_ms: u64) -> Rpc {
+      let mut rpc = Rpc::builder(url, 1).enabled().build();
+      rpc.check.working = true;
+      rpc.check.fully_functional = fully;
+      rpc.latency = Some(Duration::from_millis(latency_ms));
+      rpc
+   }
+
+   fn client_with(rpcs: impl IntoIterator<Item = Rpc>) -> ZeusClient {
+      let client = ZeusClient {
+         rpcs: Arc::new(RwLock::new(HashMap::new())),
+      };
+      for rpc in rpcs {
+         client.add_rpc(rpc.chain_id, rpc);
+      }
+      client
+   }
+
+   #[test]
+   fn get_best_rpc_prefers_fully_functional_over_faster_partial() {
+      let client = client_with([
+         rpc_for_select("http://partial", false, 10),
+         rpc_for_select("http://full", true, 100),
+      ]);
+      let best = client.get_best_rpc(1).unwrap();
+      assert_eq!(&*best.url, "http://full");
+   }
+
+   #[test]
+   fn get_best_rpc_falls_back_to_partial_when_none_are_fully_functional() {
+      let client = client_with([
+         rpc_for_select("http://slow", false, 80),
+         rpc_for_select("http://fast", false, 10),
+      ]);
+      let best = client.get_best_rpc(1).unwrap();
+      assert_eq!(&*best.url, "http://fast");
+   }
+
+   fn rpc_checked(url: &str, fully: bool) -> Rpc {
+      let mut rpc = rpc_for_select(url, fully, 10);
+      rpc.check.last_check = Some(1);
+      rpc
+   }
+
+   #[test]
+   fn rpcs_fully_functional_ignores_unchecked_and_disabled() {
+      let mut unchecked = rpc_for_select("http://unchecked", false, 10);
+      unchecked.check.last_check = None;
+      let mut disabled = rpc_checked("http://disabled-partial", false);
+      disabled.enabled = false;
+      let client = client_with([unchecked, disabled, rpc_checked("http://ok", true)]);
+      assert!(client.rpcs_fully_functional(1));
+   }
+
+   #[test]
+   fn rpcs_fully_functional_false_when_a_checked_enabled_rpc_is_partial() {
+      let client = client_with([
+         rpc_checked("http://ok", true),
+         rpc_checked("http://partial", false),
+      ]);
+      assert!(!client.rpcs_fully_functional(1));
    }
 }

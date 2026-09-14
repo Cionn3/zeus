@@ -3,7 +3,8 @@ use crate::gui::{GUI, SHARED_GUI};
 use crate::utils::{RT, TimeStamp};
 use egui::{Align, Align2, Area, Id, Layout, Margin, Order, RichText, Spinner, Ui, vec2};
 use egui_elements::{Button, Label};
-use elegance::Toasts;
+use elegance::{BadgeTone, Toast, Toasts};
+use std::time::Duration;
 
 const DATA_SYNCING_MSG: &str = "Zeus is still syncing important data";
 const ON_STARTUP_SYNC_MSG: &str = "Zeus is syncing your wallets state";
@@ -16,6 +17,8 @@ const CIRCUITS_DOWNLOAD_MSG: &str = "Downloading Railgun circuits, do not close 
 const AVAILABLE_RPCS_CHECK_THRESHOLD: u64 = 100;
 const RAILGUN_CHECK_THRESHOLD: u64 = 250;
 
+const MALFUNCTION_TOAST_DURATION_SECS: u64 = 30;
+
 pub fn show(gui: &mut GUI, ctx: &mut ZeusContext, ui: &mut Ui) {
    let chain = ctx.chain;
 
@@ -23,6 +26,13 @@ pub fn show(gui: &mut GUI, ctx: &mut ZeusContext, ui: &mut Ui) {
 
    let has_available_rpcs =
       ctx.check_for_available_rpcs(now, chain.id(), AVAILABLE_RPCS_CHECK_THRESHOLD);
+
+   let has_malfunction = ctx.check_for_malfunction(
+      MALFUNCTION_TOAST_DURATION_SECS * 1000,
+      now,
+      chain.id(),
+      AVAILABLE_RPCS_CHECK_THRESHOLD,
+   );
 
    let should_check_railgun_provider_sync =
       ctx.should_check_railgun_provider_sync(now, chain.id(), RAILGUN_CHECK_THRESHOLD);
@@ -112,6 +122,16 @@ pub fn show(gui: &mut GUI, ctx: &mut ZeusContext, ui: &mut Ui) {
             });
       }
    });
+
+   if has_malfunction {
+      Toast::new("Check your network settings")
+         .tone(BadgeTone::Warning)
+         .description("At least one RPC is not working properly, some features may not work")
+         .duration(Duration::from_secs(
+            MALFUNCTION_TOAST_DURATION_SECS,
+         ))
+         .show(&gui.egui_ctx);
+   }
 
    Toasts::new().anchor(Align2::RIGHT_TOP).render(ui.ctx());
 }
