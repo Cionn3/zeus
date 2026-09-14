@@ -28,6 +28,9 @@ It cannot track approvals made from other wallets.";
 
 const DEFAULT_ROWS_PER_PAGE: usize = 10;
 
+/// Max `(token, spender)` allowance pairs per Multicall3 aggregate so the eth_call stays under gas limits.
+const ALLOWANCE_PAIR_BATCH: usize = 20;
+
 #[derive(Debug, Clone)]
 enum ApprovalKind {
    Erc20(TokenApproveParams),
@@ -782,6 +785,7 @@ async fn live_permit2_allowances(
    if pairs.is_empty() {
       return HashMap::new();
    }
+   
    let Ok(permit2) = address_book::permit2_contract(chain) else {
       return HashMap::new();
    };
@@ -790,7 +794,21 @@ async fn live_permit2_allowances(
    match client
       .request(chain, |client| {
          let pairs = pairs.clone();
-         async move { batch::get_permit2_allowances(client, permit2, owner, pairs, None).await }
+         async move {
+            let mut out = Vec::new();
+            for chunk in pairs.chunks(ALLOWANCE_PAIR_BATCH) {
+               let rows = batch::get_permit2_allowances(
+                  client.clone(),
+                  permit2,
+                  owner,
+                  chunk.to_vec(),
+                  None,
+               )
+               .await?;
+               out.extend(rows);
+            }
+            Ok(out)
+         }
       })
       .await
    {

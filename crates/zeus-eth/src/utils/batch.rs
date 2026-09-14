@@ -410,12 +410,11 @@ where
    Ok(state)
 }
 
-/// Max `(token, spender)` pairs per Multicall3 aggregate so the eth_call stays under gas limits.
-const MULTICALL_PAIR_BATCH: usize = 20;
-
-/// ERC-20 `allowance(owner, spender)` for many `(token, spender)` pairs via Multicall3.
+/// ERC-20 `allowance(owner, spender)` for `(token, spender)` pairs in a **single** Multicall3
+/// aggregate.
 ///
-/// Failed calls (non-token, revert) are omitted.
+/// Failed calls (non-token, revert) are omitted. Large pair lists must be chunked by the caller
+/// so the aggregate eth_call stays under gas limits.
 pub async fn get_erc20_allowances<P, N>(
    client: P,
    owner: Address,
@@ -431,33 +430,35 @@ where
    }
 
    let block = block.unwrap_or(BlockId::latest());
-   let mut out = Vec::new();
-   for chunk in pairs.chunks(MULTICALL_PAIR_BATCH) {
-      let mut builder = client.multicall().dynamic::<IERC20::allowanceCall>().block(block);
-      for (token, spender) in chunk {
-         let input = Bytes::from(
-            IERC20::allowanceCall {
-               owner,
-               spender: *spender,
-            }
-            .abi_encode(),
-         );
-         let call = CallItem::<IERC20::allowanceCall>::new(*token, input).allow_failure(true);
-         builder = builder.add_call_dynamic(call);
-      }
-
-      let results = builder.aggregate3().await?;
-      for (i, result) in results.into_iter().enumerate() {
-         if let Ok(amount) = result {
-            let (token, spender) = chunk[i];
-            out.push((token, spender, amount));
+   let mut builder = client.multicall().dynamic::<IERC20::allowanceCall>().block(block);
+   for (token, spender) in &pairs {
+      let input = Bytes::from(
+         IERC20::allowanceCall {
+            owner,
+            spender: *spender,
          }
+         .abi_encode(),
+      );
+      let call = CallItem::<IERC20::allowanceCall>::new(*token, input).allow_failure(true);
+      builder = builder.add_call_dynamic(call);
+   }
+
+   let results = builder.aggregate3().await?;
+   let mut out = Vec::with_capacity(results.len());
+   for (i, result) in results.into_iter().enumerate() {
+      if let Ok(amount) = result {
+         let (token, spender) = pairs[i];
+         out.push((token, spender, amount));
       }
    }
    Ok(out)
 }
 
-/// Permit2 `allowance(user, token, spender)` for many `(token, spender)` pairs via Multicall3.
+/// Permit2 `allowance(user, token, spender)` for `(token, spender)` pairs in a **single** Multicall3
+/// aggregate.
+///
+/// Failed calls are omitted. Large pair lists must be chunked by the caller so the aggregate
+/// eth_call stays under gas limits.
 pub async fn get_permit2_allowances<P, N>(
    client: P,
    permit2: Address,
@@ -474,34 +475,36 @@ where
    }
 
    let block = block.unwrap_or(BlockId::latest());
-   let mut out = Vec::new();
-   for chunk in pairs.chunks(MULTICALL_PAIR_BATCH) {
-      let mut builder = client.multicall().dynamic::<Permit2::allowanceCall>().block(block);
-      for (token, spender) in chunk {
-         let input = Bytes::from(
-            Permit2::allowanceCall {
-               user: owner,
-               token: *token,
-               spender: *spender,
-            }
-            .abi_encode(),
-         );
-         let call = CallItem::<Permit2::allowanceCall>::new(permit2, input).allow_failure(true);
-         builder = builder.add_call_dynamic(call);
-      }
+   let mut builder = client.multicall().dynamic::<Permit2::allowanceCall>().block(block);
 
-      let results = builder.aggregate3().await?;
-      for (i, result) in results.into_iter().enumerate() {
-         if let Ok(decoded) = result {
-            let (token, spender) = chunk[i];
-            let expiration = u64::try_from(decoded.expiration).unwrap_or(0);
-            out.push((
-               token,
-               spender,
-               U256::from(decoded.amount),
-               expiration,
-            ));
+   for (token, spender) in &pairs {
+      let input = Bytes::from(
+         Permit2::allowanceCall {
+            user: owner,
+            token: *token,
+            spender: *spender,
          }
+         .abi_encode(),
+      );
+
+      let call = CallItem::<Permit2::allowanceCall>::new(permit2, input).allow_failure(true);
+      builder = builder.add_call_dynamic(call);
+   }
+
+   let results = builder.aggregate3().await?;
+   let mut out = Vec::with_capacity(results.len());
+
+   for (i, result) in results.into_iter().enumerate() {
+      if let Ok(decoded) = result {
+         let (token, spender) = pairs[i];
+         let expiration = u64::try_from(decoded.expiration).unwrap_or(0);
+         
+         out.push((
+            token,
+            spender,
+            U256::from(decoded.amount),
+            expiration,
+         ));
       }
    }
    Ok(out)

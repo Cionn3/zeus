@@ -28,8 +28,8 @@ use zeus_eth::{
    utils::{address_book, batch},
 };
 
-/// Max `(token, spender)` pairs per Multicall3 aggregate so the eth_call stays under gas limits.
-const PERMIT2_PAIR_BATCH: usize = 20;
+/// Max `(token, spender)` allowance pairs per Multicall3 aggregate so the eth_call stays under gas limits.
+const ALLOWANCE_PAIR_BATCH: usize = 20;
 
 pub struct SimulatedTx {
    pub sim_res: zeus_eth::revm_utils::ExecutionResult,
@@ -283,7 +283,20 @@ async fn fetch_erc20_allowance_before(
    match client
       .request(chain, |client| {
          let pairs = pairs.clone();
-         async move { batch::get_erc20_allowances(client, from, pairs, Some(block_id)).await }
+         async move {
+            let mut out = Vec::new();
+            for chunk in pairs.chunks(ALLOWANCE_PAIR_BATCH) {
+               let rows = batch::get_erc20_allowances(
+                  client.clone(),
+                  from,
+                  chunk.to_vec(),
+                  Some(block_id),
+               )
+               .await?;
+               out.extend(rows);
+            }
+            Ok(out)
+         }
       })
       .await
    {
@@ -320,7 +333,7 @@ async fn fetch_permit2_before(
          let pairs = pairs.clone();
          async move {
             let mut out = Vec::new();
-            for chunk in pairs.chunks(PERMIT2_PAIR_BATCH) {
+            for chunk in pairs.chunks(ALLOWANCE_PAIR_BATCH) {
                let rows = batch::get_permit2_allowances(
                   client.clone(),
                   permit2,
@@ -621,7 +634,7 @@ pub async fn simulate_and_diff(
    for auth in &authorization_list {
       accounts.push(AccountPrefetch::contract(auth.address));
    }
-   
+
    if let Some(implementation) = eip7702_implementation(&bytecode) {
       accounts.push(AccountPrefetch::contract(implementation));
    }
