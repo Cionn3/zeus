@@ -1,12 +1,12 @@
 use crate::core::persisted::{PersistedFile, file_path};
 use crate::core::{WalletStateKey, ZeusCtx};
-use crate::utils::{RT, TimeStamp, write_private_atomic};
+use crate::utils::{RT, TimeStamp, simulate::STORAGE_FETCH_CHUNK_SIZE, write_private_atomic};
 use zeus_eth::{
    abi::{
       weth9,
       zeus::ZeusStateViewV3::{V3Pool, V4Pool},
    },
-   alloy_primitives::Address,
+   alloy_primitives::{Address, U256},
    alloy_provider::Provider,
    alloy_rpc_types::{BlockId, BlockNumberOrTag},
    alloy_signer_local::PrivateKeySigner,
@@ -46,44 +46,48 @@ const EIGHT_HOURS: u64 = 28_800;
 
 /// Request per second
 const CLIENT_RPS: u32 = 10;
+
 /// Max retries
 const MAX_RETRIES: u32 = 10;
+
 /// Initial backoff
 const INITIAL_BACKOFF: u64 = 400;
+
 /// Compute units per second
 const COMPUTE_UNITS_PER_SECOND: u64 = 330;
 
 /// Batch size for fetching ETH balance
-const ETH_BALANCE_BATCH: usize = 30;
+const ETH_BALANCE_BATCH: usize = 20;
 
 /// Batch size for fetching ERC20 balance
-const ERC20_BALANCE_BATCH: usize = 30;
+const ERC20_BALANCE_BATCH: usize = 20;
 
 /// Batch size for fetching ERC20 info
-const ERC20_INFO_BATCH: usize = 30;
+const ERC20_INFO_BATCH: usize = 20;
 
 /// Batch size for fetching V3 pools
-const VALIDATE_V4_POOLS_BATCH: usize = 60;
+const VALIDATE_V4_POOLS_BATCH: usize = 20;
 
 /// Batch size for fetching the state of V2/V3/V4 pools
-const POOL_STATE_UPDATE_BATCH: usize = 40;
+const POOL_STATE_UPDATE_BATCH: usize = 20;
 
 /// Batch size for fetching V2 pool reserves
-const V2_POOL_RESERVES_BATCH: usize = 50;
+const V2_POOL_RESERVES_BATCH: usize = 20;
 
 /// Batch size for fetching V3 pool state
-const V3_POOL_STATE_BATCH: usize = 40;
+const V3_POOL_STATE_BATCH: usize = 20;
 
 /// Batch size for fetching V4 pool state
-const V4_POOL_STATE_BATCH: usize = 45;
+const V4_POOL_STATE_BATCH: usize = 20;
 
 /// Batch size for probing Multicall3 via ERC-20 allowances
 const MULTICALL_BATCH: usize = 20;
 
-/// A default value for the block range to query for logs
-///
-/// Should work for most endpoints
-const DEFAULT_BLOCK_RANGE: u64 = 50_000;
+/// Account count for probing JSON-RPC batch `eth_getTransactionCount`
+const JSON_RPC_BATCH: usize = 20;
+
+/// For testing only
+const DEFAULT_BLOCK_RANGE: u64 = 5_000;
 
 async fn connect_rpc(url: &str, timeout: u64) -> Result<RpcClient, anyhow::Error> {
    get_client(
@@ -118,6 +122,14 @@ pub struct RpcCheck {
    /// True if the rpc can call Multicall3
    #[serde(default)]
    pub multicall: bool,
+
+   /// True if the rpc supports `eth_call` state overrides (StorageReader)
+   #[serde(default)]
+   pub state_override: bool,
+
+   /// True if the rpc supports JSON-RPC batch requests
+   #[serde(default)]
+   pub json_rpc_batch: bool,
 
    /// The block range to query for logs that the specific rpc can take it
    pub logs_block_range: u64,
@@ -164,6 +176,8 @@ impl Default for RpcCheck {
          working: false,
          fully_functional: false,
          multicall: false,
+         state_override: false,
+         json_rpc_batch: false,
          logs_block_range: DEFAULT_BLOCK_RANGE,
          static_gas_limit: 0,
          eth_balance_batch: ETH_BALANCE_BATCH,
@@ -234,6 +248,14 @@ impl Rpc {
 
    pub fn is_multicall(&self) -> bool {
       self.check.multicall
+   }
+
+   pub fn is_state_override(&self) -> bool {
+      self.check.state_override
+   }
+
+   pub fn is_json_rpc_batch(&self) -> bool {
+      self.check.json_rpc_batch
    }
 
    pub fn is_mev_protect(&self) -> bool {
@@ -938,68 +960,23 @@ async fn rpc_test(ctx: ZeusCtx, rpc: Rpc) -> Result<(Duration, RpcCheck), anyhow
 
    let weth = ERC20Token::wrapped_native_token(rpc.chain_id);
 
-   let mut tasks = Vec::new();
+   archive_check(client.clone(), block_to_query, result.clone()).await;
 
-   let client_clone = client.clone();
-   let result_clone = result.clone();
-   tasks.push(RT.spawn(async move {
-      archive_check(client_clone, block_to_query, result_clone).await;
-   }));
+   get_logs_check(
+      client.clone(),
+      weth.address,
+      latest_block,
+      result.clone(),
+   )
+   .await;
 
-   let client_clone = client.clone();
-   let result_clone = result.clone();
-   tasks.push(RT.spawn(async move {
-      get_logs_check(
-         client_clone,
-         weth.address,
-         latest_block,
-         result_clone,
-      )
-      .await;
-   }));
-
-   let client_clone = client.clone();
-   let result_clone = result.clone();
-   let weth_address = weth.address;
-   tasks.push(RT.spawn(async move {
-      multicall_check(client_clone, weth_address, result_clone).await;
-   }));
-
-   sleep(Duration::from_millis(100)).await;
-
-   let client_clone = client.clone();
-   let result_clone = result.clone();
-   let ctx_clone = ctx.clone();
-   tasks.push(RT.spawn(async move {
-      v2_pool_reserves_check(ctx_clone, client_clone, chain, result_clone).await;
-   }));
-
-   let client_clone = client.clone();
-   let result_clone = result.clone();
-   let ctx_clone = ctx.clone();
-   tasks.push(RT.spawn(async move {
-      v3_pool_state_check(ctx_clone, client_clone, chain, result_clone).await;
-   }));
-
-   sleep(Duration::from_millis(100)).await;
-
-   let client_clone = client.clone();
-   let result_clone = result.clone();
-   let ctx_clone = ctx.clone();
-   tasks.push(RT.spawn(async move {
-      v4_pool_state_check(ctx_clone, client_clone, chain, result_clone).await;
-   }));
-
-   let client_clone = client.clone();
-   let result_clone = result.clone();
-   let ctx_clone = ctx.clone();
-   tasks.push(RT.spawn(async move {
-      validate_v4_pools_check(ctx_clone, client_clone, chain, result_clone).await;
-   }));
-
-   for task in tasks {
-      let _task = task.await;
-   }
+   multicall_check(client.clone(), weth.address, result.clone()).await;
+   state_override_check(client.clone(), weth.address, result.clone()).await;
+   json_rpc_batch_check(client.clone(), result.clone()).await;
+   v2_pool_reserves_check(ctx.clone(), client.clone(), chain, result.clone()).await;
+   v3_pool_state_check(ctx.clone(), client.clone(), chain, result.clone()).await;
+   v4_pool_state_check(ctx.clone(), client.clone(), chain, result.clone()).await;
+   validate_v4_pools_check(ctx.clone(), client.clone(), chain, result.clone()).await;
 
    {
       let now = TimeStamp::now_as_secs()?;
@@ -1013,7 +990,9 @@ async fn rpc_test(ctx: ZeusCtx, rpc: Rpc) -> Result<(Duration, RpcCheck), anyhow
          && guard.v3_pool_state_batch > 0
          && guard.v4_pool_state_batch > 0
          && guard.validate_v4_pools_batch > 0
-         && guard.multicall;
+         && guard.multicall
+         && guard.state_override
+         && guard.json_rpc_batch;
    }
 
    let result = result.lock().unwrap().clone();
@@ -1022,7 +1001,7 @@ async fn rpc_test(ctx: ZeusCtx, rpc: Rpc) -> Result<(Duration, RpcCheck), anyhow
    tracing::debug!(
       "Tested {} in {}secs",
       rpc.url,
-      latency.as_secs_f32()
+      time.elapsed().as_secs_f32()
    );
 
    Ok((latency, result))
@@ -1050,6 +1029,39 @@ async fn multicall_check(client: RpcClient, weth: Address, result: Arc<Mutex<Rpc
    guard.multicall = ok;
 }
 
+async fn state_override_check(client: RpcClient, account: Address, result: Arc<Mutex<RpcCheck>>) {
+   let slots: Vec<U256> = (0..STORAGE_FETCH_CHUNK_SIZE).map(U256::from).collect();
+
+   let ok = match batch::get_account_storage(client, account, slots, None).await {
+      Ok(read) => read.values.len() == STORAGE_FETCH_CHUNK_SIZE,
+      Err(_e) => {
+         #[cfg(feature = "dev")]
+         tracing::debug!("State Override Check Error: {:?}", _e);
+         false
+      }
+   };
+
+   let mut guard = result.lock().unwrap();
+   guard.state_override = ok;
+}
+
+async fn json_rpc_batch_check(client: RpcClient, result: Arc<Mutex<RpcCheck>>) {
+   let accounts: Vec<Address> =
+      (0..JSON_RPC_BATCH).map(|_| PrivateKeySigner::random().address()).collect();
+
+   let ok = match batch::get_account_nonces(client, accounts, None).await {
+      Ok(nonces) => nonces.len() == JSON_RPC_BATCH,
+      Err(_e) => {
+         #[cfg(feature = "dev")]
+         tracing::debug!("JSON-RPC Batch Check Error: {:?}", _e);
+         false
+      }
+   };
+
+   let mut guard = result.lock().unwrap();
+   guard.json_rpc_batch = ok;
+}
+
 async fn archive_check(client: RpcClient, block_to_query: u64, result: Arc<Mutex<RpcCheck>>) {
    let old_block = client
       .get_block(BlockId::Number(BlockNumberOrTag::Number(
@@ -1069,35 +1081,32 @@ async fn get_logs_check(
    latest_block: u64,
    result: Arc<Mutex<RpcCheck>>,
 ) {
-   let mut block_range = DEFAULT_BLOCK_RANGE;
+   // Weth deposit is a very frequent event, we only query 10 blocks back
+   let block_range = 10;
+   let from_block = latest_block.saturating_sub(block_range);
    let mut success = false;
 
-   while !success && block_range > 0 {
-      let client = client.clone();
+   let res = get_logs_for(
+      client,
+      vec![weth_address],
+      vec![weth9::Deposit::SIGNATURE],
+      from_block,
+      1,
+      block_range,
+   )
+   .await;
 
-      let res = get_logs_for(
-         client,
-         vec![weth_address],
-         vec![weth9::Deposit::SIGNATURE],
-         latest_block,
-         1,
-         block_range,
-      )
-      .await;
-
-      match res {
-         Ok(_) => success = true,
-         Err(_e) => {
-            block_range = block_range.saturating_sub(5_000);
-            #[cfg(feature = "dev")]
-            tracing::debug!("eth_getLogs Check Error: {:?}", _e);
-         }
+   match res {
+      Ok(_) => success = true,
+      Err(_e) => {
+         #[cfg(feature = "dev")]
+         tracing::debug!("eth_getLogs Check Error: {:?}", _e);
       }
    }
 
    let mut guard = result.lock().unwrap();
    if success {
-      guard.logs_block_range = block_range;
+      guard.logs_block_range = DEFAULT_BLOCK_RANGE;
    } else {
       guard.logs_block_range = 0;
    }
@@ -1116,25 +1125,22 @@ async fn v2_pool_reserves_check(
       .take(V2_POOL_RESERVES_BATCH)
       .collect();
 
-   let mut batch_size = V2_POOL_RESERVES_BATCH;
    let mut success = false;
 
-   while !success && batch_size > 0 {
-      let client = client.clone();
-      let pools: Vec<_> = sample.iter().take(batch_size).map(|pool| pool.address()).collect();
+   let client = client.clone();
+   let pools: Vec<_> =
+      sample.iter().take(V2_POOL_RESERVES_BATCH).map(|pool| pool.address()).collect();
 
-      match batch::get_v2_reserves(client, chain, pools).await {
-         Ok(_) => success = true,
-         Err(_e) => {
-            batch_size = batch_size.saturating_sub(5);
-            #[cfg(feature = "dev")]
-            tracing::debug!("V2 Reserves Check Error: {:?}", _e);
-         }
+   match batch::get_v2_reserves(client, chain, pools).await {
+      Ok(_) => success = true,
+      Err(_e) => {
+         #[cfg(feature = "dev")]
+         tracing::debug!("V2 Reserves Check Error: {:?}", _e);
       }
    }
 
    let mut guard = result.lock().unwrap();
-   guard.v2_pool_reserves_batch = if success { batch_size } else { 0 };
+   guard.v2_pool_reserves_batch = if success { V2_POOL_RESERVES_BATCH } else { 0 };
 }
 
 async fn v3_pool_state_check(
@@ -1150,34 +1156,30 @@ async fn v3_pool_state_check(
       .take(V3_POOL_STATE_BATCH)
       .collect();
 
-   let mut batch_size = V3_POOL_STATE_BATCH;
    let mut success = false;
 
-   while !success && batch_size > 0 {
-      let client = client.clone();
-      let pools: Vec<_> = sample
-         .iter()
-         .take(batch_size)
-         .map(|pool| V3Pool {
-            addr: pool.address(),
-            tokenA: pool.currency0().address(),
-            tokenB: pool.currency1().address(),
-            fee: pool.fee().fee_u24(),
-         })
-         .collect();
+   let client = client.clone();
+   let pools: Vec<_> = sample
+      .iter()
+      .take(V3_POOL_STATE_BATCH)
+      .map(|pool| V3Pool {
+         addr: pool.address(),
+         tokenA: pool.currency0().address(),
+         tokenB: pool.currency1().address(),
+         fee: pool.fee().fee_u24(),
+      })
+      .collect();
 
-      match batch::get_v3_state(client, chain, pools).await {
-         Ok(_) => success = true,
-         Err(_e) => {
-            batch_size = batch_size.saturating_sub(5);
-            #[cfg(feature = "dev")]
-            tracing::debug!("V3 State Check Error: {:?}", _e);
-         }
+   match batch::get_v3_state(client, chain, pools).await {
+      Ok(_) => success = true,
+      Err(_e) => {
+         #[cfg(feature = "dev")]
+         tracing::debug!("V3 State Check Error: {:?}", _e);
       }
    }
 
    let mut guard = result.lock().unwrap();
-   guard.v3_pool_state_batch = if success { batch_size } else { 0 };
+   guard.v3_pool_state_batch = if success { V3_POOL_STATE_BATCH } else { 0 };
 }
 
 async fn v4_pool_state_check(
@@ -1193,32 +1195,28 @@ async fn v4_pool_state_check(
       .take(V4_POOL_STATE_BATCH)
       .collect();
 
-   let mut batch_size = V4_POOL_STATE_BATCH;
    let mut success = false;
 
-   while !success && batch_size > 0 {
-      let client = client.clone();
-      let pools: Vec<_> = sample
-         .iter()
-         .take(batch_size)
-         .map(|pool| V4Pool {
-            pool: pool.id(),
-            tickSpacing: pool.tick_spacing(),
-         })
-         .collect();
+   let client = client.clone();
+   let pools: Vec<_> = sample
+      .iter()
+      .take(V4_POOL_STATE_BATCH)
+      .map(|pool| V4Pool {
+         pool: pool.id(),
+         tickSpacing: pool.tick_spacing(),
+      })
+      .collect();
 
-      match batch::get_v4_pool_state(client, chain, pools).await {
-         Ok(_) => success = true,
-         Err(_e) => {
-            batch_size = batch_size.saturating_sub(5);
-            #[cfg(feature = "dev")]
-            tracing::debug!("V4 State Check Error: {:?}", _e);
-         }
+   match batch::get_v4_pool_state(client, chain, pools).await {
+      Ok(_) => success = true,
+      Err(_e) => {
+         #[cfg(feature = "dev")]
+         tracing::debug!("V4 State Check Error: {:?}", _e);
       }
    }
 
    let mut guard = result.lock().unwrap();
-   guard.v4_pool_state_batch = if success { batch_size } else { 0 };
+   guard.v4_pool_state_batch = if success { V4_POOL_STATE_BATCH } else { 0 };
 }
 
 async fn validate_v4_pools_check(
@@ -1234,25 +1232,21 @@ async fn validate_v4_pools_check(
       .take(VALIDATE_V4_POOLS_BATCH)
       .collect();
 
-   let mut batch_size = VALIDATE_V4_POOLS_BATCH;
    let mut success = false;
 
-   while !success && batch_size > 0 {
-      let client = client.clone();
-      let pools: Vec<_> = sample.iter().take(batch_size).map(|pool| pool.id()).collect();
+   let client = client.clone();
+   let pools: Vec<_> = sample.iter().take(VALIDATE_V4_POOLS_BATCH).map(|pool| pool.id()).collect();
 
-      match batch::validate_v4_pools(client, chain, pools).await {
-         Ok(_) => success = true,
-         Err(_e) => {
-            batch_size = batch_size.saturating_sub(5);
-            #[cfg(feature = "dev")]
-            tracing::debug!("V4 Validate Pools Check Error: {:?}", _e);
-         }
+   match batch::validate_v4_pools(client, chain, pools).await {
+      Ok(_) => success = true,
+      Err(_e) => {
+         #[cfg(feature = "dev")]
+         tracing::debug!("V4 Validate Pools Check Error: {:?}", _e);
       }
    }
 
    let mut guard = result.lock().unwrap();
-   guard.validate_v4_pools_batch = if success { batch_size } else { 0 };
+   guard.validate_v4_pools_batch = if success { VALIDATE_V4_POOLS_BATCH } else { 0 };
 }
 
 #[cfg(test)]
