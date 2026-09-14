@@ -215,6 +215,27 @@ impl GUI {
       }
    }
 
+   /// Raise the main window so a dapp prompt is not hidden behind the browser.
+   ///
+   /// `ViewportCommand::Focus` works on Windows, macOS, and X11. On Wayland it
+   /// is a no-op, so we also request taskbar/dock attention (flash / bounce).
+   pub fn bring_to_front(&self) {
+      let ctx = &self.egui_ctx;
+      ctx.send_viewport_cmd_to(
+         egui::ViewportId::ROOT,
+         egui::ViewportCommand::Minimized(false),
+      );
+      ctx.send_viewport_cmd_to(
+         egui::ViewportId::ROOT,
+         egui::ViewportCommand::Focus,
+      );
+      ctx.send_viewport_cmd_to(
+         egui::ViewportId::ROOT,
+         egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Critical),
+      );
+      self.request_repaint();
+   }
+
    pub fn should_show_right_panel(&self) -> bool {
       self.uniswap.is_open()
    }

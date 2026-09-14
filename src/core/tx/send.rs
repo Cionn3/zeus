@@ -186,7 +186,7 @@ pub async fn send_transaction(
          sponsored,
       );
       gui.loading_window.reset();
-      gui.request_repaint();
+      gui.bring_to_front();
    });
 
    if !wait_tx_confirm().await {

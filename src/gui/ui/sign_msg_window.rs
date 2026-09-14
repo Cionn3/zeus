@@ -8,11 +8,13 @@ use egui_elements::{Button, Label, Modal, Theme};
 use crate::assets::icons::Icons;
 use crate::core::clear_signing::FormattedValue;
 use crate::core::{SignMsgType, ZeusContext};
+use crate::gui::ui::common::delayed_action_label;
 use crate::gui::ui::tx::{address, chain};
 
 use serde_json::{Value, to_string_pretty};
 use std::fmt::Write;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use zeus_eth::{
    alloy_dyn_abi::{Eip712Types, TypedData},
    alloy_primitives::U256,
@@ -26,6 +28,7 @@ pub struct SignMsgWindow {
    msg: Option<SignMsgType>,
    formatted_msg: Option<String>,
    signed: Option<bool>,
+   opened_at: Option<Instant>,
    size: (f32, f32),
 }
 
@@ -38,6 +41,7 @@ impl SignMsgWindow {
          msg: None,
          formatted_msg: None,
          signed: None,
+         opened_at: None,
          size: (500.0, 750.0),
       }
    }
@@ -53,6 +57,7 @@ impl SignMsgWindow {
       self.msg = Some(msg);
       self.formatted_msg = None;
       self.signed = None;
+      self.opened_at = Some(Instant::now());
    }
 
    pub fn reset(&mut self) {
@@ -189,11 +194,15 @@ impl SignMsgWindow {
                      let button_size = vec2(ui.available_width() * 0.5, 45.0);
 
                      ui.horizontal(|ui| {
-                        let text = RichText::new("Sign").size(theme.typography.normal);
+                        let (sign_ready, sign_label) = delayed_action_label(self.opened_at, "Sign");
+                        if !sign_ready {
+                           ui.ctx().request_repaint_after(Duration::from_millis(100));
+                        }
+                        let text = RichText::new(sign_label).size(theme.typography.normal);
                         let ok_btn =
                            Button::new(text).min_size(button_size).visuals(button_visuals);
 
-                        if ui.add(ok_btn).clicked() {
+                        if ui.add_enabled(sign_ready, ok_btn).clicked() {
                            self.signed = Some(true);
                            self.close();
                         }

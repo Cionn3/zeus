@@ -708,7 +708,7 @@ async fn connect(
    SHARED_GUI.write(|gui| {
       gui.confirm_window.open("Connect to Dapp");
       gui.confirm_window.set_msg2(origin.clone());
-      gui.request_repaint();
+      gui.bring_to_front();
    });
 
    if !wait_for_user_confirm().await {
@@ -1366,7 +1366,7 @@ async fn apply_chain_switch(
          origin,
          chain.name()
       ));
-      gui.request_repaint();
+      gui.bring_to_front();
    });
 
    if !wait_for_user_confirm().await {
@@ -1411,6 +1411,10 @@ async fn eth_send_transaction(
       Ok(call) => call,
       Err(()) => return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id)),
    };
+
+   SHARED_GUI.write(|gui| {
+      gui.bring_to_front();
+   });
 
    let chain = ctx.chain();
    let source_is_zeus = false;

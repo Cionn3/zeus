@@ -23,6 +23,24 @@ use egui::{Align, Layout, Response, RichText, Ui, pos2, vec2};
 use egui_elements::{Button, Theme};
 use egui_lucide::Lucide;
 use elegance::{Accent, Switch};
+use std::time::{Duration, Instant};
+
+/// Delay before Sign/Confirm is clickable after a prompt is brought to the front.
+pub const ACTION_UNLOCK_DELAY: Duration = Duration::from_secs(2);
+
+/// `(enabled, label)` for Sign/Confirm. `None` means no delay (in-app Zeus prompts).
+pub fn delayed_action_label(opened_at: Option<Instant>, ready_label: &str) -> (bool, String) {
+   let Some(opened_at) = opened_at else {
+      return (true, ready_label.to_string());
+   };
+   let remaining = ACTION_UNLOCK_DELAY.saturating_sub(opened_at.elapsed());
+   if remaining.is_zero() {
+      (true, ready_label.to_string())
+   } else {
+      let secs = remaining.as_secs_f32().ceil() as u64;
+      (false, format!("Available in {secs}s"))
+   }
+}
 
 pub fn privacy_mode_switch(ctx: &mut ZeusContext, theme: &Theme, ui: &mut Ui) {
    let text = match ctx.privacy_mode {

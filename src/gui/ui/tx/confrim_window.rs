@@ -10,6 +10,7 @@ use crate::assets::icons::Icons;
 use crate::core::clear_signing::{self, ClearDisplay};
 use crate::core::{DecodedEvent, TransactionAnalysis, ZeusContext, ZeusCtx};
 use crate::gui::SHARED_GUI;
+use crate::gui::ui::common::delayed_action_label;
 use crate::utils::{RT, estimate_tx_cost};
 use elegance::{Indicator, IndicatorState};
 use zeus_eth::{
@@ -20,6 +21,7 @@ use zeus_eth::{
 };
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 pub struct TxConfirmationWindow {
    open: bool,
@@ -50,6 +52,8 @@ pub struct TxConfirmationWindow {
    show_calldata: bool,
    show_diffs: bool,
    clear_display: Option<ClearDisplay>,
+   /// When the prompt became visible. `None` skips the Sign/Confirm delay (in-app Zeus txs).
+   opened_at: Option<Instant>,
    size: (f32, f32),
 }
 
@@ -77,6 +81,7 @@ impl TxConfirmationWindow {
          show_calldata: false,
          show_diffs: false,
          clear_display: None,
+         opened_at: None,
          size: (550.0, 400.0),
       }
    }
@@ -211,6 +216,11 @@ impl TxConfirmationWindow {
             gui.tx_confirmation_window.clear_display = clear_display;
             gui.tx_confirmation_window.open = true;
             gui.tx_confirmation_window.confirmed_or_rejected = None;
+            gui.tx_confirmation_window.opened_at = if source_is_zeus {
+               None
+            } else {
+               Some(Instant::now())
+            };
 
             ctx.write(|ctx| {
                gui.tx_confirmation_window.calculate_tx_cost(ctx, gas_used);
@@ -649,10 +659,15 @@ impl TxConfirmationWindow {
                         45.0,
                      );
 
-                     let text = RichText::new("Confirm").size(theme.typography.large);
+                     let (confirm_ready, confirm_label) =
+                        delayed_action_label(self.opened_at, "Confirm");
+                     if !confirm_ready {
+                        ui.ctx().request_repaint_after(Duration::from_millis(100));
+                     }
+                     let text = RichText::new(confirm_label).size(theme.typography.large);
                      let confirm = Button::new(text).min_size(button_size).visuals(button_visuals);
 
-                     if ui.add_enabled(sufficient_balance, confirm).clicked() {
+                     if ui.add_enabled(sufficient_balance && confirm_ready, confirm).clicked() {
                         self.confirmed_or_rejected = Some(true);
                         self.close();
                      }

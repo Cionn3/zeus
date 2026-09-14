@@ -23,7 +23,7 @@ pub async fn sign_message(
    SHARED_GUI.write(|gui| {
       gui.loading_window.reset();
       gui.sign_msg_window.open(dapp, chain.id(), msg_type.clone());
-      gui.request_repaint();
+      gui.bring_to_front();
    });
 
    // Wait for the user to sign or cancel
