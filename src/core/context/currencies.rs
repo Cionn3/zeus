@@ -52,16 +52,7 @@ impl CurrencyDB {
    pub fn load_from_file(key: &WalletStateKey) -> Result<Self, anyhow::Error> {
       let dir = Self::dir()?;
       let sealed = std::fs::read(&dir)?;
-      let mut db: CurrencyDB = key.open_json(&sealed, CURRENCY_DB_AAD)?;
-
-      match db.load_default_tokens() {
-         Ok(_) => {}
-         Err(e) => {
-            tracing::error!("Failed to load default tokens: {:?}", e);
-            return Ok(db);
-         }
-      };
-
+      let db: CurrencyDB = key.open_json(&sealed, CURRENCY_DB_AAD)?;
       Ok(db)
    }
 
