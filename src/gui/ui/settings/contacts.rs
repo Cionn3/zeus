@@ -715,9 +715,9 @@ impl ContactsUi {
    fn contact(&mut self, ctx: &ZeusContext, theme: &Theme, contact: &Contact, ui: &mut Ui) {
       let frame = theme.frame1;
       let privacy_mode = ctx.privacy_mode;
-      let button_visuals = theme.button_visuals();
 
       frame.show(ui, |ui| {
+         ui.spacing_mut().button_padding = theme.button_padding;
          ui.set_width(ui.available_width());
 
          ui.horizontal(|ui| {
@@ -774,9 +774,9 @@ impl ContactsUi {
 
             let address_text = RichText::new(&address_short)
                .size(theme.typography.normal)
-               .color(theme.colors.text);
+               .color(theme.colors.text_muted);
 
-            let label = Button::selectable(false, address_text).visuals(button_visuals);
+            let label = Button::selectable(false, address_text);
 
             if ui.add(label).clicked() {
                ui.ctx().copy_text(address_full);

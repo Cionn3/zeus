@@ -180,7 +180,7 @@ impl RecipientSelectionWindow {
          self.close();
       }
 
-      let frame = theme.window_frame.fill(theme.frame1.fill);
+      let frame = theme.window_frame.fill(theme.colors.bg);
       let title = RichText::new("Recipient").size(theme.typography.heading);
       let id = Id::new("recipient_selection_window");
 
@@ -346,7 +346,7 @@ impl RecipientSelectionWindow {
          .id_salt("contact_tabs_scroll")
          .max_height(self.size.1)
          .max_width(ui.available_width())
-         .content_margin(5)
+         .content_margin(10)
          .show(ui, |ui| {
             if are_valid_contacts {
                self.show_contacts(ctx, theme, privacy_mode, close_window, ui);
@@ -367,8 +367,8 @@ impl RecipientSelectionWindow {
       ui.spacing_mut().item_spacing = vec2(0.0, theme.spacing.md);
       ui.spacing_mut().button_padding = theme.button_padding;
 
-      let mut frame = theme.frame2;
-      let visuals = theme.visuals.frame2_visuals;
+      let mut frame = theme.frame1;
+      let visuals = theme.visuals.frame1_visuals;
 
       for contact in &contacts {
          let valid_search = valid_contact_search(contact, privacy_mode, &self.search_query);
@@ -396,9 +396,10 @@ impl RecipientSelectionWindow {
 
                ui.add_space(6.0);
 
-               let address_text =
-                  RichText::new(&address).size(theme.typography.normal).color(theme.colors.text);
-               let button = Button::selectable(false, address_text).visuals(theme.button_visuals());
+               let address_text = RichText::new(&address)
+                  .size(theme.typography.normal)
+                  .color(theme.colors.text_muted);
+               let button = Button::selectable(false, address_text);
 
                ui.horizontal(|ui| {
                   if ui.add(button).clicked() {
@@ -431,7 +432,7 @@ impl RecipientSelectionWindow {
          .id_salt("wallets_tabs_scroll")
          .max_height(self.size.1)
          .max_width(ui.available_width())
-         .content_margin(5)
+         .content_margin(10)
          .show(ui, |ui| {
             if are_valid_wallets {
                self.show_wallets(ctx, theme, privacy_mode, close_window, ui);
@@ -450,8 +451,8 @@ impl RecipientSelectionWindow {
       ui.spacing_mut().item_spacing = vec2(0.0, theme.spacing.md);
       ui.spacing_mut().button_padding = theme.button_padding;
 
-      let mut frame = theme.frame2;
-      let visuals = theme.visuals.frame2_visuals;
+      let mut frame = theme.frame1;
+      let visuals = theme.visuals.frame1_visuals;
 
       let wallets = &self.wallets;
 
@@ -481,7 +482,7 @@ impl RecipientSelectionWindow {
 
                   ui.add_space(10.0);
 
-                  let text = RichText::new(format!("${}", value.abbreviated()))
+                  let text = RichText::new(format!("${:.10}", value.abbreviated()))
                      .size(theme.typography.normal);
                   let label = Label::new(text, None).interactive(false);
                   ui.add(label);
@@ -489,9 +490,10 @@ impl RecipientSelectionWindow {
 
                ui.add_space(6.0);
 
-               let address_text =
-                  RichText::new(&address).size(theme.typography.normal).color(theme.colors.text);
-               let button = Button::selectable(false, address_text).visuals(theme.button_visuals());
+               let address_text = RichText::new(&address)
+                  .size(theme.typography.normal)
+                  .color(theme.colors.text_muted);
+               let button = Button::selectable(false, address_text);
 
                ui.horizontal(|ui| {
                   if ui.add(button).clicked() {
