@@ -96,10 +96,7 @@ impl Database for ForkDB {
 
       let storage_val = self.do_get_storage(address, index)?;
 
-      self
-         .db
-         .insert_account_storage(address, index, storage_val)
-         .unwrap();
+      self.db.insert_account_storage(address, index, storage_val).unwrap();
       Ok(storage_val)
    }
 
@@ -112,11 +109,7 @@ impl Database for ForkDB {
             let block_hash = self.do_get_block_hash(number)?;
 
             // insert fetched block hash into db
-            self
-               .db
-               .cache
-               .block_hashes
-               .insert(U256::from(number), block_hash);
+            self.db.cache.block_hashes.insert(U256::from(number), block_hash);
 
             Ok(block_hash)
          }

@@ -42,9 +42,6 @@ where
    N: Network,
 {
    let factory = IUniswapV3Factory::new(factory, client);
-   let pool = factory
-      .getPool(token0, token1, Uint::from(fee))
-      .call()
-      .await?;
+   let pool = factory.getPool(token0, token1, Uint::from(fee)).call().await?;
    Ok(pool)
 }

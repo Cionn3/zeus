@@ -48,7 +48,10 @@ mod test {
       //uint256(-1)
       let result = most_significant_bit(
          //TODO:FIXME: might need to be from dec string
-         U256::from_str("115792089237316195423570985008687907853269984665640564039457584007913129639935").unwrap(),
+         U256::from_str(
+            "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+         )
+         .unwrap(),
       );
       assert_eq!(result.unwrap(), 255);
    }
@@ -79,7 +82,10 @@ mod test {
       //uint256(-1)
       let result = least_significant_bit(
          //TODO:FIXME: might need to be from dec string
-         U256::from_str("115792089237316195423570985008687907853269984665640564039457584007913129639935").unwrap(),
+         U256::from_str(
+            "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+         )
+         .unwrap(),
       );
       assert_eq!(result.unwrap(), 0);
    }

@@ -146,7 +146,9 @@ impl DexKind {
       let chain = ChainId::new(chain).unwrap();
       match chain {
          ChainId::Ethereum => vec![DexKind::UniswapV2, DexKind::UniswapV3, DexKind::UniswapV4],
-         ChainId::EthereumSepolia => vec![DexKind::UniswapV2, DexKind::UniswapV3, DexKind::UniswapV4],
+         ChainId::EthereumSepolia => {
+            vec![DexKind::UniswapV2, DexKind::UniswapV3, DexKind::UniswapV4]
+         }
          ChainId::BinanceSmartChain => vec![DexKind::PancakeSwapV2, DexKind::PancakeSwapV3],
          ChainId::Base => vec![DexKind::UniswapV2, DexKind::UniswapV3, DexKind::UniswapV4],
          ChainId::Optimism => vec![DexKind::UniswapV3, DexKind::UniswapV4],
@@ -259,7 +261,10 @@ impl DexKind {
    }
 
    pub fn is_pancake(&self) -> bool {
-      matches!(self, DexKind::PancakeSwapV2 | DexKind::PancakeSwapV3)
+      matches!(
+         self,
+         DexKind::PancakeSwapV2 | DexKind::PancakeSwapV3
+      )
    }
 
    pub fn is_v2(&self) -> bool {
@@ -403,14 +408,22 @@ pub trait UniswapPool {
    /// Update the state for this pool at the given block
    ///
    /// If `block` is `None`, the latest block is used
-   async fn update_state<P, N>(&mut self, client: P, block: Option<BlockId>) -> Result<(), anyhow::Error>
+   async fn update_state<P, N>(
+      &mut self,
+      client: P,
+      block: Option<BlockId>,
+   ) -> Result<(), anyhow::Error>
    where
       P: Provider<N> + Clone + 'static,
       N: Network;
 
    fn simulate_swap(&self, currency_in: &Currency, amount_in: U256) -> Result<U256, anyhow::Error>;
 
-   fn simulate_swap_mut(&mut self, currency_in: &Currency, amount_in: U256) -> Result<U256, anyhow::Error>;
+   fn simulate_swap_mut(
+      &mut self,
+      currency_in: &Currency,
+      amount_in: U256,
+   ) -> Result<U256, anyhow::Error>;
 
    fn simulate_swap_result(
       &self,
@@ -430,13 +443,19 @@ pub trait UniswapPool {
    ///
    /// - (base_price, quote_price)
    #[allow(async_fn_in_trait)]
-   async fn tokens_price<P, N>(&self, client: P, block: Option<BlockId>) -> Result<(f64, f64), anyhow::Error>
+   async fn tokens_price<P, N>(
+      &self,
+      client: P,
+      block: Option<BlockId>,
+   ) -> Result<(f64, f64), anyhow::Error>
    where
       P: Provider<N> + Clone + 'static,
       N: Network;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+   Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum AnyUniswapPool {
    V2(UniswapV2Pool),
    V3(UniswapV3Pool),
@@ -752,7 +771,11 @@ impl UniswapPool for AnyUniswapPool {
       }
    }
 
-   async fn update_state<P, N>(&mut self, client: P, block: Option<BlockId>) -> Result<(), anyhow::Error>
+   async fn update_state<P, N>(
+      &mut self,
+      client: P,
+      block: Option<BlockId>,
+   ) -> Result<(), anyhow::Error>
    where
       P: Provider<N> + Clone + 'static,
       N: Network,
@@ -772,7 +795,11 @@ impl UniswapPool for AnyUniswapPool {
       }
    }
 
-   fn simulate_swap_mut(&mut self, currency_in: &Currency, amount_in: U256) -> Result<U256, anyhow::Error> {
+   fn simulate_swap_mut(
+      &mut self,
+      currency_in: &Currency,
+      amount_in: U256,
+   ) -> Result<U256, anyhow::Error> {
       match self {
          AnyUniswapPool::V2(pool) => pool.simulate_swap_mut(currency_in, amount_in),
          AnyUniswapPool::V3(pool) => pool.simulate_swap_mut(currency_in, amount_in),
@@ -787,9 +814,15 @@ impl UniswapPool for AnyUniswapPool {
       amount_in: NumericValue,
    ) -> Result<SwapResult, anyhow::Error> {
       match self {
-         AnyUniswapPool::V2(pool) => pool.simulate_swap_result(currency_in, currency_out, amount_in),
-         AnyUniswapPool::V3(pool) => pool.simulate_swap_result(currency_in, currency_out, amount_in),
-         AnyUniswapPool::V4(pool) => pool.simulate_swap_result(currency_in, currency_out, amount_in),
+         AnyUniswapPool::V2(pool) => {
+            pool.simulate_swap_result(currency_in, currency_out, amount_in)
+         }
+         AnyUniswapPool::V3(pool) => {
+            pool.simulate_swap_result(currency_in, currency_out, amount_in)
+         }
+         AnyUniswapPool::V4(pool) => {
+            pool.simulate_swap_result(currency_in, currency_out, amount_in)
+         }
       }
    }
 
@@ -801,7 +834,11 @@ impl UniswapPool for AnyUniswapPool {
       }
    }
 
-   async fn tokens_price<P, N>(&self, client: P, block: Option<BlockId>) -> Result<(f64, f64), anyhow::Error>
+   async fn tokens_price<P, N>(
+      &self,
+      client: P,
+      block: Option<BlockId>,
+   ) -> Result<(f64, f64), anyhow::Error>
    where
       P: Provider<N> + Clone + 'static,
       N: Network,

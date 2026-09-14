@@ -66,7 +66,13 @@ impl Hash for UniswapV2Pool {
 
 impl UniswapV2Pool {
    /// Tokens are re-ordered as token0 < token1
-   pub fn new(chain_id: u64, address: Address, token0: ERC20Token, token1: ERC20Token, dex: DexKind) -> Self {
+   pub fn new(
+      chain_id: u64,
+      address: Address,
+      token0: ERC20Token,
+      token1: ERC20Token,
+      dex: DexKind,
+   ) -> Self {
       let (token0, token1) = if token0.address < token1.address {
          (token0, token1)
       } else {
@@ -84,7 +90,11 @@ impl UniswapV2Pool {
       }
    }
 
-   pub async fn from_address<P, N>(client: P, chain_id: u64, address: Address) -> Result<Self, anyhow::Error>
+   pub async fn from_address<P, N>(
+      client: P,
+      chain_id: u64,
+      address: Address,
+   ) -> Result<Self, anyhow::Error>
    where
       P: Provider<N> + Clone + 'static,
       N: Network,
@@ -128,7 +138,9 @@ impl UniswapV2Pool {
       let address = v2::factory::get_pair(client, factory, token0.address, token1.address).await?;
       match address {
          addr if addr.is_zero() => Ok(None),
-         addr => Ok(Some(Self::new(chain_id, addr, token0, token1, dex))),
+         addr => Ok(Some(Self::new(
+            chain_id, addr, token0, token1, dex,
+         ))),
       }
    }
 
@@ -290,7 +302,11 @@ impl UniswapPool for UniswapV2Pool {
       Err(anyhow!("This method only applies to V4"))
    }
 
-   async fn update_state<P, N>(&mut self, client: P, block: Option<BlockId>) -> Result<(), anyhow::Error>
+   async fn update_state<P, N>(
+      &mut self,
+      client: P,
+      block: Option<BlockId>,
+   ) -> Result<(), anyhow::Error>
    where
       P: Provider<N> + Clone + 'static,
       N: Network,
@@ -326,7 +342,11 @@ impl UniswapPool for UniswapV2Pool {
       }
    }
 
-   fn simulate_swap_mut(&mut self, currency_in: &Currency, amount_in: U256) -> Result<U256, anyhow::Error> {
+   fn simulate_swap_mut(
+      &mut self,
+      currency_in: &Currency,
+      amount_in: U256,
+   ) -> Result<U256, anyhow::Error> {
       let mut state = self
          .state
          .v2_reserves()
@@ -374,7 +394,10 @@ impl UniswapPool for UniswapV2Pool {
       Ok(SwapResult {
          amount_in,
          amount_out,
-         ideal_amount_out: NumericValue::parse_to_wei(&ideal_amount_out.to_string(), currency_out.decimals()),
+         ideal_amount_out: NumericValue::parse_to_wei(
+            &ideal_amount_out.to_string(),
+            currency_out.decimals(),
+         ),
          price_impact,
       })
    }
@@ -395,13 +418,18 @@ impl UniswapPool for UniswapV2Pool {
          return Ok(0.0);
       }
 
-      let amount_out = format_units(amount_out, self.quote_currency().decimals())?.parse::<f64>()?;
+      let amount_out =
+         format_units(amount_out, self.quote_currency().decimals())?.parse::<f64>()?;
       let price = base_usd / amount_out;
 
       Ok(price)
    }
 
-   async fn tokens_price<P, N>(&self, client: P, block: Option<BlockId>) -> Result<(f64, f64), anyhow::Error>
+   async fn tokens_price<P, N>(
+      &self,
+      client: P,
+      block: Option<BlockId>,
+   ) -> Result<(f64, f64), anyhow::Error>
    where
       P: Provider<N> + Clone + 'static,
       N: Network,
@@ -412,7 +440,13 @@ impl UniswapPool for UniswapV2Pool {
          bail!("Base token not found in the pool");
       }
 
-      let base_price = get_base_token_price(client.clone(), chain_id, self.base_token().address, block).await?;
+      let base_price = get_base_token_price(
+         client.clone(),
+         chain_id,
+         self.base_token().address,
+         block,
+      )
+      .await?;
       let quote_price = self.quote_price(base_price)?;
       Ok((base_price, quote_price))
    }
@@ -474,9 +508,7 @@ mod tests {
       let quote = pool.quote_currency();
 
       let amount_in = NumericValue::parse_to_wei("1", base.decimals());
-      let swap_result = pool
-         .simulate_swap_result(base, quote, amount_in.clone())
-         .unwrap();
+      let swap_result = pool.simulate_swap_result(base, quote, amount_in.clone()).unwrap();
 
       println!("=== V2 Swap Test ===");
       println!(
@@ -492,7 +524,10 @@ mod tests {
          quote.symbol()
       );
 
-      println!("With Price Impact: {:.4}%", swap_result.price_impact);
+      println!(
+         "With Price Impact: {:.4}%",
+         swap_result.price_impact
+      );
    }
 
    #[tokio::test]

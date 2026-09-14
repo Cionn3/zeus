@@ -33,7 +33,8 @@ type AccountInfoSender = OneshotSender<DatabaseResult<AccountInfo>>;
 type StorageSender = OneshotSender<DatabaseResult<U256>>;
 type BlockHashSender = OneshotSender<DatabaseResult<B256>>;
 
-type BasicFuture<Err> = Pin<Box<dyn Future<Output = (Result<(U256, u64, Bytes), Err>, Address)> + Send>>;
+type BasicFuture<Err> =
+   Pin<Box<dyn Future<Output = (Result<(U256, u64, Bytes), Err>, Address)> + Send>>;
 type StorageFuture<Err> = Pin<Box<dyn Future<Output = (Result<U256, Err>, Address, U256)> + Send>>;
 type BlockHashFuture<Err> = Pin<Box<dyn Future<Output = (Result<B256, Err>, U256)> + Send>>;
 
@@ -118,12 +119,7 @@ where
             }
          }
          BackendFetchRequest::Storage(addr, idx, sender) => {
-            let value = self
-               .db
-               .cache
-               .accounts
-               .get(&addr)
-               .and_then(|acc| acc.storage.get(&idx));
+            let value = self.db.cache.accounts.get(&addr).and_then(|acc| acc.storage.get(&idx));
             if let Some(value) = value {
                let _ = sender.send(Ok(*value));
             } else {
@@ -154,19 +150,11 @@ where
             let block_num = self.block_num.unwrap_or(BlockId::latest());
             let fut = Box::pin(async move {
                // tracing::info!("Fetching account info for {}", address);
-               let balance = provider
-                  .get_balance(address)
-                  .block_id(block_num)
-                  .into_future();
+               let balance = provider.get_balance(address).block_id(block_num).into_future();
 
-               let nonce = provider
-                  .get_transaction_count(address)
-                  .block_id(block_num)
-                  .into_future();
-               let code = provider
-                  .get_code_at(address)
-                  .block_id(block_num)
-                  .into_future();
+               let nonce =
+                  provider.get_transaction_count(address).block_id(block_num).into_future();
+               let code = provider.get_code_at(address).block_id(block_num).into_future();
 
                let resp = tokio::try_join!(balance, nonce, code);
 
@@ -189,10 +177,7 @@ where
             let block_num = self.block_num.unwrap_or(BlockId::latest());
             let fut = Box::pin(async move {
                // tracing::info!("Fetching storage for {} at {}", address, idx);
-               let storage = provider
-                  .get_storage_at(address, idx)
-                  .block_id(block_num)
-                  .await;
+               let storage = provider.get_storage_at(address, idx).block_id(block_num).await;
 
                (storage, address, idx)
             });
@@ -227,9 +212,7 @@ where
 
                (block_hash, number)
             });
-            self
-               .pending_requests
-               .push(FetchRequestFuture::BlockHash(fut));
+            self.pending_requests.push(FetchRequestFuture::BlockHash(fut));
          }
       }
    }
@@ -277,7 +260,10 @@ where
                            let err = Arc::new(anyhow::Error::new(err));
                            if let Some(listeners) = pin.account_requests.remove(&addr) {
                               listeners.into_iter().for_each(|l| {
-                                 let _ = l.send(Err(DatabaseError::GetAccount(addr, Arc::clone(&err))));
+                                 let _ = l.send(Err(DatabaseError::GetAccount(
+                                    addr,
+                                    Arc::clone(&err),
+                                 )));
                               });
                            }
                            continue;
@@ -288,7 +274,10 @@ where
                      let (code, code_hash) = if !code.is_empty() {
                         (Some(code.clone()), keccak256(&code))
                      } else {
-                        (Some(revm::primitives::Bytes::default()), KECCAK_EMPTY)
+                        (
+                           Some(revm::primitives::Bytes::default()),
+                           KECCAK_EMPTY,
+                        )
                      };
 
                      // update the cache
@@ -319,7 +308,11 @@ where
                            let err = Arc::new(anyhow::Error::new(err));
                            if let Some(listeners) = pin.storage_requests.remove(&(addr, idx)) {
                               listeners.into_iter().for_each(|l| {
-                                 let _ = l.send(Err(DatabaseError::GetStorage(addr, idx, Arc::clone(&err))));
+                                 let _ = l.send(Err(DatabaseError::GetStorage(
+                                    addr,
+                                    idx,
+                                    Arc::clone(&err),
+                                 )));
                               });
                            }
                            continue;
@@ -347,7 +340,10 @@ where
                            // notify all listeners
                            if let Some(listeners) = pin.block_requests.remove(&number) {
                               listeners.into_iter().for_each(|l| {
-                                 let _ = l.send(Err(DatabaseError::GetBlockHash(number, Arc::clone(&err))));
+                                 let _ = l.send(Err(DatabaseError::GetBlockHash(
+                                    number,
+                                    Arc::clone(&err),
+                                 )));
                               });
                            }
                            continue;

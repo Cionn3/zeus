@@ -205,7 +205,7 @@ impl DeleteContact {
             ui.set_max_width(card_width);
 
             ui.label(RichText::new(&contact_to_delete.name).size(theme.typography.large));
-            
+
             ui.label(
                RichText::new(contact_to_delete.evm_address.to_string())
                   .size(theme.typography.small)

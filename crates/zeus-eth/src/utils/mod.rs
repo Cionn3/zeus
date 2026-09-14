@@ -127,6 +127,10 @@ pub fn truncate_address(s: &str, max_len: usize) -> String {
       let suffix = &s[s.len() - suffix_len..];
       format!("{}...{}", prefix, suffix)
    } else {
-      format!("{}...{}", &s[..prefix_len], &s[s.len() - suffix_len..])
+      format!(
+         "{}...{}",
+         &s[..prefix_len],
+         &s[s.len() - suffix_len..]
+      )
    }
 }

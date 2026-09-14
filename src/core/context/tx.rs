@@ -294,7 +294,7 @@ fn merge_by_hash(dst: &mut Vec<TransactionRich>, src: Vec<TransactionRich>) {
          dst.push(tx);
       }
    }
-   
+
    dst.sort_by(|a, b| b.block.cmp(&a.block).then_with(|| b.timestamp.cmp(&a.timestamp)));
 }
 

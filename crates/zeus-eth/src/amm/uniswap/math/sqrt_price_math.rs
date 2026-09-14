@@ -6,7 +6,8 @@ use super::{
    unsafe_math::div_rounding_up,
 };
 
-pub const MAX_U160: U256 = U256::from_limbs([18446744073709551615, 18446744073709551615, 4294967295, 0]);
+pub const MAX_U160: U256 =
+   U256::from_limbs([18446744073709551615, 18446744073709551615, 4294967295, 0]);
 pub const Q96: U256 = U256::from_limbs([0, 4294967296, 0, 0]);
 pub const FIXED_POINT_96_RESOLUTION: U256 = U256::from_limbs([96, 0, 0, 0]);
 
@@ -149,7 +150,10 @@ pub fn _get_amount_0_delta(
 
    if round_up {
       let numerator_partial = mul_div_rounding_up(numerator_1, numerator_2, sqrt_ratio_b_x_96)?;
-      Ok(div_rounding_up(numerator_partial, sqrt_ratio_a_x_96))
+      Ok(div_rounding_up(
+         numerator_partial,
+         sqrt_ratio_a_x_96,
+      ))
    } else {
       Ok(mul_div(numerator_1, numerator_2, sqrt_ratio_b_x_96)? / sqrt_ratio_a_x_96)
    }
@@ -246,11 +250,21 @@ mod test {
    #[test]
    fn test_get_next_sqrt_price_from_input() {
       //Fails if price is zero
-      let result = get_next_sqrt_price_from_input(U256::ZERO, 0, U256::from(100000000000000000_u128), false);
+      let result = get_next_sqrt_price_from_input(
+         U256::ZERO,
+         0,
+         U256::from(100000000000000000_u128),
+         false,
+      );
       assert_eq!(result.unwrap_err().to_string(), "Sqrt price is 0");
 
       //Fails if liquidity is zero
-      let result = get_next_sqrt_price_from_input(U256_1, 0, U256::from(100000000000000000_u128), true);
+      let result = get_next_sqrt_price_from_input(
+         U256_1,
+         0,
+         U256::from(100000000000000000_u128),
+         true,
+      );
       assert_eq!(result.unwrap_err().to_string(), "Liquidity is 0");
 
       //fails if input amount overflows the price
@@ -264,7 +278,10 @@ mod test {
       let result = get_next_sqrt_price_from_input(
          U256_1,
          1,
-         U256::from_str("57896044618658097711785492504343953926634992332820282019728792003956564819968").unwrap(),
+         U256::from_str(
+            "57896044618658097711785492504343953926634992332820282019728792003956564819968",
+         )
+         .unwrap(),
          true,
       );
 
@@ -301,7 +318,12 @@ mod test {
       let sqrt_price = MAX_U160;
       let liquidity = u128::MAX;
       let max_amount_no_overflow = U256::MAX - ((U256::from(liquidity) << 96) / sqrt_price);
-      let result = get_next_sqrt_price_from_input(sqrt_price, liquidity, max_amount_no_overflow, true);
+      let result = get_next_sqrt_price_from_input(
+         sqrt_price,
+         liquidity,
+         max_amount_no_overflow,
+         true,
+      );
       assert_eq!(result.unwrap(), U256_1);
 
       //input amount of 0.1 token1
@@ -553,7 +575,10 @@ mod test {
          false,
       );
 
-      assert_eq!(amount_0_rounded_down.unwrap(), amount_0.sub(U256_1));
+      assert_eq!(
+         amount_0_rounded_down.unwrap(),
+         amount_0.sub(U256_1)
+      );
 
       // works for prices that overflow
       let amount_0_up = _get_amount_0_delta(
@@ -618,7 +643,10 @@ mod test {
          false,
       );
 
-      assert_eq!(amount_1_rounded_down.unwrap(), amount_1.sub(U256_1));
+      assert_eq!(
+         amount_1_rounded_down.unwrap(),
+         amount_1.sub(U256_1)
+      );
    }
 
    #[test]
@@ -628,7 +656,8 @@ mod test {
       let zero_for_one = true;
       let amount_in = U256::from(406);
 
-      let sqrt_q = get_next_sqrt_price_from_input(sqrt_price, liquidity, amount_in, zero_for_one).unwrap();
+      let sqrt_q =
+         get_next_sqrt_price_from_input(sqrt_price, liquidity, amount_in, zero_for_one).unwrap();
 
       assert_eq!(
          sqrt_q,

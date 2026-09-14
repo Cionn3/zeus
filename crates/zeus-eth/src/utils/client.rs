@@ -20,7 +20,10 @@ use std::{
 };
 
 pub type RpcClient = FillProvider<
-   JoinFill<Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>,
+   JoinFill<
+      Identity,
+      JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+   >,
    RootProvider<Ethereum>,
 >;
 
@@ -120,10 +123,7 @@ pub fn get_http_client(
    throttle: ThrottleLayer,
 ) -> Result<RpcClient, anyhow::Error> {
    let url = Url::parse(url)?;
-   let client = ClientBuilder::default()
-      .layer(retry_layer)
-      .layer(throttle)
-      .http(url);
+   let client = ClientBuilder::default().layer(retry_layer).layer(throttle).http(url);
 
    let client = ProviderBuilder::new().connect_client(client);
    Ok(client)

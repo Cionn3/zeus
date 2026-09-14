@@ -97,10 +97,7 @@ fn _format_abbreviated(n: f64) -> Option<String> {
    let magnitude = magnitude.min(suffixes.len() - 1);
    let divisor = 1000.0f64.powi(magnitude as i32);
    let scaled = n / divisor;
-   let formatted = format!("{:.2}", scaled)
-      .trim_end_matches('0')
-      .trim_end_matches('.')
-      .to_string();
+   let formatted = format!("{:.2}", scaled).trim_end_matches('0').trim_end_matches('.').to_string();
    let s = format!("{}{}", formatted, suffixes[magnitude]);
    Some(s)
 }

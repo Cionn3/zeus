@@ -498,7 +498,7 @@ where
       if let Ok(decoded) = result {
          let (token, spender) = pairs[i];
          let expiration = u64::try_from(decoded.expiration).unwrap_or(0);
-         
+
          out.push((
             token,
             spender,

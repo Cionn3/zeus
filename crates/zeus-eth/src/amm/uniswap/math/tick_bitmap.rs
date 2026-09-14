@@ -4,7 +4,11 @@ use alloy_primitives::U256;
 use std::collections::HashMap;
 
 //Flips the initialized state for a given tick from false to true, or vice versa
-pub fn flip_tick(tick_bitmap: &mut HashMap<i16, U256>, tick: i32, tick_spacing: i32) -> Result<(), UniswapV3MathError> {
+pub fn flip_tick(
+   tick_bitmap: &mut HashMap<i16, U256>,
+   tick: i32,
+   tick_spacing: i32,
+) -> Result<(), UniswapV3MathError> {
    if (tick % tick_spacing) != 0 {
       return Err(UniswapV3MathError::TickSpacingError);
    }
@@ -40,10 +44,7 @@ pub fn next_initialized_tick_within_one_word(
       let initialized = !masked.is_zero();
 
       let next = if initialized {
-         (compressed
-            - (bit_pos
-               .overflowing_sub(bit_math::most_significant_bit(masked)?)
-               .0) as i32)
+         (compressed - (bit_pos.overflowing_sub(bit_math::most_significant_bit(masked)?).0) as i32)
             * tick_spacing
       } else {
          (compressed - bit_pos as i32) * tick_spacing
@@ -62,9 +63,7 @@ pub fn next_initialized_tick_within_one_word(
       let next = if initialized {
          (compressed
             + 1
-            + (bit_math::least_significant_bit(masked)?
-               .overflowing_sub(bit_pos)
-               .0) as i32)
+            + (bit_math::least_significant_bit(masked)?.overflowing_sub(bit_pos).0) as i32)
             * tick_spacing
       } else {
          (compressed + 1 + ((0xFF - bit_pos) as i32)) * tick_spacing
@@ -94,7 +93,10 @@ mod test {
       Ok(tick_bitmap)
    }
 
-   pub fn initialized(tick: i32, tick_bitmap: &HashMap<i16, U256>) -> Result<bool, UniswapV3MathError> {
+   pub fn initialized(
+      tick: i32,
+      tick_bitmap: &HashMap<i16, U256>,
+   ) -> Result<bool, UniswapV3MathError> {
       let (next, initialized) = next_initialized_tick_within_one_word(tick_bitmap, tick, 1, true)?;
       if next == tick {
          Ok(initialized)
@@ -130,7 +132,8 @@ mod test {
       assert!(!initialized);
       tick_bitmap = init_test_ticks()?;
       //returns the next words initialized tick if on the right boundary
-      let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, -257, 1, false)?;
+      let (next, initialized) =
+         next_initialized_tick_within_one_word(&tick_bitmap, -257, 1, false)?;
 
       assert_eq!(next, -200);
       assert!(initialized);

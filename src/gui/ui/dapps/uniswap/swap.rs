@@ -1857,9 +1857,7 @@ async fn swap_via_ur(
    accounts.push(AccountPrefetch::eoa(signer_address));
    accounts.push(AccountPrefetch::contract(router_addr));
    accounts.push(AccountPrefetch::contract(permit2_addr));
-   accounts.push(AccountPrefetch::eoa(
-      block.header.beneficiary,
-   ));
+   accounts.push(AccountPrefetch::eoa(block.header.beneficiary));
 
    if currency_in.is_erc20() {
       accounts.push(AccountPrefetch::contract(currency_in.address()));

@@ -29,7 +29,12 @@ impl From<u64> for NativeCurrency {
 }
 
 impl NativeCurrency {
-   pub fn new(chain_id: u64, symbol: impl Into<Arc<str>>, name: impl Into<Arc<str>>, decimals: u8) -> Self {
+   pub fn new(
+      chain_id: u64,
+      symbol: impl Into<Arc<str>>,
+      name: impl Into<Arc<str>>,
+      decimals: u8,
+   ) -> Self {
       Self {
          chain_id,
          symbol: symbol.into(),

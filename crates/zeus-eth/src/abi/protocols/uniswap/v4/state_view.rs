@@ -83,11 +83,7 @@ where
 {
    let block = block.unwrap_or(BlockId::latest());
    let contract = StateView::new(contract, client);
-   let res = contract
-      .getTickInfo(pool_id, tick.try_into()?)
-      .block(block)
-      .call()
-      .await?;
+   let res = contract.getTickInfo(pool_id, tick.try_into()?).block(block).call().await?;
    Ok(res)
 }
 
@@ -104,11 +100,7 @@ where
 {
    let block = block.unwrap_or(BlockId::latest());
    let contract = StateView::new(contract, client);
-   let res = contract
-      .getTickLiquidity(pool_id, tick)
-      .block(block)
-      .call()
-      .await?;
+   let res = contract.getTickLiquidity(pool_id, tick).block(block).call().await?;
    Ok(res)
 }
 
@@ -145,11 +137,7 @@ where
 {
    let block = block.unwrap_or(BlockId::latest());
    let contract = StateView::new(contract, client);
-   let res = contract
-      .getFeeGrowthGlobals(pool_id)
-      .block(block)
-      .call()
-      .await?;
+   let res = contract.getFeeGrowthGlobals(pool_id).block(block).call().await?;
    Ok(res)
 }
 
@@ -182,11 +170,7 @@ where
 {
    let block = block.unwrap_or(BlockId::latest());
    let contract = StateView::new(contract, client);
-   let res = contract
-      .getTickBitmap(pool_id, tick)
-      .block(block)
-      .call()
-      .await?;
+   let res = contract.getTickBitmap(pool_id, tick).block(block).call().await?;
    Ok(res)
 }
 
@@ -203,11 +187,7 @@ where
 {
    let block = block.unwrap_or(BlockId::latest());
    let contract = StateView::new(contract, client);
-   let res = contract
-      .getPositionInfo(pool_id, position_id)
-      .block(block)
-      .call()
-      .await?;
+   let res = contract.getPositionInfo(pool_id, position_id).block(block).call().await?;
    Ok(res)
 }
 
@@ -224,11 +204,7 @@ where
 {
    let block = block.unwrap_or(BlockId::latest());
    let contract = StateView::new(contract, client);
-   let res = contract
-      .getPositionLiquidity(pool_id, position_id)
-      .block(block)
-      .call()
-      .await?;
+   let res = contract.getPositionLiquidity(pool_id, position_id).block(block).call().await?;
    Ok(res)
 }
 
@@ -247,7 +223,11 @@ where
    let block = block.unwrap_or(BlockId::latest());
    let contract = StateView::new(contract, client);
    let res = contract
-      .getFeeGrowthInside(pool_id, tick_lower.try_into()?, tick_upper.try_into()?)
+      .getFeeGrowthInside(
+         pool_id,
+         tick_lower.try_into()?,
+         tick_upper.try_into()?,
+      )
       .block(block)
       .call()
       .await?;

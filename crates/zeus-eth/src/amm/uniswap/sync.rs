@@ -9,9 +9,14 @@ use tokio::{
    task::JoinHandle,
 };
 
-use super::{AnyUniswapPool, DexKind, FeeAmount, State, UniswapPool, UniswapV2Pool, UniswapV3Pool, UniswapV4Pool};
+use super::{
+   AnyUniswapPool, DexKind, FeeAmount, State, UniswapPool, UniswapV2Pool, UniswapV3Pool,
+   UniswapV4Pool,
+};
 
-use crate::abi::uniswap::{v2::factory::IUniswapV2Factory, v3::factory::IUniswapV3Factory, v4::IPoolManager};
+use crate::abi::uniswap::{
+   v2::factory::IUniswapV2Factory, v3::factory::IUniswapV3Factory, v4::IPoolManager,
+};
 
 use crate::currency::{Currency, NativeCurrency, erc20::ERC20Token};
 
@@ -112,7 +117,11 @@ impl SyncConfig {
 /// Sync pools with the given configuration
 ///
 /// See [SyncConfig]
-pub async fn sync_pools<P, N>(client: P, config: SyncConfig, block_range: u64) -> Result<Vec<SyncResult>, anyhow::Error>
+pub async fn sync_pools<P, N>(
+   client: P,
+   config: SyncConfig,
+   block_range: u64,
+) -> Result<Vec<SyncResult>, anyhow::Error>
 where
    P: Provider<N> + Clone + 'static,
    N: Network,
@@ -361,7 +370,10 @@ where
       } else if let Some(token) = token_map.get(&pool.token0) {
          token.clone()
       } else {
-         return Err(anyhow!("Missing ERC-20 data for token0: {}", pool.token0));
+         return Err(anyhow!(
+            "Missing ERC-20 data for token0: {}",
+            pool.token0
+         ));
       };
 
       let token1 = if let Some(token) = ERC20Token::base_token(chain, pool.token1) {
@@ -369,7 +381,10 @@ where
       } else if let Some(token) = token_map.get(&pool.token1) {
          token.clone()
       } else {
-         return Err(anyhow!("Missing ERC-20 data for token1: {}", pool.token1));
+         return Err(anyhow!(
+            "Missing ERC-20 data for token1: {}",
+            pool.token1
+         ));
       };
 
       let p = UniswapV2Pool::new(chain, pool.address, token0, token1, dex);
@@ -440,7 +455,10 @@ where
       } else if let Some(token) = token_map.get(&pool.token0) {
          token.clone()
       } else {
-         return Err(anyhow!("Missing ERC-20 data for token0: {}", pool.token0));
+         return Err(anyhow!(
+            "Missing ERC-20 data for token0: {}",
+            pool.token0
+         ));
       };
 
       let token1 = if let Some(token) = ERC20Token::base_token(chain, pool.token1) {
@@ -448,7 +466,10 @@ where
       } else if let Some(token) = token_map.get(&pool.token1) {
          token.clone()
       } else {
-         return Err(anyhow!("Missing ERC-20 data for token1: {}", pool.token1));
+         return Err(anyhow!(
+            "Missing ERC-20 data for token1: {}",
+            pool.token1
+         ));
       };
 
       let p = UniswapV3Pool::new(chain, pool.address, pool.fee, token0, token1, dex);

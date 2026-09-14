@@ -3,7 +3,7 @@ use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use zeus_eth::{
    abi::erc20,
-   alloy_primitives::{Address, U256, Log},
+   alloy_primitives::{Address, Log, U256},
    currency::{Currency, ERC20Token},
    utils::NumericValue,
 };

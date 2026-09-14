@@ -41,9 +41,19 @@ where
    //
    // Returns:
    // `(ForkFactory, GlobalBackend)`: ForkFactory instance and the GlobalBackend it talks to
-   fn new(provider: P, chain_id: u64, initial_db: InMemoryDB, fork_block: Option<BlockId>) -> (Self, GlobalBackend<P>) {
+   fn new(
+      provider: P,
+      chain_id: u64,
+      initial_db: InMemoryDB,
+      fork_block: Option<BlockId>,
+   ) -> (Self, GlobalBackend<P>) {
       let (backend, backend_rx) = channel(1);
-      let handler = GlobalBackend::new(backend_rx, fork_block, provider.clone(), initial_db.clone());
+      let handler = GlobalBackend::new(
+         backend_rx,
+         fork_block,
+         provider.clone(),
+         initial_db.clone(),
+      );
       (
          Self {
             chain_id,
@@ -98,7 +108,12 @@ where
    }
 
    /// Insert storage into local db
-   pub fn insert_account_storage(&mut self, address: Address, slot: U256, value: U256) -> DatabaseResult<()> {
+   pub fn insert_account_storage(
+      &mut self,
+      address: Address,
+      slot: U256,
+      value: U256,
+   ) -> DatabaseResult<()> {
       if !self.initial_db.cache.accounts.contains_key(&address) {
          // set basic info as its missing
          let info = self.do_get_basic(address)?;
@@ -107,10 +122,7 @@ where
             self.initial_db.insert_account_info(address, info);
          }
       }
-      self
-         .initial_db
-         .insert_account_storage(address, slot, value)
-         .unwrap();
+      self.initial_db.insert_account_storage(address, slot, value).unwrap();
 
       Ok(())
    }
@@ -157,7 +169,12 @@ where
    }
 
    /// Give this account the given amount of ERC20 token
-   pub fn give_token(&mut self, account: Address, token: Address, amount: U256) -> Result<(), anyhow::Error> {
+   pub fn give_token(
+      &mut self,
+      account: Address,
+      token: Address,
+      amount: U256,
+   ) -> Result<(), anyhow::Error> {
       let slot = self.find_balance_slot(account, token, amount)?;
       if let Some(slot) = slot {
          self.give_token_with_slot(account, token, slot, amount)
@@ -188,7 +205,10 @@ where
       let slot: U256 = U256::from_be_bytes(slot_hash.into());
 
       if let Err(e) = self.insert_account_storage(token, slot, amount) {
-         return Err(anyhow::anyhow!("Failed to insert account storage: {}", e));
+         return Err(anyhow::anyhow!(
+            "Failed to insert account storage: {}",
+            e
+         ));
       }
       Ok(())
    }

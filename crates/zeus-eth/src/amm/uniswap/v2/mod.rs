@@ -104,11 +104,11 @@ pub fn get_amount_out(amount_in: U256, reserve_in: U256, reserve_out: U256, fee:
 /// Calculates the price of the currency_in in terms of the other currency in the pool
 ///
 /// Returned as a Q64 fixed point number.
-pub fn calculate_price_64_x_64(pool: &impl UniswapPool, currency_in: &Currency) -> Result<u128, anyhow::Error> {
-   let state = pool
-      .state()
-      .v2_reserves()
-      .ok_or(anyhow::anyhow!("State not initialized"))?;
+pub fn calculate_price_64_x_64(
+   pool: &impl UniswapPool,
+   currency_in: &Currency,
+) -> Result<u128, anyhow::Error> {
+   let state = pool.state().v2_reserves().ok_or(anyhow::anyhow!("State not initialized"))?;
    let decimal_shift = pool.currency0().decimals() as i8 - pool.currency1().decimals() as i8;
 
    let (r_0, r_1) = if decimal_shift < 0 {

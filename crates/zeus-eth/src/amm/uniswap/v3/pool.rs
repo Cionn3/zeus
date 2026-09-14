@@ -80,7 +80,14 @@ impl UniswapV3Pool {
    /// Create a new Uniswap V3 Pool
    ///
    /// Tokens are ordered as token0 < token1
-   pub fn new(chain_id: u64, address: Address, fee: u32, token0: ERC20Token, token1: ERC20Token, dex: DexKind) -> Self {
+   pub fn new(
+      chain_id: u64,
+      address: Address,
+      fee: u32,
+      token0: ERC20Token,
+      token1: ERC20Token,
+      dex: DexKind,
+   ) -> Self {
       let (token0, token1) = if token0.address < token1.address {
          (token0, token1)
       } else {
@@ -103,7 +110,11 @@ impl UniswapV3Pool {
       }
    }
 
-   pub async fn from_address<P, N>(client: P, chain_id: u64, address: Address) -> Result<Self, anyhow::Error>
+   pub async fn from_address<P, N>(
+      client: P,
+      chain_id: u64,
+      address: Address,
+   ) -> Result<Self, anyhow::Error>
    where
       P: Provider<N> + Clone + 'static,
       N: Network,
@@ -143,11 +154,20 @@ impl UniswapV3Pool {
       N: Network,
    {
       let factory = dex.factory(chain_id)?;
-      let address = v3::factory::get_pool(client, factory, token0.address, token1.address, fee).await?;
+      let address = v3::factory::get_pool(
+         client,
+         factory,
+         token0.address,
+         token1.address,
+         fee,
+      )
+      .await?;
       if address.is_zero() {
          anyhow::bail!("Pair not found");
       }
-      Ok(Self::new(chain_id, address, fee, token0, token1, dex))
+      Ok(Self::new(
+         chain_id, address, fee, token0, token1, dex,
+      ))
    }
 
    pub fn token0(&self) -> Cow<'_, ERC20Token> {
@@ -275,24 +295,42 @@ impl UniswapPool for UniswapV3Pool {
    }
 
    fn pool_balances(&self) -> (NumericValue, NumericValue) {
-      let amount0 = NumericValue::format_wei(self.liquidity_amount0, self.currency0().decimals());
-      let amount1 = NumericValue::format_wei(self.liquidity_amount1, self.currency1().decimals());
+      let amount0 = NumericValue::format_wei(
+         self.liquidity_amount0,
+         self.currency0().decimals(),
+      );
+      let amount1 = NumericValue::format_wei(
+         self.liquidity_amount1,
+         self.currency1().decimals(),
+      );
       (amount0, amount1)
    }
 
    fn base_balance(&self) -> NumericValue {
       if self.currency0().is_base() {
-         NumericValue::format_wei(self.liquidity_amount0, self.currency0().decimals())
+         NumericValue::format_wei(
+            self.liquidity_amount0,
+            self.currency0().decimals(),
+         )
       } else {
-         NumericValue::format_wei(self.liquidity_amount1, self.currency1().decimals())
+         NumericValue::format_wei(
+            self.liquidity_amount1,
+            self.currency1().decimals(),
+         )
       }
    }
 
    fn quote_balance(&self) -> NumericValue {
       if self.currency0().is_base() {
-         NumericValue::format_wei(self.liquidity_amount1, self.currency1().decimals())
+         NumericValue::format_wei(
+            self.liquidity_amount1,
+            self.currency1().decimals(),
+         )
       } else {
-         NumericValue::format_wei(self.liquidity_amount0, self.currency0().decimals())
+         NumericValue::format_wei(
+            self.liquidity_amount0,
+            self.currency0().decimals(),
+         )
       }
    }
 
@@ -306,7 +344,11 @@ impl UniswapPool for UniswapV3Pool {
       Ok(())
    }
 
-   async fn update_state<P, N>(&mut self, client: P, block: Option<BlockId>) -> Result<(), anyhow::Error>
+   async fn update_state<P, N>(
+      &mut self,
+      client: P,
+      block: Option<BlockId>,
+   ) -> Result<(), anyhow::Error>
    where
       P: Provider<N> + Clone + 'static,
       N: Network,
@@ -321,15 +363,16 @@ impl UniswapPool for UniswapV3Pool {
    fn simulate_swap(&self, currency_in: &Currency, amount_in: U256) -> Result<U256, anyhow::Error> {
       let zero_for_one = self.zero_for_one(currency_in);
       let fee = self.fee.fee();
-      let state = self
-         .state()
-         .v3_state()
-         .ok_or(anyhow::anyhow!("State not initialized"))?;
+      let state = self.state().v3_state().ok_or(anyhow::anyhow!("State not initialized"))?;
       let amount_out = super::calculate_swap(state, fee, zero_for_one, amount_in)?;
       Ok(amount_out)
    }
 
-   fn simulate_swap_mut(&mut self, currency_in: &Currency, amount_in: U256) -> Result<U256, anyhow::Error> {
+   fn simulate_swap_mut(
+      &mut self,
+      currency_in: &Currency,
+      amount_in: U256,
+   ) -> Result<U256, anyhow::Error> {
       let zero_for_one = self.zero_for_one(currency_in);
       let fee = self.fee.fee();
       let state = self
@@ -360,7 +403,10 @@ impl UniswapPool for UniswapV3Pool {
       Ok(SwapResult {
          amount_in,
          amount_out,
-         ideal_amount_out: NumericValue::parse_to_wei(&ideal_amount_out.to_string(), currency_out.decimals()),
+         ideal_amount_out: NumericValue::parse_to_wei(
+            &ideal_amount_out.to_string(),
+            currency_out.decimals(),
+         ),
          price_impact,
       })
    }
@@ -393,7 +439,11 @@ impl UniswapPool for UniswapV3Pool {
    /// ## Returns
    ///
    /// - (base_price, quote_price)
-   async fn tokens_price<P, N>(&self, client: P, block: Option<BlockId>) -> Result<(f64, f64), anyhow::Error>
+   async fn tokens_price<P, N>(
+      &self,
+      client: P,
+      block: Option<BlockId>,
+   ) -> Result<(f64, f64), anyhow::Error>
    where
       P: Provider<N> + Clone + 'static,
       N: Network,
@@ -404,7 +454,13 @@ impl UniswapPool for UniswapV3Pool {
          bail!("Base token not found in the pool");
       }
 
-      let base_price = get_base_token_price(client.clone(), chain_id, self.base_token().address, block).await?;
+      let base_price = get_base_token_price(
+         client.clone(),
+         chain_id,
+         self.base_token().address,
+         block,
+      )
+      .await?;
       let quote_price = self.quote_price(base_price)?;
       Ok((base_price, quote_price))
    }
@@ -426,7 +482,14 @@ impl UniswapV3Pool {
       };
 
       let pool_address = address!("3470447f3CecfFAc709D3e783A307790b0208d60");
-      UniswapV3Pool::new(1, pool_address, 3000, usdt, uni, DexKind::UniswapV3)
+      UniswapV3Pool::new(
+         1,
+         pool_address,
+         3000,
+         usdt,
+         uni,
+         DexKind::UniswapV3,
+      )
    }
 
    pub fn weth_usdc() -> Self {
@@ -473,9 +536,7 @@ mod tests {
       let quote = pool.quote_currency();
 
       let amount_in = NumericValue::parse_to_wei("100000", base.decimals());
-      let swap_result = pool
-         .simulate_swap_result(base, quote, amount_in.clone())
-         .unwrap();
+      let swap_result = pool.simulate_swap_result(base, quote, amount_in.clone()).unwrap();
 
       println!("=== V3 Swap Test ===");
       println!(
@@ -490,7 +551,10 @@ mod tests {
          swap_result.amount_out.f64(),
          quote.symbol()
       );
-      println!("With Price Impact: {:.4}%", swap_result.price_impact);
+      println!(
+         "With Price Impact: {:.4}%",
+         swap_result.price_impact
+      );
    }
 
    #[tokio::test]

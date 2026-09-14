@@ -210,7 +210,11 @@ pub struct PositionParams {
    pub tokens_owed1: U256,
 }
 
-pub async fn owner_of<P, N>(client: P, contract_address: Address, token_id: U256) -> Result<Address, anyhow::Error>
+pub async fn owner_of<P, N>(
+   client: P,
+   contract_address: Address,
+   token_id: U256,
+) -> Result<Address, anyhow::Error>
 where
    P: Provider<N> + Clone + 'static,
    N: Network,
@@ -279,10 +283,8 @@ pub fn encode_create_pool(
    sqrt_price_x96: U256,
 ) -> Result<Bytes, anyhow::Error> {
    let fee: Uint<24, 1> = fee.to_string().parse().context("Failed to parse fee")?;
-   let sqrt_price_x96: Uint<160, 3> = sqrt_price_x96
-      .to_string()
-      .parse()
-      .context("Failed to parse sqrt_price_x96")?;
+   let sqrt_price_x96: Uint<160, 3> =
+      sqrt_price_x96.to_string().parse().context("Failed to parse sqrt_price_x96")?;
 
    let abi = INonfungiblePositionManager::createAndInitializePoolIfNecessaryCall {
       token0,
@@ -293,7 +295,9 @@ pub fn encode_create_pool(
    Ok(Bytes::from(abi.abi_encode()))
 }
 
-pub fn encode_increase_liquidity(params: INonfungiblePositionManager::IncreaseLiquidityParams) -> Bytes {
+pub fn encode_increase_liquidity(
+   params: INonfungiblePositionManager::IncreaseLiquidityParams,
+) -> Bytes {
    let abi = INonfungiblePositionManager::increaseLiquidityCall { params };
    Bytes::from(abi.abi_encode())
 }
@@ -308,7 +312,9 @@ pub fn encode_collect(params: INonfungiblePositionManager::CollectParams) -> Byt
    Bytes::from(abi.abi_encode())
 }
 
-pub fn encode_decrease_liquidity(params: INonfungiblePositionManager::DecreaseLiquidityParams) -> Bytes {
+pub fn encode_decrease_liquidity(
+   params: INonfungiblePositionManager::DecreaseLiquidityParams,
+) -> Bytes {
    let abi = INonfungiblePositionManager::decreaseLiquidityCall { params };
    Bytes::from(abi.abi_encode())
 }
@@ -342,7 +348,10 @@ pub fn encode_mint(params: MintParams) -> Bytes {
 // ABI Decode functions
 
 pub fn decode_create_pool(data: &Bytes) -> Result<Address, anyhow::Error> {
-   let abi = INonfungiblePositionManager::createAndInitializePoolIfNecessaryCall::abi_decode_returns(data)?;
+   let abi =
+      INonfungiblePositionManager::createAndInitializePoolIfNecessaryCall::abi_decode_returns(
+         data,
+      )?;
    Ok(abi)
 }
 
@@ -359,26 +368,12 @@ pub fn decode_decrease_liquidity_call(data: &Bytes) -> Result<(U256, U256), anyh
 pub fn decode_positions(data: &Bytes) -> Result<PositionsReturn, anyhow::Error> {
    let abi = INonfungiblePositionManager::positionsCall::abi_decode_returns(data)?;
 
-   let nonce = abi
-      .nonce
-      .to_string()
-      .parse::<u128>()
-      .context("Failed to parse nonce")?;
-   let fee = abi
-      .fee
-      .to_string()
-      .parse::<u32>()
-      .context("Failed to parse fee")?;
-   let tick_lower = abi
-      .tickLower
-      .to_string()
-      .parse::<i32>()
-      .context("Failed to parse tick_lower")?;
-   let tick_upper = abi
-      .tickUpper
-      .to_string()
-      .parse::<i32>()
-      .context("Failed to parse tick_upper")?;
+   let nonce = abi.nonce.to_string().parse::<u128>().context("Failed to parse nonce")?;
+   let fee = abi.fee.to_string().parse::<u32>().context("Failed to parse fee")?;
+   let tick_lower =
+      abi.tickLower.to_string().parse::<i32>().context("Failed to parse tick_lower")?;
+   let tick_upper =
+      abi.tickUpper.to_string().parse::<i32>().context("Failed to parse tick_upper")?;
    Ok(PositionsReturn {
       nonce,
       operator: abi.operator,
@@ -400,7 +395,9 @@ pub fn decode_collect(data: &Bytes) -> Result<(U256, U256), anyhow::Error> {
    Ok((abi.amount0, abi.amount1))
 }
 
-pub fn decode_mint_call(bytes: &Bytes) -> Result<INonfungiblePositionManager::mintReturn, anyhow::Error> {
+pub fn decode_mint_call(
+   bytes: &Bytes,
+) -> Result<INonfungiblePositionManager::mintReturn, anyhow::Error> {
    let res = INonfungiblePositionManager::mintCall::abi_decode_returns(bytes)?;
    Ok(res)
 }
@@ -418,7 +415,9 @@ pub fn decode_collect_log(log: &LogData) -> Result<CollectLog, anyhow::Error> {
 }
 
 /// ERC721 Transfer event
-pub fn decode_transfer_log(log: &LogData) -> Result<INonfungiblePositionManager::Transfer, anyhow::Error> {
+pub fn decode_transfer_log(
+   log: &LogData,
+) -> Result<INonfungiblePositionManager::Transfer, anyhow::Error> {
    let res = INonfungiblePositionManager::Transfer::decode_raw_log(log.topics(), &log.data)?;
    Ok(res)
 }
@@ -431,13 +430,15 @@ pub fn decode_increase_liquidity_call(data: &Bytes) -> Result<(u128, U256, U256)
 pub fn decode_increase_liquidity_log(
    log: &LogData,
 ) -> Result<INonfungiblePositionManager::IncreaseLiquidity, anyhow::Error> {
-   let res = INonfungiblePositionManager::IncreaseLiquidity::decode_raw_log(log.topics(), &log.data)?;
+   let res =
+      INonfungiblePositionManager::IncreaseLiquidity::decode_raw_log(log.topics(), &log.data)?;
    Ok(res)
 }
 
 pub fn decode_decrease_liquidity_log(
    log: &LogData,
 ) -> Result<INonfungiblePositionManager::DecreaseLiquidity, anyhow::Error> {
-   let res = INonfungiblePositionManager::DecreaseLiquidity::decode_raw_log(log.topics(), &log.data)?;
+   let res =
+      INonfungiblePositionManager::DecreaseLiquidity::decode_raw_log(log.topics(), &log.data)?;
    Ok(res)
 }

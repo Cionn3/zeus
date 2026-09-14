@@ -17,7 +17,11 @@ sol!(
 /// Get the ETH price on supported chains
 ///
 /// - `block_id` The block to query the price at. If None, the latest block is used.
-pub async fn get_eth_price<P, N>(client: P, chain_id: u64, block_id: Option<BlockId>) -> Result<f64, anyhow::Error>
+pub async fn get_eth_price<P, N>(
+   client: P,
+   chain_id: u64,
+   block_id: Option<BlockId>,
+) -> Result<f64, anyhow::Error>
 where
    P: Provider<N> + Clone + 'static,
    N: Network,
@@ -151,9 +155,7 @@ mod tests {
    async fn test_get_usdc_price() {
       let url = Url::parse("https://eth.merkle.io").unwrap();
       let client = ProviderBuilder::new().connect_http(url);
-      let price = get_stablecoin_price(client, 1, usdc(1).unwrap(), None)
-         .await
-         .unwrap();
+      let price = get_stablecoin_price(client, 1, usdc(1).unwrap(), None).await.unwrap();
       eprintln!("USDC Price: {}", price);
    }
 
@@ -161,9 +163,7 @@ mod tests {
    async fn test_get_usdt_price() {
       let url = Url::parse("https://eth.merkle.io").unwrap();
       let client = ProviderBuilder::new().connect_http(url);
-      let price = get_stablecoin_price(client, 1, usdt(1).unwrap(), None)
-         .await
-         .unwrap();
+      let price = get_stablecoin_price(client, 1, usdt(1).unwrap(), None).await.unwrap();
       eprintln!("USDT Price: {}", price);
    }
 
@@ -171,9 +171,7 @@ mod tests {
    async fn test_get_dai_price() {
       let url = Url::parse("https://eth.merkle.io").unwrap();
       let client = ProviderBuilder::new().connect_http(url);
-      let price = get_stablecoin_price(client, 1, dai(1).unwrap(), None)
-         .await
-         .unwrap();
+      let price = get_stablecoin_price(client, 1, dai(1).unwrap(), None).await.unwrap();
       eprintln!("DAI Price: {}", price);
    }
 }

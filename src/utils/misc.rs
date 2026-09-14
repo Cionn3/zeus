@@ -37,7 +37,6 @@ fn build_runtime() -> Runtime {
       .expect("failed to build tokio runtime")
 }
 
-
 pub async fn create_railgun_provider(
    client: RpcClient,
    chain: u64,

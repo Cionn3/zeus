@@ -27,7 +27,9 @@ pub enum UniswapV3MathError {
    LiquidityAdd,
    #[error("The given tick must be less than, or equal to, the maximum tick")]
    T,
-   #[error("Second inequality must be < because the price can never reach the price at the max tick")]
+   #[error(
+      "Second inequality must be < because the price can never reach the price at the max tick"
+   )]
    R,
    #[error("Overflow when casting to U160")]
    SafeCastToU160Overflow,

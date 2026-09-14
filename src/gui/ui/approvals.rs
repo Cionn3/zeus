@@ -785,7 +785,7 @@ async fn live_permit2_allowances(
    if pairs.is_empty() {
       return HashMap::new();
    }
-   
+
    let Ok(permit2) = address_book::permit2_contract(chain) else {
       return HashMap::new();
    };

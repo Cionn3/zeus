@@ -110,7 +110,7 @@ impl AddressBookHandle {
       if name.trim().is_empty() {
          return false;
       }
-      
+
       self.write(|book| {
          book.pending.remove(&(chain, address));
          if book.names.contains_key(&(chain, address)) {

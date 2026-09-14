@@ -14,18 +14,16 @@ pub fn mul_div(a: U256, b: U256, mut denominator: U256) -> Result<U256, UniswapV
    let mm = a.mul_mod(b, U256::MAX);
 
    let mut prod_0 = a.overflowing_mul(b).0; // Least significant 256 bits of the product
-   let mut prod_1 = mm
-      .overflowing_sub(prod_0)
-      .0
-      .overflowing_sub(U256::from((mm < prod_0) as u8))
-      .0;
+   let mut prod_1 = mm.overflowing_sub(prod_0).0.overflowing_sub(U256::from((mm < prod_0) as u8)).0;
 
    // Handle non-overflow cases, 256 by 256 division
    if prod_1 == U256::ZERO {
       if denominator == U256::ZERO {
          return Err(UniswapV3MathError::DenominatorIsZero);
       }
-      return Ok(U256::from_limbs(*prod_0.div(denominator).as_limbs()));
+      return Ok(U256::from_limbs(
+         *prod_0.div(denominator).as_limbs(),
+      ));
    }
 
    // Make sure the result is less than 2**256.
@@ -44,18 +42,13 @@ pub fn mul_div(a: U256, b: U256, mut denominator: U256) -> Result<U256, UniswapV
    let remainder = a.mul_mod(b, denominator);
 
    // Subtract 256 bit number from 512 bit number
-   prod_1 = prod_1
-      .overflowing_sub(U256::from((remainder > prod_0) as u8))
-      .0;
+   prod_1 = prod_1.overflowing_sub(U256::from((remainder > prod_0) as u8)).0;
    prod_0 = prod_0.overflowing_sub(remainder).0;
 
    // Factor powers of two out of denominator
    // Compute largest power of two divisor of denominator.
    // Always >= 1.
-   let mut twos = U256::ZERO
-      .overflowing_sub(denominator)
-      .0
-      .bitand(denominator);
+   let mut twos = U256::ZERO.overflowing_sub(denominator).0.bitand(denominator);
 
    // Divide denominator by power of two
 
@@ -101,7 +94,11 @@ pub fn mul_div(a: U256, b: U256, mut denominator: U256) -> Result<U256, UniswapV
    Ok(U256::from_le_slice((prod_0 * inv).as_le_slice()))
 }
 
-pub fn mul_div_rounding_up(a: U256, b: U256, denominator: U256) -> Result<U256, UniswapV3MathError> {
+pub fn mul_div_rounding_up(
+   a: U256,
+   b: U256,
+   denominator: U256,
+) -> Result<U256, UniswapV3MathError> {
    let result = mul_div(a, b, denominator)?;
 
    if a.mul_mod(b, denominator) > U256::ZERO {
@@ -125,7 +122,10 @@ mod tests {
    fn test_mul_div() {
       //Revert if the denominator is zero
       let result = mul_div(Q128, U256::from(5), U256::ZERO);
-      assert_eq!(result.err().unwrap().to_string(), "Denominator is 0");
+      assert_eq!(
+         result.err().unwrap().to_string(),
+         "Denominator is 0"
+      );
 
       // Revert if the denominator is zero and numerator overflows
       let result = mul_div(Q128, Q128, U256::ZERO);
@@ -157,7 +157,10 @@ mod test {
    fn test_mul_div() {
       //Revert if the denominator is zero
       let result = mul_div(Q128, U256::from(5), U256::ZERO);
-      assert_eq!(result.err().unwrap().to_string(), "Denominator is 0");
+      assert_eq!(
+         result.err().unwrap().to_string(),
+         "Denominator is 0"
+      );
 
       // Revert if the denominator is zero and numerator overflows
       let result = mul_div(Q128, Q128, U256::ZERO);
@@ -193,14 +196,22 @@ mod test {
       assert_eq!(result.unwrap(), Q128.div(U256::from(3)));
 
       // Accurate with phantom overflow
-      let result = mul_div(Q128, U256::from(35).mul(Q128), U256::from(8).mul(Q128));
+      let result = mul_div(
+         Q128,
+         U256::from(35).mul(Q128),
+         U256::from(8).mul(Q128),
+      );
       assert_eq!(
          result.unwrap(),
          U256::from(4375).mul(Q128).div(U256::from(1000))
       );
 
       // Accurate with phantom overflow and repeating decimal
-      let result = mul_div(Q128, U256::from(1000).mul(Q128), U256::from(3000).mul(Q128));
+      let result = mul_div(
+         Q128,
+         U256::from(1000).mul(Q128),
+         U256::from(3000).mul(Q128),
+      );
       assert_eq!(result.unwrap(), Q128.div(U256::from(3)));
    }
 }
