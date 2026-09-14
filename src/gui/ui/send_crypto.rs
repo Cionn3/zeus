@@ -987,28 +987,11 @@ async fn send_token(
 
    let client = ctx.get_zeus_client();
 
-   let block_fut = client.request(chain.id(), |client| async move {
-      client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
-   });
-
-   let eth_balance_before_fut = client.request(chain.id(), |client| async move {
-      client
-         .get_balance(from)
-         .block_id(BlockId::latest())
-         .await
-         .map_err(|e| anyhow!("{:?}", e))
-   });
-
-   let recipient_token_balance_before_fut = client.request(chain.id(), |client| {
-      let token_clone = token.clone();
-      async move { token_clone.balance_of(client.clone(), recipient, None).await }
-   });
-
-   let (block, eth_balance_before, recipient_token_balance_before) = tokio::try_join!(
-      block_fut,
-      eth_balance_before_fut,
-      recipient_token_balance_before_fut
-   )?;
+   let block = client
+      .request(chain.id(), |client| async move {
+         client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
+      })
+      .await?;
 
    let block = if let Some(block) = block {
       block
@@ -1019,6 +1002,23 @@ async fn send_token(
    };
 
    let block_id = BlockId::number(block.number());
+
+   let eth_balance_before = client
+      .request(chain.id(), |client| async move {
+         client
+            .get_balance(from)
+            .block_id(block_id)
+            .await
+            .map_err(|e| anyhow!("{:?}", e))
+      })
+      .await?;
+
+   let recipient_token_balance_before = client
+      .request(chain.id(), |client| {
+         let token_clone = token.clone();
+         async move { token_clone.balance_of(client.clone(), recipient, Some(block_id)).await }
+      })
+      .await?;
 
    let mut accounts = Vec::new();
    accounts.push(AccountPrefetch::eoa(from));

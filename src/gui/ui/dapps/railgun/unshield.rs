@@ -44,6 +44,7 @@ use crate::{
          simulate_transaction,
       },
       state::get_base_fee,
+      wait_tx_confirm,
    },
 };
 
@@ -174,7 +175,7 @@ async fn unshield_self_broadcast(
    tx: TransactionBuilder,
 ) -> Result<(), anyhow::Error> {
    SHARED_GUI.write(|gui| {
-      gui.loading_window.open("Generating proof…");
+      gui.loading_window.open("Wait while magic happens");
       gui.request_repaint();
    });
 
@@ -183,6 +184,7 @@ async fn unshield_self_broadcast(
    let zeus_client = ctx.get_zeus_client();
    let last_synced_block_opt =
       railgun_provider.account_synced_block(railgun_signer.address()).await;
+
    let last_synced_block = match last_synced_block_opt {
       Some(block) => block,
       None => {
@@ -192,14 +194,6 @@ async fn unshield_self_broadcast(
          ));
       }
    };
-
-   let eth_balance_before_fut = zeus_client.request(chain.id(), |client| async move {
-      client
-         .get_balance(from)
-         .block_id(BlockId::latest())
-         .await
-         .map_err(|e| anyhow!("{:?}", e))
-   });
 
    let fork_block_res = zeus_client
       .request(chain.id(), |client| async move {
@@ -219,6 +213,15 @@ async fn unshield_self_broadcast(
    };
 
    let fork_block_id = BlockId::number(fork_block.header.number);
+
+   let eth_balance_before_fut = zeus_client.request(chain.id(), |client| async move {
+      client
+         .get_balance(from)
+         .block_id(fork_block_id)
+         .await
+         .map_err(|e| anyhow!("{:?}", e))
+   });
+
    let client = ctx.get_client(chain.id()).await?;
    let railgun_address = railgun_provider.railgun_address();
 
@@ -243,6 +246,11 @@ async fn unshield_self_broadcast(
       fork_block_id,
       railgun_address,
    );
+
+   SHARED_GUI.write(|gui| {
+      gui.loading_window.open("Generating proof…");
+      gui.request_repaint();
+   });
 
    let proved = {
       let mut rng = ChaCha12Rng::from_os_rng();
@@ -399,25 +407,7 @@ async fn unshield_self_broadcast(
       gui.request_repaint();
    });
 
-   // wait for the user to confirm or reject the transaction
-   let mut confirmed = None;
-   loop {
-      tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-      SHARED_GUI.read(|gui| {
-         confirmed = gui.tx_confirmation_window.get_confirmed_or_rejected();
-      });
-
-      if confirmed.is_some() {
-         SHARED_GUI.write(|gui| {
-            gui.tx_confirmation_window.close();
-         });
-         break;
-      }
-   }
-
-   let confirmed = confirmed.unwrap();
-   if !confirmed {
+   if !wait_tx_confirm().await {
       return Err(anyhow!("Transaction rejected"));
    }
 
@@ -470,13 +460,23 @@ async fn unshield_self_broadcast(
    });
 
    let receipt = send_tx(client, tx_params).await?;
+   let receipt_block = receipt.block_number.unwrap_or_default();
+   let block_id = if receipt_block > 0 {
+      BlockId::number(receipt_block)
+   } else {
+      BlockId::latest()
+   };
 
    let logs: Vec<Log> = receipt.logs().to_vec();
    let logs = logs.iter().map(|l| l.clone().into_inner()).collect::<Vec<_>>();
 
    let eth_balance_after = z_client
       .request(chain.id(), |client| async move {
-         client.get_balance(from).await.map_err(|e| anyhow!("{:?}", e))
+         client
+            .get_balance(from)
+            .block_id(block_id)
+            .await
+            .map_err(|e| anyhow!("{:?}", e))
       })
       .await?;
 
@@ -603,6 +603,7 @@ async fn unshield_via_paymaster(
    let zeus_client = ctx.get_zeus_client();
    let last_synced_block_opt =
       railgun_provider.account_synced_block(railgun_signer.address()).await;
+
    let last_synced_block = match last_synced_block_opt {
       Some(block) => block,
       None => {
@@ -612,14 +613,6 @@ async fn unshield_via_paymaster(
          ));
       }
    };
-
-   let eth_balance_before_fut = zeus_client.request(chain.id(), |client| async move {
-      client
-         .get_balance(from)
-         .block_id(BlockId::latest())
-         .await
-         .map_err(|e| anyhow!("{:?}", e))
-   });
 
    let fork_block_res = zeus_client
       .request(chain.id(), |client| async move {
@@ -639,6 +632,15 @@ async fn unshield_via_paymaster(
    };
 
    let fork_block_id = BlockId::number(fork_block.header.number);
+
+   let eth_balance_before_fut = zeus_client.request(chain.id(), |client| async move {
+      client
+         .get_balance(from)
+         .block_id(fork_block_id)
+         .await
+         .map_err(|e| anyhow!("{:?}", e))
+   });
+
    let client = ctx.get_client(chain.id()).await?;
 
    // Railgun privacy paymaster only accepts WETH
@@ -1075,25 +1077,7 @@ async fn unshield_via_paymaster(
       gui.request_repaint();
    });
 
-   // wait for the user to confirm or reject the transaction
-   let mut confirmed = None;
-   loop {
-      tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-      SHARED_GUI.read(|gui| {
-         confirmed = gui.tx_confirmation_window.get_confirmed_or_rejected();
-      });
-
-      if confirmed.is_some() {
-         SHARED_GUI.write(|gui| {
-            gui.tx_confirmation_window.close();
-         });
-         break;
-      }
-   }
-
-   let confirmed = confirmed.unwrap();
-   if !confirmed {
+   if !wait_tx_confirm().await {
       return Err(anyhow!("Transaction rejected"));
    }
 

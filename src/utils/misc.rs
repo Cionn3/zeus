@@ -1,4 +1,5 @@
 use crate::core::ZeusContext;
+use crate::gui::SHARED_GUI;
 
 use zeus_eth::{
    alloy_primitives::U256,
@@ -10,7 +11,7 @@ use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::runtime::{Builder, Runtime};
 
 use crate::core::ctx::{railgun_db_file, railgun_dir};
@@ -35,6 +36,32 @@ fn build_runtime() -> Runtime {
       .thread_stack_size(8 * 1024 * 1024)
       .build()
       .expect("failed to build tokio runtime")
+}
+
+pub async fn wait_tx_confirm() -> bool {
+   loop {
+      tokio::time::sleep(Duration::from_millis(50)).await;
+      let confirmed = SHARED_GUI.read(|gui| gui.tx_confirmation_window.get_confirmed_or_rejected());
+      if let Some(confirmed) = confirmed {
+         SHARED_GUI.write(|gui| {
+            gui.tx_confirmation_window.close();
+         });
+         return confirmed;
+      }
+   }
+}
+
+pub async fn wait_confirm_window() -> bool {
+   loop {
+      tokio::time::sleep(Duration::from_millis(50)).await;
+      let confirmed = SHARED_GUI.read(|gui| gui.confirm_window.get_confirm());
+      if let Some(confirmed) = confirmed {
+         SHARED_GUI.write(|gui| {
+            gui.confirm_window.reset();
+         });
+         return confirmed;
+      }
+   }
 }
 
 pub async fn create_railgun_provider(

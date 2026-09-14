@@ -1356,14 +1356,6 @@ pub async fn wrap_eth(
 ) -> Result<(), anyhow::Error> {
    let client = ctx.get_zeus_client();
 
-   let eth_balance_before_fut = client.request(chain.id(), |client| async move {
-      client
-         .get_balance(from)
-         .block_id(BlockId::latest())
-         .await
-         .map_err(|e| anyhow!("{:?}", e))
-   });
-
    let block = client
       .request(chain.id(), |client| async move {
          client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
@@ -1380,8 +1372,31 @@ pub async fn wrap_eth(
 
    let block_id = BlockId::number(block.header.number);
 
+   let eth_balance_before = client
+      .request(chain.id(), |client| async move {
+         client
+            .get_balance(from)
+            .block_id(block_id)
+            .await
+            .map_err(|e| anyhow!("{:?}", e))
+      })
+      .await?;
+
    let weth = ERC20Token::wrapped_native_token(chain.id());
-   let weth_balance_before = ctx.get_token_balance(chain.id(), from, weth.address);
+
+   let weth_balance_before = client
+      .request(chain.id(), |client| {
+         let weth = weth.clone();
+         async move {
+            weth
+               .balance_of(client, from, Some(block_id))
+               .await
+               .map_err(|e| anyhow!("{:?}", e))
+         }
+      })
+      .await?;
+
+   let weth_balance_before = NumericValue::format_wei(weth_balance_before, weth.decimals);
 
    let call_data = weth.encode_deposit();
    let interact_to = weth.address;
@@ -1450,9 +1465,7 @@ pub async fn wrap_eth(
 
    let logs = sim_res.clone().into_logs();
 
-   let wrapped: Currency = weth.clone().into();
-   let eth_balance_before = eth_balance_before_fut.await?;
-   let weth_usd = ctx.get_currency_value_for_amount(amount.f64(), &wrapped);
+   let weth_usd = ctx.get_currency_value_for_amount(amount.f64(), &weth.clone().into());
 
    let contract_interact = Some(true);
    let auth_list = Vec::new();
@@ -1531,14 +1544,6 @@ pub async fn unwrap_weth(
 ) -> Result<(), anyhow::Error> {
    let client = ctx.get_zeus_client();
 
-   let eth_balance_before_fut = client.request(chain.id(), |client| async move {
-      client
-         .get_balance(from)
-         .block_id(BlockId::latest())
-         .await
-         .map_err(|e| anyhow!("{:?}", e))
-   });
-
    let block = client
       .request(chain.id(), |client| async move {
          client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
@@ -1554,6 +1559,17 @@ pub async fn unwrap_weth(
    };
 
    let block_id = BlockId::number(block.header.number);
+
+   let eth_balance_before = client
+      .request(chain.id(), |client| async move {
+         client
+            .get_balance(from)
+            .block_id(block_id)
+            .await
+            .map_err(|e| anyhow!("{:?}", e))
+      })
+      .await?;
+
    let weth = ERC20Token::wrapped_native_token(chain.id());
 
    let call_data = weth.encode_withdraw(amount.wei());
@@ -1600,8 +1616,6 @@ pub async fn unwrap_weth(
          U256::ZERO
       };
    }
-
-   let eth_balance_before = eth_balance_before_fut.await?;
 
    let eth_received = if eth_balance_after > eth_balance_before {
       NumericValue::format_wei(
@@ -1818,25 +1832,11 @@ async fn swap_via_ur(
 ) -> Result<(), anyhow::Error> {
    let client = ctx.get_zeus_client();
 
-   let block_fut = client.request(chain.id(), |client| async move {
-      client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
-   });
-
-   let balance_fut = client.request(chain.id(), |client| async move {
-      client
-         .get_balance(signer_address)
-         .block_id(BlockId::latest())
-         .await
-         .map_err(|e| anyhow!("{:?}", e))
-   });
-
-   let token_out = currency_out.to_erc20().into_owned();
-   let token_out_balance_fut = client.request(chain.id(), |client| {
-      let token = token_out.clone();
-      async move { token.balance_of(client.clone(), signer_address, None).await }
-   });
-
-   let (block, eth_balance_before) = tokio::try_join!(block_fut, balance_fut)?;
+   let block = client
+      .request(chain.id(), |client| async move {
+         client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
+      })
+      .await?;
 
    let block = if let Some(block) = block.as_ref() {
       block
@@ -1845,6 +1845,24 @@ async fn swap_via_ur(
          "No block found, this is usally a provider issue"
       ));
    };
+
+   let block_id = BlockId::number(block.header.number);
+
+   let eth_balance_before = client
+      .request(chain.id(), |client| async move {
+         client
+            .get_balance(signer_address)
+            .block_id(block_id)
+            .await
+            .map_err(|e| anyhow!("{:?}", e))
+      })
+      .await?;
+
+   let token_out = currency_out.to_erc20().into_owned();
+   let token_out_balance_fut = client.request(chain.id(), |client| {
+      let token = token_out.clone();
+      async move { token.balance_of(client.clone(), signer_address, Some(block_id)).await }
+   });
 
    // Prefetch account and storage info
    let router_addr = address_book::universal_router_v2(chain.id())?;
@@ -1960,6 +1978,11 @@ async fn swap_via_ur(
       permit2_info_opt = Some(permit2_info);
    }
 
+   SHARED_GUI.write(|gui| {
+      gui.loading_window.open("Wait while magic happens");
+      gui.request_repaint();
+   });
+
    let signer = ctx.get_wallet(signer_address).ok_or(anyhow!("Wallet not found"))?.key;
 
    // Do a simulation to get the real amount out
@@ -2046,6 +2069,11 @@ async fn swap_via_ur(
          });
       }
    }
+
+   SHARED_GUI.write(|gui| {
+      gui.loading_window.open("Wait while magic happens");
+      gui.request_repaint();
+   });
 
    let amount_out_min = real_amount_out.calc_slippage(slippage, currency_out.decimals());
 

@@ -946,6 +946,7 @@ async fn revoke_permit2_approval(
    .await?;
 
    SHARED_GUI.write(|gui| {
+      gui.loading_window.open("Wait while magic happens");
       gui.request_repaint();
    });
 

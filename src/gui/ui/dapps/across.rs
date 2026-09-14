@@ -4,7 +4,6 @@ use crate::assets::icons::Icons;
 use crate::core::persisted::{PersistedFile, file_path};
 use crate::core::{
    BridgeParams, DecodedEvent, TransactionAnalysis, ZeusContext, ZeusCtx, send_transaction,
-   types::Dapp,
 };
 use crate::gui::{
    SHARED_GUI,
@@ -1016,7 +1015,6 @@ impl AcrossBridge {
             transact_to,
             call_data,
             input_amount,
-            output_amount,
          )
          .await
          {
@@ -1026,10 +1024,8 @@ impl AcrossBridge {
                   gui.across_bridge.amount_field.reset();
                   gui.request_repaint();
                });
-               tracing::info!("Bridge Transaction Sent");
             }
             Err(e) => {
-               tracing::error!("Bridge Transaction Error: {:?}", e);
                SHARED_GUI.write(|gui| {
                   gui.across_bridge.sending_tx = false;
                   gui.across_bridge.amount_field.reset();
@@ -1099,7 +1095,6 @@ async fn across_bridge(
    interact_to: Address,
    call_data: Bytes,
    input_amount: NumericValue,
-   output_amount: NumericValue,
 ) -> Result<(), anyhow::Error> {
    // Across protocol is very fast on filling the orders
    // So we get the latest block from the destination chain now so we dont miss it and the progress window stucks
@@ -1139,23 +1134,17 @@ async fn across_bridge(
    )
    .await?;
 
-   let input_currency = Currency::from(NativeCurrency::from(chain.id()));
-   let output_currency = Currency::from(NativeCurrency::from(dest_chain.id()));
-   let amount_usd = ctx.get_currency_value_for_amount(input_amount.f64(), &input_currency);
-   let received_usd = ctx.get_currency_value_for_amount(output_amount.f64(), &output_currency);
+   let mut params = None;
 
-   let params = BridgeParams {
-      dapp: Dapp::Across,
-      origin_chain: chain.id(),
-      destination_chain: dest_chain.id(),
-      input_currency,
-      output_currency,
-      amount: input_amount,
-      amount_usd: Some(amount_usd),
-      received: output_amount,
-      received_usd: Some(received_usd),
-      depositor: from,
-      recipient,
+   for log in &simulated.logs {
+      if let Ok(p) = BridgeParams::from_log(ctx.clone(), chain.id(), log).await {
+         params = Some(p);
+         break;
+      }
+   }
+
+   let Some(params) = params else {
+      return Err(anyhow!("Failed to decode funds deposited log"));
    };
 
    let mut tx_analysis = TransactionAnalysis::new(

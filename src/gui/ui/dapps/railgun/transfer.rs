@@ -31,7 +31,7 @@ use crate::{
    },
    gui::{SHARED_GUI, ui::NotificationType},
    utils::{
-      RT, TimeStamp, estimate_tx_cost,
+      RT, TimeStamp, wait_tx_confirm, estimate_tx_cost,
       simulate::{
          AccountPrefetch, fetch_accounts_info, fetch_storage_for_railgun, railgun_common_accounts,
          simulate_transaction,
@@ -168,6 +168,11 @@ pub async fn private_merge_notes(
    amount: NumericValue,
    from: Address,
 ) -> Result<(), anyhow::Error> {
+   SHARED_GUI.write(|gui| {
+      gui.loading_window.open("Preparing note merge…");
+      gui.request_repaint();
+   });
+
    if !ctx.railgun_is_supported(chain) {
       return Err(anyhow!(
          "Railgun is not supported for the {} network",
@@ -193,14 +198,10 @@ pub async fn private_merge_notes(
          "Current wallet cannot derive a Railgun address (imported wallets without seedphrase are not supported)"
       ));
    }
+
    let seed = wallet.seed()?;
    let railgun_signer = RailgunSigner::from_seed(&seed, 0, chain.id())?;
    let self_zk = railgun_signer.address().clone();
-
-   SHARED_GUI.write(|gui| {
-      gui.loading_window.open("Preparing note merge…");
-      gui.request_repaint();
-   });
 
    if let Err(e) = ctx.sync_railgun(chain.id(), false).await {
       let is_invalid_root = ctx.read(|ctx| ctx.railgun_status.is_error_invalid_root(chain.id()));
@@ -276,6 +277,11 @@ async fn exec_private_transfer(
    tx: TransactionBuilder,
    transfer_params: PrivateTransferParams,
 ) -> Result<(), anyhow::Error> {
+   SHARED_GUI.write(|gui| {
+      gui.loading_window.open("Wait while magic happens");
+      gui.request_repaint();
+   });
+
    let mut railgun_provider = ctx.get_railgun_provider(chain.id(), false).await?;
 
    let zeus_client = ctx.get_zeus_client();
@@ -290,14 +296,6 @@ async fn exec_private_transfer(
          ));
       }
    };
-
-   let eth_balance_before_fut = zeus_client.request(chain.id(), |client| async move {
-      client
-         .get_balance(from)
-         .block_id(BlockId::latest())
-         .await
-         .map_err(|e| anyhow!("{:?}", e))
-   });
 
    let fork_block_res = zeus_client
       .request(chain.id(), |client| async move {
@@ -317,6 +315,15 @@ async fn exec_private_transfer(
    };
 
    let fork_block_id = BlockId::number(fork_block.header.number);
+
+   let eth_balance_before_fut = zeus_client.request(chain.id(), |client| async move {
+      client
+         .get_balance(from)
+         .block_id(fork_block_id)
+         .await
+         .map_err(|e| anyhow!("{:?}", e))
+   });
+
    let client = ctx.get_client(chain.id()).await?;
    let railgun_address = railgun_provider.railgun_address();
 
@@ -344,11 +351,6 @@ async fn exec_private_transfer(
       let mut rng = ChaCha12Rng::from_os_rng();
       railgun_provider.build(tx, &mut rng).await?
    };
-
-   SHARED_GUI.write(|gui| {
-      gui.loading_window.open("Simulating Transaction…");
-      gui.request_repaint();
-   });
 
    let calldata = proved.tx_data.data.clone();
    let interact_to = proved.tx_data.to;
@@ -465,24 +467,7 @@ async fn exec_private_transfer(
       gui.request_repaint();
    });
 
-   let mut confirmed = None;
-   loop {
-      tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-      SHARED_GUI.read(|gui| {
-         confirmed = gui.tx_confirmation_window.get_confirmed_or_rejected();
-      });
-
-      if confirmed.is_some() {
-         SHARED_GUI.write(|gui| {
-            gui.tx_confirmation_window.close();
-         });
-         break;
-      }
-   }
-
-   let confirmed = confirmed.unwrap();
-   if !confirmed {
+   if !wait_tx_confirm().await {
       return Err(anyhow!("Transaction rejected"));
    }
 

@@ -2,7 +2,7 @@ use crate::core::clear_signing;
 use crate::core::{
    TransactionAnalysis, TransactionRich, ZeusCtx, client::CLIENT_TIMEOUT_FOR_SENDING_TX,
 };
-use crate::utils::state::get_base_fee;
+use crate::utils::{state::get_base_fee, wait_confirm_window, wait_tx_confirm};
 use alloy_eips::eip7702::{Authorization, SignedAuthorization};
 use anyhow::anyhow;
 use std::time::Duration;
@@ -88,32 +88,6 @@ impl TxParams {
    }
 }
 
-async fn wait_tx_confirm() -> bool {
-   loop {
-      tokio::time::sleep(Duration::from_millis(50)).await;
-      let confirmed = SHARED_GUI.read(|gui| gui.tx_confirmation_window.get_confirmed_or_rejected());
-      if let Some(confirmed) = confirmed {
-         SHARED_GUI.write(|gui| {
-            gui.tx_confirmation_window.close();
-         });
-         return confirmed;
-      }
-   }
-}
-
-async fn wait_confirm_window() -> bool {
-   loop {
-      tokio::time::sleep(Duration::from_millis(50)).await;
-      let confirmed = SHARED_GUI.read(|gui| gui.confirm_window.get_confirm());
-      if let Some(confirmed) = confirmed {
-         SHARED_GUI.write(|gui| {
-            gui.confirm_window.reset();
-         });
-         return confirmed;
-      }
-   }
-}
-
 pub async fn send_transaction(
    ctx: ZeusCtx,
    source_is_zeus: bool,
@@ -127,16 +101,16 @@ pub async fn send_transaction(
    value: U256,
    authorization_list: Vec<SignedAuthorization>,
 ) -> Result<(TransactionReceipt, TransactionRich), anyhow::Error> {
+   SHARED_GUI.write(|gui| {
+      gui.loading_window.open("Wait while magic happens");
+      gui.request_repaint();
+   });
+
    let client = ctx.get_zeus_client();
 
    let base_fee_fut = get_base_fee(ctx.clone(), chain.id());
    let nonce_fut = client.request(chain.id(), |client| async move {
       client.get_transaction_count(from).await.map_err(|e| anyhow!("{:?}", e))
-   });
-
-   SHARED_GUI.write(|gui| {
-      gui.loading_window.open("Wait while magic happens");
-      gui.request_repaint();
    });
 
    let mut tx_analysis = if let Some(analysis) = tx_analysis {
@@ -293,13 +267,16 @@ pub async fn send_transaction(
    };
 
    let receipt = send_tx(send_client, tx_params).await?;
-   let tx_block = receipt.block_number.ok_or(anyhow!("No block number from tx receipt"))?;
+   let tx_block = receipt.block_number.unwrap_or(0);
+   let block_id = if tx_block > 0 {
+      BlockId::number(tx_block)
+   } else {
+      BlockId::latest()
+   };
 
    let logs: Vec<_> = receipt.logs().iter().cloned().map(|l| l.into_inner()).collect();
-
    let timestamp = TimeStamp::now_as_secs()?;
 
-   let block_id = BlockId::number(tx_block);
    let balance_after = client
       .request(chain.id(), |client| async move {
          client

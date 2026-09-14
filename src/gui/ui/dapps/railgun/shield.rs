@@ -14,7 +14,7 @@ use crate::{
       DecodedEvent, ShieldParams, TransactionAnalysis, TransactionRich, TxParams, WalletStateKey,
       ZeusContext, ZeusCtx, bundler_url_dir, send_transaction, send_tx,
    },
-   utils::{TimeStamp, simulate::simulate_transaction},
+   utils::{TimeStamp, simulate::simulate_transaction, wait_tx_confirm},
 };
 use crate::{
    gui::ui::{NotificationType, common::show_with_fade},
@@ -684,8 +684,12 @@ impl ShieldUi {
    }
 
    fn valid_recipient(&self, recipient: &str) -> bool {
-      let addr = Address::from_str(recipient).unwrap_or(Address::ZERO);
-      !addr.is_zero()
+      if self.mode.is_unshield() {
+         let addr = Address::from_str(recipient).unwrap_or(Address::ZERO);
+         return !addr.is_zero();
+      }
+
+      true
    }
 
    fn action_button(
@@ -1126,14 +1130,6 @@ async fn shield(
    let value = shield_tx.value;
    let auth_list = Vec::new();
 
-   let eth_balance_before_fut = z_client.request(chain.id(), |client| async move {
-      client
-         .get_balance(from)
-         .block_id(BlockId::latest())
-         .await
-         .map_err(|e| anyhow!("{:?}", e))
-   });
-
    let block = z_client
       .request(chain.id(), |client| async move {
          client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
@@ -1149,6 +1145,14 @@ async fn shield(
    };
 
    let block_id = BlockId::number(block.header.number);
+
+   let eth_balance_before_fut = z_client.request(chain.id(), |client| async move {
+      client
+         .get_balance(from)
+         .block_id(block_id)
+         .await
+         .map_err(|e| anyhow!("{:?}", e))
+   });
 
    // Prefetch accounts and storage for the sim
    let mut accounts = Vec::new();
@@ -1273,27 +1277,14 @@ async fn shield(
       gui.request_repaint();
    });
 
-   // wait for the user to confirm or reject the transaction
-   let mut confirmed = None;
-   loop {
-      tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-      SHARED_GUI.read(|gui| {
-         confirmed = gui.tx_confirmation_window.get_confirmed_or_rejected();
-      });
-
-      if confirmed.is_some() {
-         SHARED_GUI.write(|gui| {
-            gui.tx_confirmation_window.close();
-         });
-         break;
-      }
-   }
-
-   let confirmed = confirmed.unwrap();
-   if !confirmed {
+   if !wait_tx_confirm().await {
       return Err(anyhow!("Transaction rejected"));
    }
+
+   SHARED_GUI.write(|gui| {
+      gui.loading_window.open("Wait while magic happens");
+      gui.request_repaint();
+   });
 
    let signer = ctx.get_wallet(from).ok_or(anyhow!("Wallet not found"))?.key;
    let gas_used = tx_analysis.gas_used;
@@ -1333,18 +1324,29 @@ async fn shield(
 
    SHARED_GUI.write(|gui| {
       gui.notification.open_with_spinner(event_name, nofitification);
+      gui.loading_window.reset();
       gui.request_repaint();
    });
 
    let client = ctx.get_client(chain.id()).await?;
    let receipt = send_tx(client, tx_params).await?;
+   let receipt_block = receipt.block_number.unwrap_or_default();
+   let block_id = if receipt_block > 0 {
+      BlockId::number(receipt_block)
+   } else {
+      BlockId::latest()
+   };
 
    let logs: Vec<Log> = receipt.logs().to_vec();
    let logs = logs.iter().map(|l| l.clone().into_inner()).collect::<Vec<_>>();
 
    let eth_balance_after = z_client
       .request(chain.id(), |client| async move {
-         client.get_balance(from).await.map_err(|e| anyhow!("{:?}", e))
+         client
+            .get_balance(from)
+            .block_id(block_id)
+            .await
+            .map_err(|e| anyhow!("{:?}", e))
       })
       .await?;
 
@@ -1425,12 +1427,14 @@ async fn shield(
       });
 
       let manager = ctx.balance_manager();
-      match manager
-         .update_tokens_balance(ctx.clone(), chain.id(), from, vec![token], true)
-         .await
-      {
-         Ok(_) => {}
-         Err(e) => error!("Error updating weth balance: {:?}", e),
+      if !is_native {
+         match manager
+            .update_tokens_balance(ctx.clone(), chain.id(), from, vec![token], true)
+            .await
+         {
+            Ok(_) => {}
+            Err(e) => error!("Error updating weth balance: {:?}", e),
+         }
       }
 
       match manager.update_eth_balance(ctx.clone(), chain.id(), vec![from], true).await {
