@@ -28,6 +28,9 @@ use zeus_eth::{
    utils::{address_book, batch},
 };
 
+/// Max ERC-20 tokens per `getERC20Balance` eth_call so it stays under gas limits.
+const TOKEN_BALANCE_BATCH: usize = 20;
+
 /// Max `(token, spender)` allowance pairs per Multicall3 aggregate so the eth_call stays under gas limits.
 const ALLOWANCE_PAIR_BATCH: usize = 20;
 
@@ -241,6 +244,7 @@ fn combine_diffs(
    }
 }
 
+// ! This may return an empty or partial map if any requests fail
 async fn fetch_token_before(
    ctx: ZeusCtx,
    chain: u64,
@@ -253,21 +257,34 @@ async fn fetch_token_before(
    }
 
    let client = ctx.get_zeus_client();
-   match client
-      .request(chain, |client| {
-         let tokens = tokens.clone();
-         async move { batch::get_erc20_balances(client, chain, Some(block_id), from, tokens).await }
-      })
-      .await
-   {
-      Ok(rows) => rows.into_iter().map(|row| (row.token, row.balance)).collect(),
-      Err(e) => {
-         tracing::warn!("ERC-20 balances at block failed: {:?}", e);
-         HashMap::new()
+   let mut out = HashMap::new();
+
+   for chunk in tokens.chunks(TOKEN_BALANCE_BATCH) {
+      let chunk = chunk.to_vec();
+      match client
+         .request(chain, |client| {
+            let chunk = chunk.clone();
+            async move {
+               batch::get_erc20_balances(client, chain, Some(block_id), from, chunk).await
+            }
+         })
+         .await
+      {
+         Ok(rows) => {
+            for row in rows {
+               out.insert(row.token, row.balance);
+            }
+         }
+         Err(e) => {
+            tracing::warn!("ERC-20 balances at block failed: {:?}", e);
+         }
       }
    }
+
+   out
 }
 
+// ! This may return an empty or partial map if any requests fail
 async fn fetch_erc20_allowance_before(
    ctx: ZeusCtx,
    chain: u64,
@@ -280,37 +297,32 @@ async fn fetch_erc20_allowance_before(
    }
 
    let client = ctx.get_zeus_client();
-   match client
-      .request(chain, |client| {
-         let pairs = pairs.clone();
-         async move {
-            let mut out = Vec::new();
-            for chunk in pairs.chunks(ALLOWANCE_PAIR_BATCH) {
-               let rows = batch::get_erc20_allowances(
-                  client.clone(),
-                  from,
-                  chunk.to_vec(),
-                  Some(block_id),
-               )
-               .await?;
-               out.extend(rows);
+   let mut out = HashMap::new();
+
+   for chunk in pairs.chunks(ALLOWANCE_PAIR_BATCH) {
+      let chunk = chunk.to_vec();
+      match client
+         .request(chain, |client| {
+            let chunk = chunk.clone();
+            async move { batch::get_erc20_allowances(client, from, chunk, Some(block_id)).await }
+         })
+         .await
+      {
+         Ok(rows) => {
+            for (token, spender, amount) in rows {
+               out.insert((token, spender), amount);
             }
-            Ok(out)
          }
-      })
-      .await
-   {
-      Ok(rows) => rows
-         .into_iter()
-         .map(|(token, spender, amount)| ((token, spender), amount))
-         .collect(),
-      Err(e) => {
-         tracing::warn!("ERC-20 allowances at block failed: {:?}", e);
-         HashMap::new()
+         Err(e) => {
+            tracing::warn!("ERC-20 allowances at block failed: {:?}", e);
+         }
       }
    }
+
+   out
 }
 
+// ! This may return an empty or partial map if any requests fail
 async fn fetch_permit2_before(
    ctx: ZeusCtx,
    chain: u64,
@@ -327,37 +339,31 @@ async fn fetch_permit2_before(
    };
 
    let client = ctx.get_zeus_client();
+   let mut out = HashMap::new();
 
-   match client
-      .request(chain, |client| {
-         let pairs = pairs.clone();
-         async move {
-            let mut out = Vec::new();
-            for chunk in pairs.chunks(ALLOWANCE_PAIR_BATCH) {
-               let rows = batch::get_permit2_allowances(
-                  client.clone(),
-                  permit2,
-                  from,
-                  chunk.to_vec(),
-                  Some(block_id),
-               )
-               .await?;
-               out.extend(rows);
+   for chunk in pairs.chunks(ALLOWANCE_PAIR_BATCH) {
+      let chunk = chunk.to_vec();
+      match client
+         .request(chain, |client| {
+            let chunk = chunk.clone();
+            async move {
+               batch::get_permit2_allowances(client, permit2, from, chunk, Some(block_id)).await
             }
-            Ok(out)
+         })
+         .await
+      {
+         Ok(rows) => {
+            for (token, spender, amount, expiration) in rows {
+               out.insert((token, spender), (amount, expiration));
+            }
          }
-      })
-      .await
-   {
-      Ok(rows) => rows
-         .into_iter()
-         .map(|(token, spender, amount, expiration)| ((token, spender), (amount, expiration)))
-         .collect(),
-      Err(e) => {
-         tracing::warn!("Multicall3 Permit2 allowances failed: {:?}", e);
-         HashMap::new()
+         Err(e) => {
+            tracing::warn!("Multicall3 Permit2 allowances failed: {:?}", e);
+         }
       }
    }
+
+   out
 }
 
 async fn fetch_before_state(

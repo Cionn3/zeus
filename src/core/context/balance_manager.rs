@@ -119,57 +119,71 @@ impl BalanceManagerHandle {
       }
 
       let client = ctx.get_zeus_client();
+      let batch_size = self.batch_size();
       let max_retries = self.max_retries();
       let retry_delay = self.retry_delay();
       let native = NativeCurrency::from(chain);
 
-      let old_balances: HashMap<Address, NumericValue> = if retry_if_unchanged {
-         owners
-            .iter()
-            .map(|&owner| (owner, self.get_eth_balance(chain, owner)))
-            .collect()
-      } else {
-         HashMap::new()
-      };
+      for chunk in owners.chunks(batch_size) {
+         let chunk = chunk.to_vec();
+         let old_balances: HashMap<Address, NumericValue> = if retry_if_unchanged {
+            chunk.iter().map(|&owner| (owner, self.get_eth_balance(chain, owner))).collect()
+         } else {
+            HashMap::new()
+         };
 
-      for attempt in 0..=max_retries {
-         let balances = client
-            .request(chain, |client| {
-               let owners_clone = owners.clone();
-               async move { batch::get_eth_balances(client, chain, None, owners_clone).await }
-            })
-            .await?;
+         for attempt in 0..=max_retries {
+            let balances = match client
+               .request(chain, |client| {
+                  let chunk = chunk.clone();
+                  async move { batch::get_eth_balances(client, chain, None, chunk).await }
+               })
+               .await
+            {
+               Ok(b) => b,
+               Err(_e) => {
+                  #[cfg(feature = "dev")]
+                  tracing::error!(
+                     "Failed to get ETH balances for ChainId: {chain:?} Error: {_e:?}"
+                  );
+                  if attempt == max_retries {
+                     return Err(anyhow!("Max retries reached"));
+                  }
+                  sleep(Duration::from_millis(retry_delay)).await;
+                  continue;
+               }
+            };
 
-         let unchanged = retry_if_unchanged
-            && balances.iter().any(|balance| {
-               old_balances.get(&balance.owner).is_some_and(|old| balance.balance == old.wei())
-            });
+            let unchanged = retry_if_unchanged
+               && balances.iter().any(|balance| {
+                  old_balances.get(&balance.owner).is_some_and(|old| balance.balance == old.wei())
+               });
 
-         if unchanged {
-            #[cfg(feature = "dev")]
-            tracing::debug!(
-               "ETH balances unchanged for chain {}, retrying",
-               chain
-            );
+            if unchanged {
+               #[cfg(feature = "dev")]
+               tracing::debug!(
+                  "ETH balances unchanged for chain {}, retrying",
+                  chain
+               );
 
-            if attempt == max_retries {
-               return Err(anyhow!("Max retries reached"));
+               if attempt == max_retries {
+                  return Err(anyhow!("Max retries reached"));
+               }
+               sleep(Duration::from_millis(retry_delay)).await;
+               continue;
             }
-            sleep(Duration::from_millis(retry_delay)).await;
-            continue;
-         }
 
-         for balance in balances {
-            self.insert_eth_balance(chain, balance.owner, balance.balance, &native);
+            for balance in balances {
+               self.insert_eth_balance(chain, balance.owner, balance.balance, &native);
+            }
+            break;
          }
-
-         self.write(|manager| {
-            manager.eth_balances.shrink_to_fit();
-         });
-         return Ok(());
       }
 
-      Err(anyhow!("Max retries reached"))
+      self.write(|manager| {
+         manager.eth_balances.shrink_to_fit();
+      });
+      Ok(())
    }
 
    /// `retry_if_unchanged` true if we expect the balance to change,

@@ -776,6 +776,7 @@ impl ApprovalsUi {
    }
 }
 
+// ! This may return an empty or partial map if any requests fail
 async fn live_permit2_allowances(
    ctx: ZeusCtx,
    chain: u64,
@@ -791,36 +792,29 @@ async fn live_permit2_allowances(
    };
 
    let client = ctx.get_zeus_client();
-   match client
-      .request(chain, |client| {
-         let pairs = pairs.clone();
-         async move {
-            let mut out = Vec::new();
-            for chunk in pairs.chunks(ALLOWANCE_PAIR_BATCH) {
-               let rows = batch::get_permit2_allowances(
-                  client.clone(),
-                  permit2,
-                  owner,
-                  chunk.to_vec(),
-                  None,
-               )
-               .await?;
-               out.extend(rows);
+   let mut out = HashMap::new();
+
+   for chunk in pairs.chunks(ALLOWANCE_PAIR_BATCH) {
+      let chunk = chunk.to_vec();
+      match client
+         .request(chain, |client| {
+            let chunk = chunk.clone();
+            async move { batch::get_permit2_allowances(client, permit2, owner, chunk, None).await }
+         })
+         .await
+      {
+         Ok(rows) => {
+            for (token, spender, amount, expiration) in rows {
+               out.insert((token, spender), (amount, expiration));
             }
-            Ok(out)
          }
-      })
-      .await
-   {
-      Ok(rows) => rows
-         .into_iter()
-         .map(|(token, spender, amount, expiration)| ((token, spender), (amount, expiration)))
-         .collect(),
-      Err(e) => {
-         tracing::warn!("Permit2 allowances failed: {:?}", e);
-         HashMap::new()
+         Err(e) => {
+            tracing::warn!("Permit2 allowances failed: {:?}", e);
+         }
       }
    }
+
+   out
 }
 
 async fn revoke_erc20_approval(

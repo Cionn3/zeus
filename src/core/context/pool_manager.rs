@@ -468,11 +468,13 @@ impl PoolManagerHandle {
                }
 
                let Some(token_a) = tokens_map.get(&v2_pool.tokenA) else {
+                  #[cfg(feature = "dev")]
                   tracing::error!("V2Pool Token not found: {}", v2_pool.tokenA);
                   continue;
                };
 
                let Some(token_b) = tokens_map.get(&v2_pool.tokenB) else {
+                  #[cfg(feature = "dev")]
                   tracing::error!("V2Pool Token not found: {}", v2_pool.tokenB);
                   continue;
                };
@@ -498,11 +500,13 @@ impl PoolManagerHandle {
                }
 
                let Some(token_a) = tokens_map.get(&v3_pool.tokenA) else {
+                  #[cfg(feature = "dev")]
                   tracing::error!("V3Pool Token not found: {}", v3_pool.tokenA);
                   continue;
                };
 
                let Some(token_b) = tokens_map.get(&v3_pool.tokenB) else {
+                  #[cfg(feature = "dev")]
                   tracing::error!("V3Pool Token not found: {}", v3_pool.tokenB);
                   continue;
                };
@@ -531,6 +535,7 @@ impl PoolManagerHandle {
                }
 
                let Some(pool_full) = v4_pools_map.get(v4_pool) else {
+                  #[cfg(feature = "dev")]
                   tracing::error!("V4Pool not found: {}", v4_pool);
                   continue;
                };
