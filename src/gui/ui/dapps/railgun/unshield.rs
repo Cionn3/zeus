@@ -31,6 +31,8 @@ use zeus_railgun::{
 };
 
 use crate::{
+   // The diffs for the sponsored unshield are probed off its own fork simulation.
+   core::tx::DiffProbe,
    core::{
       ApprovalDiff, BalanceDiff, DecodedEvent, MainEvent, MinedTx, RecordPolicy, SendTxOptions,
       TransactionAnalysis, UnshieldParams, ZeusCtx, build_tx_outcome, confirm_tx,
@@ -48,7 +50,8 @@ use crate::{
 };
 
 use super::{
-   ProvedCall, expect_single_event, prove, railgun_ready, settle_railgun_op, simulate_proved,
+   ProvedCall, expect_single_event, prove, railgun_ready, resync_railgun_later, settle_railgun_op,
+   simulate_proved,
 };
 
 /// Default public Pimlico bundler RPC for a chain.
@@ -634,8 +637,21 @@ async fn unshield_via_paymaster(
    let interact_to = signed.entry_point;
    let value = U256::ZERO;
 
+   // Diffs come from the simulation, not the receipt: a bundler broadcasts this
+   // one, so the confirm window is the only place the user sees what it does.
+   let probe = DiffProbe::start(
+      ctx.clone(),
+      chain,
+      fork_block_id,
+      from,
+      interact_to,
+      handle_ops_data.clone(),
+   );
+
    let eth_balance_after;
    let sim_res;
+   let logs;
+   let measured;
    {
       let mut evm = new_evm(chain, Some(&fork_block), fork_db.clone());
       evm.tx.gas_limit = 30_000_000;
@@ -650,23 +666,10 @@ async fn unshield_via_paymaster(
       ) {
          Ok(res) => res,
          Err(e) => {
-            // If we get a note already spent revert, railgun state is corrupted
-            // and we need to resync
-            let is_already_spent = e.to_string().contains("note already spent");
-            if is_already_spent {
-               let ctx_clone = ctx.clone();
-               RT.spawn(async move {
-                  sleep(Duration::from_secs(1)).await;
-                  match ctx_clone.resync_railgun(chain.id()).await {
-                     Ok(_) => {
-                        tracing::info!(
-                           "Railgun resynced to valid root for chain {}",
-                           chain.id()
-                        );
-                     }
-                     Err(e) => tracing::error!("Error syncing Railgun: {:?}", e),
-                  }
-               });
+            // A "note already spent" revert means local Railgun state disagrees
+            // with the chain.
+            if e.to_string().contains("note already spent") {
+               resync_railgun_later(ctx.clone(), chain);
             }
 
             return Err(anyhow!("Simulation failed: {:?}", e));
@@ -679,9 +682,10 @@ async fn unshield_via_paymaster(
       } else {
          U256::ZERO
       };
-   }
 
-   let logs = sim_res.clone().into_logs();
+      logs = sim_res.clone().into_logs();
+      measured = probe.measure(ctx.clone(), chain, fork_block_id, &logs, &mut evm);
+   }
 
    let mut unshield_events = Vec::new();
 
@@ -742,6 +746,18 @@ async fn unshield_via_paymaster(
 
    let eth_balance_before = eth_balance_before_fut.await?;
 
+   // The confirm window's diffs come from the simulation: this tx is broadcast by
+   // a bundler, so there is no receipt to diff yet, and the window is the only
+   // place the user sees what it does.
+   let (sim_balance_diff, sim_approval_diff) = measured
+      .resolve(
+         ctx.clone(),
+         chain,
+         eth_balance_before,
+         eth_balance_after,
+      )
+      .await?;
+
    let contract_interact = Some(true);
    let calldata = handle_ops_data;
    let auth_list = Vec::new();
@@ -765,6 +781,10 @@ async fn unshield_via_paymaster(
       auth_list.clone(),
    )
    .await?;
+
+   // The confirm window shows what the simulation found. The recorded tx keeps the
+   // receipt-based diffs below, which are what actually happened.
+   tx_analysis.set_diffs(sim_balance_diff, sim_approval_diff);
 
    let main_event = DecodedEvent::Unshield(unshield_params.clone());
    tx_analysis.set_main_event(main_event);

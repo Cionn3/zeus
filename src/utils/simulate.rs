@@ -175,6 +175,17 @@ pub struct ForkPrefetch {
    pub storage: StoragePrefetch,
 }
 
+impl ForkPrefetch {
+   /// Prefetch at `block` with no storage beyond the accounts themselves.
+   pub fn new(block: Block, accounts: Vec<AccountPrefetch>, storage: StoragePrefetch) -> Self {
+      Self {
+         block,
+         accounts,
+         storage,
+      }
+   }
+}
+
 /// The call to simulate on a forked state.
 pub struct ForkSimRequest {
    pub from: Address,

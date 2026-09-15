@@ -15,11 +15,15 @@ pub use approval_diff::{ApprovalChange, ApprovalDiff, ApprovalKind};
 pub use approve::{ApproveSimulation, ensure_allowance, send_token_approve};
 pub use balance_diff::{BalanceChange, BalanceDiff};
 pub use events::DecodedEvent;
-pub use finalize::{MainEvent, MinedTx, RecordPolicy, TxOutcome, build_tx_outcome, record_and_notify};
+pub use finalize::{
+   MainEvent, MinedTx, RecordPolicy, TxOutcome, build_tx_outcome, record_and_notify,
+};
 pub use rich::TransactionRich;
 pub use send::{
    ConfirmedTx, SendTxOptions, confirm_tx, delegate_to, send_transaction, send_transaction_with,
    send_tx,
 };
 pub use send_calls::{WalletCall, encode_execute_batch, send_wallet_calls};
-pub use sim_diff::{diffs_from_receipt, resolve_raw_diffs, simulate_and_diff};
+pub use sim_diff::{
+   DiffProbe, MeasuredDiffs, diffs_from_receipt, resolve_raw_diffs, simulate_and_diff,
+};
