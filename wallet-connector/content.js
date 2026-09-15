@@ -11,7 +11,7 @@ function injectScript(filePath) {
         scriptTag.setAttribute('src', chrome.runtime.getURL(filePath));
         container.insertBefore(scriptTag, container.firstChild);  // Top of head
         scriptTag.onload = () => { scriptTag.remove(); };  // Clean up
-       // console.log(`Injected ${filePath}`);
+        // console.log(`Injected ${filePath}`);
     } catch (error) {
         console.error('Zeus Connector: Error injecting script:', error);
     }
@@ -19,9 +19,6 @@ function injectScript(filePath) {
 
 // Inject the main provider script
 injectScript('injected.js');
-
-
-
 
 
 // Listen for messages FROM the injected script (window.postMessage)
@@ -35,8 +32,6 @@ window.addEventListener("message", (event) => {
 
     if (message.type === 'fetch_request') {
         messageToBackground = { target: 'background', type: 'fetch', payload: message.payload };
-    } else if (message.type === 'connection_request') {
-        messageToBackground = { target: 'background', type: 'connection', payload: message.payload };
     }
 
     if (messageToBackground) {
@@ -56,7 +51,7 @@ window.addEventListener("message", (event) => {
 // ***** Listen for messages FROM background script *****
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'accountsChanged' || message.type === 'chainChanged') {
-       // console.log(`Content Script: Received ${message.type} from background. Relaying to injected script.`);
+        // console.log(`Content Script: Received ${message.type} from background. Relaying to injected script.`);
         window.postMessage({
             target: 'injected',
             type: message.type,

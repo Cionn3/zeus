@@ -19,7 +19,6 @@ function serverUrls(port) {
     return {
         status: `http://127.0.0.1:${p}/status`,
         api: `http://127.0.0.1:${p}/api`,
-        requestConnection: `http://127.0.0.1:${p}/request-connection`,
     };
 }
 
@@ -92,7 +91,6 @@ async function authorizedFetch(url, options, origin) {
         let targetUrl;
         if (url === '/status') targetUrl = urls.status;
         else if (url === '/api') targetUrl = urls.api;
-        else if (url === '/request-connection') targetUrl = urls.requestConnection;
         else throw new Error('Unknown connector path');
 
         const headers = Object.assign({}, (options && options.headers) || {}, {
@@ -214,56 +212,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             })
             .catch(error => {
                 sendResponse({ success: false, error: error.message || 'Failed to fetch' });
-            });
-
-        return true;
-    }
-
-    else if (message.type === 'connection') {
-        console.log(`Background: Received connection request ID ${message.id}:`, message.payload);
-        const origin = tabOrigin(sender);
-        if (!origin) {
-            sendResponse({ success: false, error: 'Missing tab origin' });
-            return false;
-        }
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), CONNECTION_REQUEST_TIMEOUT_MS);
-
-        authorizedFetch('/request-connection', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-            signal: controller.signal
-        }, origin)
-            .then(async response => {
-                clearTimeout(timeoutId);
-                if (!response.ok) {
-                    const errorText = await response.text().catch(() => `Server returned status ${response.status}`);
-                    throw new Error(`Connection request failed: ${errorText}`);
-                }
-                return response.json();
-            })
-            .then(serverData => {
-                console.log(`Background: Received connection response from server for ID ${message.id}:`, serverData);
-                if (serverData.status === 'approved') {
-                    sendResponse({
-                        success: true,
-                        data: { approved: true, accounts: serverData.accounts || [] }
-                    });
-                } else {
-                    sendResponse({ success: false, error: 'User rejected the connection request.' });
-                }
-            })
-            .catch(error => {
-                clearTimeout(timeoutId);
-                console.error(`Background: Error during connection request ID ${message.id}:`, error);
-                let errorMessage = 'Connection to Zeus failed or timed out.';
-                if (error.name === 'AbortError') { errorMessage = 'Connection request timed out.'; }
-                else if (error.message) { errorMessage = error.message; }
-
-                console.log(`Background: Sending error response for ID ${message.id}`);
-                sendResponse({ success: false, error: errorMessage });
             });
 
         return true;

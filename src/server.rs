@@ -111,6 +111,9 @@ pub enum RequestMethod {
    GetBalance,
    EthSignedTypedDataV4,
    PersonalSign,
+   EthGetTransactionCount,
+   EthGetBlockByHash,
+   WalletWatchAsset,
 }
 
 impl RequestMethod {
@@ -141,6 +144,9 @@ impl RequestMethod {
          "eth_getBalance" => Ok(RequestMethod::GetBalance),
          "eth_signTypedData_v4" => Ok(RequestMethod::EthSignedTypedDataV4),
          "personal_sign" => Ok(RequestMethod::PersonalSign),
+         "eth_getTransactionCount" => Ok(RequestMethod::EthGetTransactionCount),
+         "eth_getBlockByHash" => Ok(RequestMethod::EthGetBlockByHash),
+         "wallet_watchAsset" => Ok(RequestMethod::WalletWatchAsset),
          _ => Err(anyhow!("Invalid Request Method: {:?}", s)),
       }
    }
@@ -172,6 +178,9 @@ impl RequestMethod {
          RequestMethod::GetBalance => "eth_getBalance",
          RequestMethod::EthSignedTypedDataV4 => "eth_signTypedData_v4",
          RequestMethod::PersonalSign => "personal_sign",
+         RequestMethod::EthGetTransactionCount => "eth_getTransactionCount",
+         RequestMethod::EthGetBlockByHash => "eth_getBlockByHash",
+         RequestMethod::WalletWatchAsset => "wallet_watchAsset",
       }
    }
 }
@@ -460,6 +469,13 @@ fn rpc_param_address(arr: &[Value], index: usize, method: &str) -> Result<Addres
       return Err(());
    };
    parse_rpc_address(s, method)
+}
+
+/// Best-effort "is this a 20-byte hex address" check, without requiring a valid
+/// EIP-55 checksum. Used to disambiguate `personal_sign` argument order.
+fn looks_like_address(s: &str) -> bool {
+   let hex = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"));
+   matches!(hex, Some(h) if h.len() == 40 && h.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 fn parse_rpc_block_id(value: Option<&Value>, method: &str) -> Result<BlockId, ()> {
@@ -787,6 +803,34 @@ fn get_balance(ctx: ZeusCtx, payload: JsonRpcRequest) -> Result<JsonRpcResponse,
    ))
 }
 
+async fn eth_get_transaction_count(
+   ctx: ZeusCtx,
+   payload: JsonRpcRequest,
+) -> Result<JsonRpcResponse, Infallible> {
+   let arr = match rpc_params_array(&payload.params, "eth_getTransactionCount", 1) {
+      Ok(arr) => arr,
+      Err(()) => return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id)),
+   };
+
+   let address = match rpc_param_address(arr, 0, "eth_getTransactionCount") {
+      Ok(address) => address,
+      Err(()) => return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id)),
+   };
+
+   let count = match ctx.get_transaction_count(address).await {
+      Ok(count) => count,
+      Err(e) => {
+         let err = JsonRpcError::new(INTERNAL_ERROR, e.to_string(), None);
+         return Ok(JsonRpcResponse::error_res(err, payload.id));
+      }
+   };
+
+   Ok(JsonRpcResponse::ok(
+      Some(json!(hex_quantity_u64(count))),
+      payload.id,
+   ))
+}
+
 async fn eth_get_storage_at(
    ctx: ZeusCtx,
    payload: JsonRpcRequest,
@@ -1005,19 +1049,63 @@ async fn eth_get_block_by_number(
       }
    };
 
-   let chain = ctx.chain().id();
-   let client = ctx.get_zeus_client();
-   let block = match client
-      .request(chain, move |client| async move {
-         let req = client.get_block(block_id);
-         if hydrated {
-            req.full().await.map_err(|e| anyhow!("{:?}", e))
-         } else {
-            req.await.map_err(|e| anyhow!("{:?}", e))
+   let block = match ctx.get_block_by_number(block_id, hydrated).await {
+      Ok(block) => block,
+      Err(e) => {
+         let err = JsonRpcError::new(INTERNAL_ERROR, e.to_string(), None);
+         return Ok(JsonRpcResponse::error_res(err, payload.id));
+      }
+   };
+
+   let result = match block {
+      Some(block) => match serde_json::to_value(block) {
+         Ok(val) => Some(val),
+         Err(e) => {
+            error!("Error serializing block: {:?}", e);
+            return Ok(JsonRpcResponse::error(INTERNAL_ERROR, payload.id));
          }
-      })
-      .await
-   {
+      },
+      None => Some(Value::Null),
+   };
+
+   Ok(JsonRpcResponse::ok(result, payload.id))
+}
+
+async fn eth_get_block_by_hash(
+   ctx: ZeusCtx,
+   payload: JsonRpcRequest,
+) -> Result<JsonRpcResponse, Infallible> {
+   let array = match payload.params {
+      Value::Array(arr) if !arr.is_empty() => arr,
+      _ => {
+         error!("Invalid params for eth_getBlockByHash: expected [blockHash, hydrated]");
+         return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id));
+      }
+   };
+
+   let hash_str = match &array[0] {
+      Value::String(s) => s,
+      _ => {
+         error!("Invalid params for eth_getBlockByHash: params[0] is not a block hash");
+         return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id));
+      }
+   };
+
+   let hash = match TxHash::from_str(hash_str) {
+      Ok(hash) => hash,
+      Err(e) => {
+         error!("Invalid block hash: {:?} - {}", hash_str, e);
+         return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id));
+      }
+   };
+
+   let hydrated = match array.get(1) {
+      Some(Value::Bool(b)) => *b,
+      Some(Value::String(s)) => s.eq_ignore_ascii_case("true"),
+      _ => false,
+   };
+
+   let block = match ctx.get_block_by_hash(hash, hydrated).await {
       Ok(block) => block,
       Err(e) => {
          let err = JsonRpcError::new(INTERNAL_ERROR, e.to_string(), None);
@@ -1112,12 +1200,6 @@ async fn estimate_gas(
    ctx: ZeusCtx,
    payload: JsonRpcRequest,
 ) -> Result<JsonRpcResponse, Infallible> {
-   #[cfg(feature = "dev")]
-   info!(
-      "Received estimateGas params {:#?}",
-      payload.params
-   );
-
    let object = match rpc_params_object(&payload.params, "eth_estimateGas") {
       Ok(object) => object,
       Err(()) => return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id)),
@@ -1151,21 +1233,32 @@ async fn eth_sign_typed_data_v4(
    origin: String,
    payload: JsonRpcRequest,
 ) -> Result<JsonRpcResponse, Infallible> {
-   let typed_data_str = match payload.params.get(1) {
-      Some(Value::String(s)) => s,
+   // params: [signer, typedData]. `typedData` is usually a JSON string, but
+   // some viem-based dapps send an object — accept both.
+   let typed_data_value: Value = match payload.params.get(1) {
+      Some(Value::String(s)) => match serde_json::from_str(s) {
+         Ok(v) => v,
+         Err(e) => {
+            error!("Failed to parse typed data string: {:?}", e);
+            return Ok(JsonRpcResponse::error(-32602, payload.id));
+         }
+      },
+      Some(Value::Object(_)) => payload.params[1].clone(),
       _ => {
-         error!("Invalid params for eth_signTypedData_v4: expected string at params[1]");
+         error!("Invalid params for eth_signTypedData_v4: expected typed data at params[1]");
          return Ok(JsonRpcResponse::error(-32602, payload.id));
       }
    };
 
-   let typed_data_value: Value = match serde_json::from_str(typed_data_str) {
-      Ok(v) => v,
-      Err(e) => {
-         error!("Failed to parse typed data string: {:?}", e);
-         return Ok(JsonRpcResponse::error(-32602, payload.id));
+   // The requested signer must be the connected account.
+   if let Some(Value::String(signer_str)) = payload.params.get(0) {
+      if let Ok(signer) = Address::from_str(signer_str) {
+         let current = ctx.current_wallet_info().address;
+         if signer != current {
+            return Ok(JsonRpcResponse::error(UNAUTHORIZED, payload.id));
+         }
       }
-   };
+   }
 
    let chain = ctx.chain();
    let signature = match sign_message(
@@ -1211,7 +1304,8 @@ async fn personal_sign(
    origin: String,
    payload: JsonRpcRequest,
 ) -> Result<JsonRpcResponse, Infallible> {
-   // Validate params: array of exactly 2 elements - [message_hex: String, address: String]
+   // EIP-1193 params: [message, address]. Some older dapps send the reversed
+   // [address, message] order; MetaMask tolerates both, so detect and swap.
    let params_array = match payload.params {
       Value::Array(params) if params.len() == 2 => params,
       _ => {
@@ -1222,23 +1316,18 @@ async fn personal_sign(
       }
    };
 
-   let message_hex = match &params_array[0] {
-      Value::String(s) => s.clone(),
-      _ => {
-         error!("Invalid params for personal_sign: message must be a hex string");
-         return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id));
-      }
+   let (Some(first), Some(second)) = (params_array[0].as_str(), params_array[1].as_str()) else {
+      error!("Invalid params for personal_sign: both params must be strings");
+      return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id));
    };
 
-   let address_str = match &params_array[1] {
-      Value::String(s) => s.clone(),
-      _ => {
-         error!("Invalid params for personal_sign: address must be a string");
-         return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id));
-      }
+   let (message_hex, address_str) = if looks_like_address(first) && !looks_like_address(second) {
+      (second, first)
+   } else {
+      (first, second)
    };
 
-   let address = match Address::from_str(&address_str) {
+   let address = match Address::from_str(address_str) {
       Ok(addr) => addr,
       Err(e) => {
          error!("Invalid address for personal_sign: {}", e);
@@ -1249,15 +1338,12 @@ async fn personal_sign(
    // Ensure the address matches the current wallet
    let current_wallet = ctx.current_wallet_info().address;
    if address != current_wallet {
-      error!(
-         "personal_sign: Address mismatch - requested {} but current is {}",
-         address, current_wallet
-      );
       return Ok(JsonRpcResponse::error(UNAUTHORIZED, payload.id)); // Or a specific error like 4100
    }
 
-   // Decode the hex message to bytes
-   let message_bytes = match hex::decode(message_hex.strip_prefix("0x").unwrap_or(&message_hex)) {
+   // Decode the hex message to raw bytes. Signing uses these bytes verbatim, so
+   // non-UTF-8 payloads are not corrupted by a UTF-8 round-trip.
+   let message_bytes = match hex::decode(message_hex.strip_prefix("0x").unwrap_or(message_hex)) {
       Ok(bytes) => bytes,
       Err(e) => {
          error!("Invalid hex message for personal_sign: {}", e);
@@ -1265,10 +1351,17 @@ async fn personal_sign(
       }
    };
 
-   let full_message = String::from_utf8_lossy(&message_bytes).to_string();
-
    let chain = ctx.chain();
-   let signature = match sign_message(ctx, origin, chain, None, Some(full_message), None).await {
+   let signature = match sign_message(
+      ctx,
+      origin,
+      chain,
+      None,
+      Some(message_bytes),
+      None,
+   )
+   .await
+   {
       Ok(sig) => sig,
       Err(e) => {
          let rejected = is_user_rejected(&e);
@@ -1411,6 +1504,12 @@ async fn eth_send_transaction(
       Ok(call) => call,
       Err(()) => return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id)),
    };
+
+   // The dapp may only send from the account it is connected to.
+   let current = ctx.current_wallet_info().address;
+   if from != current {
+      return Ok(JsonRpcResponse::error(UNAUTHORIZED, payload.id));
+   }
 
    SHARED_GUI.write(|gui| {
       gui.bring_to_front();
@@ -1588,20 +1687,24 @@ fn parse_wallet_call(
       error!("Invalid params for {}, call missing 'to'", method);
       return Err(());
    };
+
    let to = parse_rpc_address(to_str, method)?;
    let data_val = object.get("data").or_else(|| object.get("input"));
+
    let data = parse_rpc_bytes(data_val).map_err(|_| {
       error!(
          "Invalid params for {}, call data is not valid bytes",
          method
       );
    })?;
+
    let value = parse_rpc_u256(object.get("value")).map_err(|_| {
       error!(
          "Invalid params for {}, call value is not a valid U256",
          method
       );
    })?;
+
    Ok(WalletCall { to, data, value })
 }
 
@@ -1639,17 +1742,20 @@ fn parse_wallet_send_calls(
       error!("Invalid params for wallet_sendCalls, missing calls array");
       return Err(());
    };
+
    if calls_val.is_empty() {
       error!("Invalid params for wallet_sendCalls, calls is empty");
       return Err(());
    }
 
    let mut calls = Vec::with_capacity(calls_val.len());
+
    for call in calls_val {
       let Value::Object(call_obj) = call else {
          error!("Invalid params for wallet_sendCalls, call is not an object");
          return Err(());
       };
+
       calls.push(parse_wallet_call(call_obj, "wallet_sendCalls")?);
    }
 
@@ -1665,6 +1771,12 @@ async fn wallet_send_calls(
       Ok(parsed) => parsed,
       Err(()) => return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id)),
    };
+
+   // The dapp may only send from the account it is connected to.
+   let current = ctx.current_wallet_info().address;
+   if from != current {
+      return Ok(JsonRpcResponse::error(UNAUTHORIZED, payload.id));
+   }
 
    if chain != ctx.chain() {
       return Ok(JsonRpcResponse::error(
@@ -1770,6 +1882,87 @@ async fn wallet_get_calls_status(
    Ok(JsonRpcResponse::ok(Some(result), payload.id))
 }
 
+async fn wallet_watch_asset(
+   ctx: ZeusCtx,
+   origin: String,
+   payload: JsonRpcRequest,
+) -> Result<JsonRpcResponse, Infallible> {
+   let object = match rpc_params_object(&payload.params, "wallet_watchAsset") {
+      Ok(object) => object,
+      Err(()) => return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id)),
+   };
+
+   let asset_type = rpc_opt_string(object, "type").unwrap_or_default();
+
+   if !asset_type.eq_ignore_ascii_case("ERC20") {
+      error!(
+         "wallet_watchAsset: unsupported asset type {:?}",
+         asset_type
+      );
+      return Ok(JsonRpcResponse::error(
+         UNSUPPORTED_METHOD,
+         payload.id,
+      ));
+   }
+
+   let options = match object.get("options") {
+      Some(Value::Object(options)) => options,
+      _ => {
+         error!("Invalid params for wallet_watchAsset: missing options object");
+         return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id));
+      }
+   };
+
+   let Some(address_str) = rpc_opt_string(options, "address") else {
+      error!("Invalid params for wallet_watchAsset: missing token address");
+      return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id));
+   };
+
+   let address = match parse_rpc_address(address_str, "wallet_watchAsset") {
+      Ok(address) => address,
+      Err(()) => return Ok(JsonRpcResponse::error(INVALID_PARAMS, payload.id)),
+   };
+
+   let chain = ctx.chain();
+
+   // Already tracked -> succeed without prompting.
+   if ctx.read(|c| c.currency_db.get_erc20_token(chain.id(), address)).is_some() {
+      return Ok(JsonRpcResponse::ok(Some(json!(true)), payload.id));
+   }
+
+   let label = rpc_opt_string(options, "symbol")
+      .filter(|s| !s.is_empty())
+      .map(|s| s.to_string())
+      .unwrap_or_else(|| address.to_string());
+
+   SHARED_GUI.write(|gui| {
+      gui.confirm_window.open("Add Token");
+      gui.confirm_window.set_msg2(format!(
+         "{} wants to add {} to your wallet",
+         origin, label
+      ));
+      gui.bring_to_front();
+   });
+
+   if !wait_for_user_confirm().await {
+      return Ok(JsonRpcResponse::error(
+         USER_REJECTED_REQUEST,
+         payload.id,
+      ));
+   }
+
+   if let Err(e) = ctx.get_token(chain.id(), address).await {
+      error!("Failed to add token: {}", e);
+      return Ok(JsonRpcResponse::error(INTERNAL_ERROR, payload.id));
+   }
+
+   SHARED_GUI.write(|gui| {
+      gui.request_repaint();
+   });
+
+   Ok(JsonRpcResponse::ok(Some(json!(true)), payload.id))
+}
+
 async fn handle_request(
    ctx: ZeusCtx,
    origin: String,
@@ -1843,6 +2036,9 @@ async fn handle_request(
       RequestMethod::EthSignedTypedDataV4 => eth_sign_typed_data_v4(ctx, origin, payload).await,
       RequestMethod::PersonalSign => personal_sign(ctx, origin, payload).await,
       RequestMethod::EthSendTransaction => eth_send_transaction(ctx, origin, payload).await,
+      RequestMethod::EthGetTransactionCount => eth_get_transaction_count(ctx, payload).await,
+      RequestMethod::EthGetBlockByHash => eth_get_block_by_hash(ctx, payload).await,
+      RequestMethod::WalletWatchAsset => wallet_watch_asset(ctx, origin, payload).await,
       RequestMethod::WalletSwitchEthereumChain | RequestMethod::WalletAddEthereumChain => {
          switch_ethereum_chain(ctx, origin, payload).await
       }
@@ -2137,6 +2333,47 @@ mod connector_auth_tests {
          Address::from_str("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap()
       );
       assert_eq!(call.value, U256::ZERO);
+   }
+
+   #[test]
+   fn new_connector_methods_are_recognized() {
+      for (raw, expected) in [
+         (
+            "eth_getTransactionCount",
+            RequestMethod::EthGetTransactionCount,
+         ),
+         (
+            "eth_getBlockByHash",
+            RequestMethod::EthGetBlockByHash,
+         ),
+         (
+            "wallet_watchAsset",
+            RequestMethod::WalletWatchAsset,
+         ),
+      ] {
+         let method = RequestMethod::from_str(raw).unwrap();
+         assert_eq!(method, expected);
+         assert_eq!(method.as_str(), raw);
+      }
+   }
+
+   #[test]
+   fn looks_like_address_matches_only_20_byte_hex() {
+      assert!(looks_like_address(
+         "0x0000000000000000000000000000000000000001"
+      ));
+      assert!(looks_like_address(
+         "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+      ));
+      // too short to be an address
+      assert!(!looks_like_address("0xdeadbeef"));
+      // a 32-byte (64 nibble) hash is longer than a 20-byte address
+      let hash = format!("0x{}", "ab".repeat(32));
+      assert!(!looks_like_address(&hash));
+      assert!(!looks_like_address("hello"));
+      assert!(!looks_like_address(
+         "0xZZ00000000000000000000000000000000000000"
+      ));
    }
 
    #[test]

@@ -22,7 +22,9 @@ use zeus_wallet::Wallet;
 use zeus_eth::{
    alloy_primitives::{Address, Bytes, FixedBytes, U256},
    alloy_provider::Provider,
-   alloy_rpc_types::{BlockId, Transaction, TransactionReceipt, TransactionRequest},
+   alloy_rpc_types::{
+      Block as RpcBlock, BlockId, Transaction, TransactionReceipt, TransactionRequest,
+   },
    amm::uniswap::{
       AnyUniswapPool, DexKind, FeeAmount, State, UniswapPool, UniswapV2Pool, UniswapV3Pool,
       UniswapV4Pool,
@@ -1034,6 +1036,9 @@ impl ZeusCtx {
          ctx.storage.clear();
          ctx.transactions.clear();
          ctx.receipts.clear();
+         ctx.blocks_by_hash.clear();
+         ctx.blocks_by_number.clear();
+         ctx.tx_counts.clear();
       });
 
       let defaults = ZeusClient::default();
@@ -1895,6 +1900,170 @@ impl ZeusCtx {
       Err(anyhow!("No block found"))
    }
 
+   /// Get a block by number or tag
+   ///
+   /// If the block is not found in cache, it will be retrieved from the blockchain.
+   /// `hydrated` selects full transactions (`true`) or hashes only (`false`).
+   ///
+   /// Only requests with a stable numeric key are cached: an explicit number,
+   /// `latest` (resolved via the cached tip) and `earliest` (genesis). Tags that
+   /// can move independently of the tip (`safe` / `finalized` / `pending`) bypass
+   /// the cache so a stale entry is never served for them.
+   pub async fn get_block_by_number(
+      &self,
+      block_id: BlockId,
+      hydrated: bool,
+   ) -> Result<Option<RpcBlock>, anyhow::Error> {
+      let chain = self.chain();
+
+      let cache_number = if let Some(number) = block_id.as_u64() {
+         Some(number)
+      } else if block_id.is_latest() {
+         Some(self.get_latest_block().await?.number)
+      } else if block_id.is_earliest() {
+         Some(0)
+      } else {
+         None
+      };
+
+      if let Some(number) = cache_number {
+         let cached = self.read(|ctx| ctx.blocks_by_number.get(&(chain.id(), number)).cloned());
+         if let Some(cached) = cached {
+            let now = TimeStamp::now_as_millis()?.timestamp();
+            if cached.hydrated == hydrated
+               && cache_elapsed_fresh(now, cached.timestamp, chain.block_time_millis())
+            {
+               return Ok(Some(cached.block));
+            }
+         }
+      }
+
+      let z_client = self.get_zeus_client();
+      let block = z_client
+         .request(chain.id(), move |client| async move {
+            let req = client.get_block(block_id);
+            if hydrated {
+               req.full().await.map_err(|e| anyhow!("{:?}", e))
+            } else {
+               req.await.map_err(|e| anyhow!("{:?}", e))
+            }
+         })
+         .await?;
+
+      let Some(block) = block else {
+         return Ok(None);
+      };
+
+      if let Some(number) = cache_number {
+         let now = TimeStamp::now_as_millis()?.timestamp();
+         self.write(|ctx| {
+            cache_insert_capped(
+               &mut ctx.blocks_by_number,
+               (chain.id(), number),
+               CachedBlock {
+                  timestamp: now,
+                  hydrated,
+                  block: block.clone(),
+               },
+            );
+         });
+      }
+
+      Ok(Some(block))
+   }
+
+   /// Get a block by its hash
+   ///
+   /// If the block is not found in cache, it will be retrieved from the blockchain.
+   /// `hydrated` selects full transactions (`true`) or hashes only (`false`); the
+   /// cache stores one variant per hash and refetches when the requested one differs.
+   pub async fn get_block_by_hash(
+      &self,
+      hash: FixedBytes<32>,
+      hydrated: bool,
+   ) -> Result<Option<RpcBlock>, anyhow::Error> {
+      let chain = self.chain();
+      let block_time = chain.block_time_millis();
+      let now = TimeStamp::now_as_millis()?.timestamp();
+      let cached = self.read(|ctx| ctx.blocks_by_hash.get(&(chain.id(), hash)).cloned());
+
+      if let Some(cached) = cached {
+         if cached.hydrated == hydrated && cache_elapsed_fresh(now, cached.timestamp, block_time) {
+            return Ok(Some(cached.block));
+         }
+      }
+
+      let z_client = self.get_zeus_client();
+      let block = z_client
+         .request(chain.id(), move |client| async move {
+            let req = client.get_block_by_hash(hash);
+            if hydrated {
+               req.full().await.map_err(|e| anyhow!("{:?}", e))
+            } else {
+               req.await.map_err(|e| anyhow!("{:?}", e))
+            }
+         })
+         .await?;
+
+      let Some(block) = block else {
+         return Ok(None);
+      };
+
+      let now = TimeStamp::now_as_millis()?.timestamp();
+
+      self.write(|ctx| {
+         cache_insert_capped(
+            &mut ctx.blocks_by_hash,
+            (chain.id(), hash),
+            CachedBlock {
+               timestamp: now,
+               hydrated,
+               block: block.clone(),
+            },
+         );
+      });
+
+      Ok(Some(block))
+   }
+
+   /// Get the transaction count (nonce) for the given address
+   ///
+   /// If the count is not found in cache, it will be retrieved from the blockchain
+   pub async fn get_transaction_count(&self, address: Address) -> Result<u64, anyhow::Error> {
+      let chain = self.chain();
+      let block_time = chain.block_time_millis();
+      let now = TimeStamp::now_as_millis()?.timestamp();
+      let cached = self.read(|ctx| ctx.tx_counts.get(&(chain.id(), address)).cloned());
+
+      if let Some(cached) = cached {
+         if cache_elapsed_fresh(now, cached.timestamp, block_time) {
+            return Ok(cached.count);
+         }
+      }
+
+      let z_client = self.get_zeus_client();
+      let count = z_client
+         .request(chain.id(), move |client| async move {
+            client.get_transaction_count(address).await.map_err(|e| anyhow!("{:?}", e))
+         })
+         .await?;
+
+      let now = TimeStamp::now_as_millis()?.timestamp();
+
+      self.write(|ctx| {
+         cache_insert_capped(
+            &mut ctx.tx_counts,
+            (chain.id(), address),
+            TransactionCount {
+               timestamp: now,
+               count,
+            },
+         );
+      });
+
+      Ok(count)
+   }
+
    pub fn server_port(&self) -> u16 {
       self.read(|ctx| ctx.server_port)
    }
@@ -1981,6 +2150,9 @@ pub struct ZeusContext {
    pub storage: HashMap<(u64, u64, Address, U256), U256>,
    pub transactions: HashMap<(u64, FixedBytes<32>), Transaction>,
    pub receipts: HashMap<(u64, FixedBytes<32>), TransactionReceipt>,
+   pub blocks_by_hash: HashMap<(u64, FixedBytes<32>), CachedBlock>,
+   pub blocks_by_number: HashMap<(u64, u64), CachedBlock>,
+   pub tx_counts: HashMap<(u64, Address), TransactionCount>,
 
    /// Cached priority fees for each chain
    pub priority_fee: PriorityFee,
@@ -2130,6 +2302,9 @@ impl ZeusContext {
          storage: HashMap::with_capacity(CONNECTOR_CACHE_CAP),
          transactions: HashMap::with_capacity(CONNECTOR_CACHE_CAP),
          receipts: HashMap::with_capacity(CONNECTOR_CACHE_CAP),
+         blocks_by_hash: HashMap::with_capacity(CONNECTOR_CACHE_CAP),
+         blocks_by_number: HashMap::with_capacity(CONNECTOR_CACHE_CAP),
+         tx_counts: HashMap::with_capacity(CONNECTOR_CACHE_CAP),
          priority_fee,
          connected_dapps: ConnectedDapps::default(),
          delegated_wallets,

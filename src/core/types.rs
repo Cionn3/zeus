@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use zeus_eth::{
    alloy_primitives::{Address, Bytes},
+   alloy_rpc_types::Block as RpcBlock,
    types::ETH_SEPOLIA,
    types::{ChainId, SUPPORTED_CHAINS},
    utils::NumericValue,
@@ -290,6 +291,26 @@ pub struct EthCall {
 pub struct EstimateGas {
    pub timestamp: u64,
    pub gas: u64,
+}
+
+/// Cached block for the wallet-connector `eth_getBlockByHash` /
+/// `eth_getBlockByNumber`.
+///
+/// Unlike the small [`Block`] above, this holds the full RPC block so it can be
+/// serialized back to the dapp.
+#[derive(Clone)]
+pub struct CachedBlock {
+   pub timestamp: u64,
+   /// Whether [`Self::block`] carries full transactions (`true`) or hashes only.
+   pub hydrated: bool,
+   pub block: RpcBlock,
+}
+
+/// Cached `eth_getTransactionCount` nonce for an address.
+#[derive(Clone)]
+pub struct TransactionCount {
+   pub timestamp: u64,
+   pub count: u64,
 }
 
 #[derive(Debug, Clone)]

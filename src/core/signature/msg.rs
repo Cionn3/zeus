@@ -25,8 +25,16 @@ pub enum SignMsgType {
    Permit2Batch(Permit2BatchDetails),
    Permit2612(Permit2612Details),
    ClearSigned(ClearSignedDetails),
-   PersonalSign(String),
+   PersonalSign(PersonalSignData),
    Other(Value),
+}
+
+/// EIP-191 personal message. The display string is a lossy UTF-8 rendering;
+/// signing always uses the raw bytes exactly as the dapp sent them.
+#[derive(Debug, Clone)]
+pub struct PersonalSignData {
+   pub display: String,
+   pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -52,10 +60,13 @@ impl SignMsgType {
       ctx: ZeusCtx,
       chain: u64,
       msg_value: Option<Value>,
-      msg_string: Option<String>,
+      msg_bytes: Option<Vec<u8>>,
    ) -> Result<Self, anyhow::Error> {
-      if let Some(string) = msg_string {
-         return Ok(Self::PersonalSign(string));
+      if let Some(bytes) = msg_bytes {
+         return Ok(Self::PersonalSign(PersonalSignData {
+            display: String::from_utf8_lossy(&bytes).into_owned(),
+            bytes,
+         }));
       }
 
       if let Some(value) = msg_value {
@@ -114,7 +125,7 @@ impl SignMsgType {
 
    pub fn msg_string(&self) -> Option<String> {
       match self {
-         Self::PersonalSign(msg) => Some(msg.clone()),
+         Self::PersonalSign(msg) => Some(msg.display.clone()),
          _ => None,
       }
    }
@@ -141,9 +152,8 @@ impl SignMsgType {
             Ok(sig)
          }
          Self::PersonalSign(msg) => {
-            let msg = msg.to_string();
             let signer = signer.to_signer();
-            let sig = signer.sign_message(msg.as_bytes()).await?;
+            let sig = signer.sign_message(&msg.bytes).await?;
             Ok(sig)
          }
          Self::Other(details) => {
@@ -168,7 +178,7 @@ impl SignMsgType {
          Self::Permit2Batch(details) => details.msg_value.clone(),
          Self::Permit2612(details) => details.msg_value.clone(),
          Self::ClearSigned(details) => details.raw.clone(),
-         Self::PersonalSign(msg) => json!(msg),
+         Self::PersonalSign(msg) => json!(msg.display),
          Self::Other(details) => details.clone(),
       }
    }

@@ -15,10 +15,10 @@ pub async fn sign_message(
    dapp: String,
    chain: ChainId,
    msg_value: Option<Value>,
-   msg_string: Option<String>,
+   msg_bytes: Option<Vec<u8>>,
    signer: Option<Address>,
 ) -> Result<Signature, anyhow::Error> {
-   let msg_type = SignMsgType::new(ctx.clone(), chain.id(), msg_value, msg_string).await?;
+   let msg_type = SignMsgType::new(ctx.clone(), chain.id(), msg_value, msg_bytes).await?;
 
    SHARED_GUI.write(|gui| {
       gui.loading_window.reset();
