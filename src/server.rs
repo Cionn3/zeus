@@ -722,7 +722,7 @@ async fn connect(
    method: RequestMethod,
 ) -> Result<JsonRpcResponse, Infallible> {
    SHARED_GUI.write(|gui| {
-      gui.confirm_window.open("Connect to Dapp");
+      gui.confirm_window.open_from_dapp("Connect to Dapp");
       gui.confirm_window.set_msg2(origin.clone());
       gui.bring_to_front();
    });
@@ -1453,7 +1453,7 @@ async fn apply_chain_switch(
    }
 
    SHARED_GUI.write(|gui| {
-      gui.confirm_window.open("Switch Network");
+      gui.confirm_window.open_from_dapp("Switch Network");
       gui.confirm_window.set_msg2(format!(
          "{} wants to switch to {}",
          origin,
@@ -1941,7 +1941,7 @@ async fn wallet_watch_asset(
       .unwrap_or_else(|| address.to_string());
 
    SHARED_GUI.write(|gui| {
-      gui.confirm_window.open("Add Token");
+      gui.confirm_window.open_from_dapp("Add Token");
       gui.confirm_window.set_msg2(format!(
          "{} wants to add {} to your wallet",
          origin, label

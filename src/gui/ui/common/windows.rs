@@ -5,13 +5,15 @@
 //! - LoadingWindow - Window to indicate a loading state
 //! - MsgWindow - Simple window diplaying a message, for example an error
 
+use super::delayed_action_label;
 use crate::gui::SHARED_GUI;
 use crate::utils::{
    RT, TimeStamp,
    self_update::{UpdateInfo, restart_app, update_zeus},
 };
 use eframe::egui::{Align2, RichText, Spinner, Ui, Vec2, vec2};
-use egui::{Align, Layout, Order};
+use egui::Order;
+use std::time::{Duration, Instant};
 
 use egui_elements::{Button, Modal, Theme};
 
@@ -21,6 +23,8 @@ pub struct ConfirmWindow {
    pub confirm: Option<bool>,
    pub msg: String,
    pub msg2: Option<String>,
+   /// When the prompt became visible. `None` skips the Confirm delay (in-app Zeus prompts).
+   opened_at: Option<Instant>,
    pub size: (f32, f32),
 }
 
@@ -31,7 +35,8 @@ impl ConfirmWindow {
          confirm: None,
          msg: String::new(),
          msg2: None,
-         size: (300.0, 250.0),
+         opened_at: None,
+         size: (450.0, 250.0),
       }
    }
 
@@ -40,12 +45,22 @@ impl ConfirmWindow {
    }
 
    pub fn open(&mut self, msg: impl Into<String>) {
+      self.open_inner(msg, false);
+   }
+
+   /// Dapp-originated prompt. Confirm is delayed so a focus-steal click cannot approve it.
+   pub fn open_from_dapp(&mut self, msg: impl Into<String>) {
+      self.open_inner(msg, true);
+   }
+
+   fn open_inner(&mut self, msg: impl Into<String>, delay: bool) {
       self.open = true;
       self.msg = msg.into();
       self.msg2 = None;
       // Previous Confirm/Reject must not auto-approve the next prompt
       // (connect and switch share this window).
       self.confirm = None;
+      self.opened_at = if delay { Some(Instant::now()) } else { None };
    }
 
    pub fn close(&mut self) {
@@ -65,6 +80,7 @@ impl ConfirmWindow {
       self.msg.clear();
       self.msg2 = None;
       self.confirm = None;
+      self.opened_at = None;
    }
 
    pub fn show(&mut self, theme: &Theme, ui: &mut Ui) {
@@ -75,50 +91,61 @@ impl ConfirmWindow {
       let title = self.msg.clone();
       let mut open = self.open;
 
+      let heading = RichText::new(&title).size(theme.typography.very_large);
+
       Modal::new(title, &mut open)
          .closable(false)
+         .heading(heading)
+         .header_separator(false)
+         .center_header(true)
          .backdrop_order(Order::Tooltip)
          .content_order(Order::Debug)
+         .max_width(self.size.0)
          .show(ui.ctx(), |ui| {
             ui.set_width(self.size.0);
-            ui.set_max_height(self.size.1);
 
             ui.vertical_centered(|ui| {
-               ui.spacing_mut().item_spacing = vec2(theme.spacing.xl, theme.spacing.xl);
+               ui.spacing_mut().item_spacing.y = theme.spacing.md;
+               ui.spacing_mut().item_spacing.x = theme.spacing.xl;
                ui.spacing_mut().button_padding = theme.button_padding;
 
-               ui.label(RichText::new(self.msg.clone()).size(theme.typography.normal));
-
                if let Some(msg) = &self.msg2 {
-                  ui.label(RichText::new(msg).size(theme.typography.normal));
+                  ui.label(RichText::new(msg).size(theme.typography.large));
                }
 
-               let size = vec2(ui.available_width() * 0.6, 25.0);
-               let button_size = vec2(ui.available_width() * 0.25, 25.0);
+               ui.add_space(10.0);
 
-               ui.allocate_ui(size, |ui| {
-                  ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                     let visuals = theme.button_visuals();
-                     let button =
-                        Button::new(RichText::new("Confirm").size(theme.typography.normal))
-                           .visuals(visuals)
-                           .min_size(button_size);
+               let button_size = vec2(
+                  (ui.available_width() - theme.spacing.xl) * 0.5,
+                  45.0,
+               );
 
-                     if ui.add(button).clicked() {
-                        self.close();
-                        self.confirm = Some(true);
-                     }
+               ui.horizontal(|ui| {
+                  ui.spacing_mut().item_spacing.x = theme.spacing.xl;
+                  let visuals = theme.button_visuals();
+                  let (confirm_ready, confirm_label) =
+                     delayed_action_label(self.opened_at, "Confirm");
+                  if !confirm_ready {
+                     ui.ctx().request_repaint_after(Duration::from_millis(100));
+                  }
+                  let button =
+                     Button::new(RichText::new(confirm_label).size(theme.typography.normal))
+                        .visuals(visuals)
+                        .min_size(button_size);
 
-                     let button =
-                        Button::new(RichText::new("Reject").size(theme.typography.normal))
-                           .visuals(visuals)
-                           .min_size(button_size);
+                  if ui.add_enabled(confirm_ready, button).clicked() {
+                     self.close();
+                     self.confirm = Some(true);
+                  }
 
-                     if ui.add(button).clicked() {
-                        self.close();
-                        self.confirm = Some(false);
-                     }
-                  });
+                  let button = Button::new(RichText::new("Reject").size(theme.typography.normal))
+                     .visuals(visuals)
+                     .min_size(button_size);
+
+                  if ui.add(button).clicked() {
+                     self.close();
+                     self.confirm = Some(false);
+                  }
                });
             });
          });
