@@ -5,6 +5,7 @@ use super::analysis::TransactionAnalysis;
 use super::send::send_transaction;
 use crate::core::{DecodedEvent, TokenApproveParams, ZeusCtx};
 use crate::gui::SHARED_GUI;
+use crate::utils::RT;
 use zeus_eth::{
    alloy_primitives::{Address, Log, U256},
    alloy_rpc_types::TransactionReceipt,
@@ -46,6 +47,25 @@ pub async fn send_token_approve(
    let call_data = token.encode_approve(spender, amount);
    let value = U256::ZERO;
    let auth_list = Vec::new();
+
+   // Update its price, the UI will pick it up later from the ctx
+   let price_manager = ctx.price_manager();
+   let pool_manager = ctx.pool_manager();
+   let tokens = vec![token.clone()];
+   let ctx2 = ctx.clone();
+   RT.spawn(async move {
+      if let Err(e) = price_manager
+         .calculate_prices(
+            ctx2,
+            chain.id(),
+            pool_manager,
+            tokens,
+         )
+         .await
+      {
+         tracing::error!("Error updating token price: {:?}", e);
+      }
+   });
 
    let tx_analysis = match sim {
       Some(sim) => {

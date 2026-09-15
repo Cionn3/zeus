@@ -217,6 +217,11 @@ pub fn token_approval_event_ui(
    ui: &mut Ui,
 ) {
    let is_unlimited = params.is_unlimited();
+   let token = &params.token;
+   let amount_usd = params
+      .amount_usd
+      .clone()
+      .unwrap_or_else(|| ctx.get_token_value_for_amount(params.amount.f64(), token));
 
    let amount = if is_unlimited {
       "Unlimited".to_string()
@@ -224,7 +229,7 @@ pub fn token_approval_event_ui(
       params.amount.abbreviated()
    };
 
-   let show_usd_value = !is_unlimited && params.amount_usd.is_some();
+   let show_usd_value = !is_unlimited;
    let tint = theme.image_tint_recommended;
    let icon_size = vec2(24.0, 24.0);
 
@@ -232,7 +237,6 @@ pub fn token_approval_event_ui(
       .currency_icon_x32(&Currency::from(params.token.clone()), tint)
       .fit_to_exact_size(icon_size);
    let mut text = if show_usd_value {
-      let amount_usd = params.amount_usd.as_ref().unwrap();
       RichText::new(format!(
          "{:.10} {} ~ ${:.10}",
          amount,
@@ -241,7 +245,7 @@ pub fn token_approval_event_ui(
       ))
       .size(theme.typography.large)
    } else {
-      RichText::new(format!("{} {}", amount, params.token.symbol)).size(theme.typography.large)
+      RichText::new(format!("{:.10} {}", amount, params.token.symbol)).size(theme.typography.large)
    };
 
    if is_unlimited {

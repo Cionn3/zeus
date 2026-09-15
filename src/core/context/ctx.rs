@@ -1307,8 +1307,7 @@ impl ZeusCtx {
    }
 
    pub fn get_token_value_for_amount(&self, amount: f64, token: &ERC20Token) -> NumericValue {
-      let price = self.get_token_price(token);
-      NumericValue::value(amount, price.f64())
+      self.read(|ctx| ctx.get_token_value_for_amount(amount, token))
    }
 
    pub fn get_currency_balance(
@@ -2372,6 +2371,11 @@ impl ZeusContext {
 
    pub fn get_currency_value_for_amount(&self, amount: f64, currency: &Currency) -> NumericValue {
       let price = self.get_currency_price(currency);
+      NumericValue::value(amount, price.f64())
+   }
+
+   pub fn get_token_value_for_amount(&self, amount: f64, token: &ERC20Token) -> NumericValue {
+      let price = self.get_token_price(token);
       NumericValue::value(amount, price.f64())
    }
 
