@@ -23,6 +23,13 @@ impl TransactionAnalysis {
 
       // Priority table (high → low). Keep protocol-agnostic kinds so new
       // bridges/swaps plug in without rewriting ranking.
+
+      // EOA Delegate gets the highest priority, some dapps delegate EOAs
+      // nowdays as the default to execute batch transactions.
+      if self.eoa_delegates_len() == 1 {
+         return DecodedEvent::EOADelegate(self.eoa_delegates()[0].clone());
+      }
+
       if self.shield_len() == 1 {
          return DecodedEvent::Shield(self.shields()[0].clone());
       }
@@ -63,10 +70,6 @@ impl TransactionAnalysis {
 
       if self.bridges_len() == 1 {
          return DecodedEvent::Bridge(self.bridges()[0].clone());
-      }
-
-      if self.eoa_delegates_len() == 1 {
-         return DecodedEvent::EOADelegate(self.eoa_delegates()[0].clone());
       }
 
       // Single swap hop

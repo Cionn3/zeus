@@ -273,6 +273,14 @@ impl TransactionAnalysis {
       Some(output)
    }
 
+   pub fn has_balance_diff(&self) -> bool {
+      self.balance_diff.len() > 0
+   }
+
+   pub fn has_approval_diff(&self) -> bool {
+      self.approval_diff.changes.len() > 0
+   }
+
    pub fn erc20_transfers_len(&self) -> usize {
       self.decoded_events.iter().filter(|t| t.is_erc20_transfer()).count()
    }

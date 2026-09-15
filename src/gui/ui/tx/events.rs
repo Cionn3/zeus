@@ -6,7 +6,6 @@ use egui_elements::{Label, Modal, MultiLabel, Theme};
 use crate::assets::icons::Icons;
 use crate::core::{TransactionAnalysis, ZeusContext, tx::events::*};
 use zeus_eth::{
-   alloy_primitives::U256,
    currency::{Currency, ERC20Token, NativeCurrency},
    types::ChainId,
 };
@@ -142,7 +141,10 @@ pub fn permit_event_ui(
    params: &PermitParams,
    ui: &mut Ui,
 ) {
-   let is_unlimited = params.amount.wei() == U256::MAX;
+   // Unlimited is not defined as U256::MAX
+   // but if the abbreviated value is "Unlimited"
+   // this happens if the formatted wei value is > 1 sextillion
+   let is_unlimited = params.is_unlimited();
 
    let amount = if is_unlimited {
       "Unlimited".to_string()

@@ -68,6 +68,28 @@ pub fn railgun_implementation(chain_id: u64) -> Result<Address, anyhow::Error> {
    }
 }
 
+pub fn simple_7702_account(chain_id: u64) -> Result<Address, anyhow::Error> {
+   let chain = ChainId::new(chain_id)?;
+   match chain {
+      ChainId::Ethereum => Ok(address!(
+         "0xe6Cae83BdE06E4c305530e199D7217f42808555B"
+      )),
+      ChainId::EthereumSepolia => Ok(address!(
+         "0xe6Cae83BdE06E4c305530e199D7217f42808555B"
+      )),
+      ChainId::Optimism => Ok(address!(
+         "0xe6Cae83BdE06E4c305530e199D7217f42808555B"
+      )),
+      ChainId::Base => Ok(address!(
+         "0xe6Cae83BdE06E4c305530e199D7217f42808555B"
+      )),
+      ChainId::Arbitrum => Ok(address!(
+         "0xe6Cae83BdE06E4c305530e199D7217f42808555B"
+      )),
+      _ => bail!("Simple7702Account is not available on this chain"),
+   }
+}
+
 pub fn entry_point(chain_id: u64) -> Result<Address, anyhow::Error> {
    let chain = ChainId::new(chain_id)?;
    match chain {

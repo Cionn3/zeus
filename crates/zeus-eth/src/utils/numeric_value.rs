@@ -126,6 +126,10 @@ impl Default for NumericValue {
 // Builders
 
 impl NumericValue {
+   pub fn is_abbreviated_unlimited(&self) -> bool {
+      self.abbreviated().eq_ignore_ascii_case("Unlimited")
+   }
+
    /// Format a wei value to a readable format
    ///
    /// Example:
@@ -359,6 +363,12 @@ mod tests {
    fn test_zero() {
       let value = NumericValue::currency_balance(U256::ZERO, 18);
       assert_eq!(value.is_zero(), true);
+   }
+
+   #[test]
+   fn test_unlimited() {
+      let value = NumericValue::currency_balance(U256::MAX, 18);
+      assert_eq!(value.is_abbreviated_unlimited(), true);
    }
 
    #[test]

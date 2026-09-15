@@ -2,9 +2,8 @@ use egui::{Align, Id, Layout, Margin, Order, RichText, ScrollArea, Ui, vec2};
 use egui_elements::{Button, Label, Modal, SecureTextEdit, Theme};
 
 use super::{
-   address, chain, clear_display_ui, eth_received, events::*, show_analysis_buttons,
-   show_approval_diff_rows, show_balance_diff_rows, show_calldata_modal, show_tx_diffs_modal,
-   tx_cost, value,
+   address, chain, clear_display_ui, events::*, show_analysis_buttons, show_approval_diff_rows,
+   show_balance_diff_rows, show_calldata_modal, show_tx_diffs_modal, tx_cost, value,
 };
 use crate::assets::icons::Icons;
 use crate::core::clear_signing::{self, ClearDisplay};
@@ -377,6 +376,20 @@ impl TxConfirmationWindow {
 
                ui.label(title_text);
 
+               let completly_unknown = main_event.is_other() && self.clear_display.is_none();
+               let has_more_than_one_diff =
+                  analysis.balance_diff.len() > 1 || analysis.approval_diff.changes.len() > 1;
+               let show_extra_warning =
+                  main_event.is_other_or_eoa_delegate() && has_more_than_one_diff;
+
+               let msg = "Review the balance and approval changes before proceeding";
+
+               if show_extra_warning || completly_unknown {
+                  ui.label(
+                     RichText::new(msg).size(theme.typography.large).color(theme.colors.warning),
+                  );
+               }
+
                // Main event details
                if !main_event.is_other() {
                   ui.allocate_ui(frame_size, |ui| {
@@ -415,24 +428,22 @@ impl TxConfirmationWindow {
                               });
                         });
                      });
-                  } else {
-                     let text = "Review the transaction details and proceed with caution";
-                     ui.label(
-                        RichText::new(text)
-                           .size(theme.typography.large)
-                           .color(theme.colors.warning),
-                     );
                   }
                }
 
-               // For unkown txs we show the diffs right away only if the len is 1
+               // For unkown txs (Unless its an EOA Delegate) we show the diffs right away only if the len is 1
                // so we dont fuck up the UI with too many widgets
+
                // ? Ideally need to be showwn right away in a scroll area
                // ? but right now this is ugly
+               // ? Also egui doesn't respect the ScrollBarVisibility::AlwaysVisible
+               // ? which makes things even worse
+
                let should_show_balance_diff =
-                  main_event.is_other() && analysis.balance_diff.len() == 1;
-               let should_show_approval_diff =
-                  main_event.is_other() && analysis.approval_diff.changes.len() == 1;
+                  main_event.is_other_or_eoa_delegate() && analysis.balance_diff.len() == 1;
+
+               let should_show_approval_diff = main_event.is_other_or_eoa_delegate()
+                  && analysis.approval_diff.changes.len() == 1;
 
                if should_show_balance_diff {
                   ui.allocate_ui(frame_size, |ui| {
@@ -501,6 +512,7 @@ impl TxConfirmationWindow {
                   });
                });
 
+               /*
                // Show ETH received
                if !analysis.eth_received().is_zero()
                   && !analysis.is_unwrap_weth()
@@ -521,6 +533,7 @@ impl TxConfirmationWindow {
                      });
                   });
                }
+               */
 
                // Decoded Events / Calldata / Balance & Approvals
                let buttons_size = ui.available_width() * avail_width_margin;
@@ -605,10 +618,8 @@ impl TxConfirmationWindow {
                   });
                });
 
-               ui.add_space(10.0);
-
                let base_case = !main_event.is_other() && main_event.is_mev_vulnerable();
-               let show_mev_protect = base_case || main_event.is_other();
+               let show_mev_protect = base_case || main_event.is_other_or_eoa_delegate();
 
                if recalculate_tx_cost {
                   self.calculate_tx_cost(ctx, self.gas_used);
@@ -627,8 +638,7 @@ impl TxConfirmationWindow {
                      "MEV Protect is disabled"
                   };
 
-                  let text = RichText::new(text).size(theme.typography.normal);
-
+                  let text = RichText::new(text).size(theme.typography.large);
                   let size = vec2(ui.available_width() * 0.3, 15.0);
 
                   ui.allocate_ui_with_layout(size, Layout::left_to_right(Align::Center), |ui| {

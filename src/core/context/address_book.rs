@@ -208,6 +208,7 @@ pub fn well_known_entries() -> Vec<((u64, Address), Arc<str>)> {
             Arc::from("Railgun Smart Wallet"),
          ));
       }
+      
       if let Some(config) = ChainConfig::from_chain_id(chain) {
          entries.push((
             (chain, config.relay_adapt_contract),
@@ -225,66 +226,84 @@ pub fn well_known_entries() -> Vec<((u64, Address), Arc<str>)> {
             ));
          }
       }
+
+      if let Ok(address) = address_book::simple_7702_account(chain) {
+         entries.push(((chain, address), Arc::from("Simple7702Account")));
+      }
+
       if let Ok(address) = address_book::entry_point(chain) {
          entries.push(((chain, address), Arc::from("Entry Point")));
       }
+
       if let Ok(address) = address_book::permit2_contract(chain) {
          entries.push(((chain, address), Arc::from("Permit2")));
       }
+
       if let Ok(address) = address_book::uniswap_v4_pool_manager(chain) {
          entries.push((
             (chain, address),
             Arc::from("Uniswap V4 Pool Manager"),
          ));
       }
+
       if let Ok(address) = address_book::universal_router_v2(chain) {
          entries.push(((chain, address), Arc::from("Universal Router V2")));
       }
+
       if let Ok(address) = address_book::uniswap_v3_nft_position_manager(chain) {
          entries.push((
             (chain, address),
             Arc::from("Uniswap V3 NFT Position Manager"),
          ));
       }
+
       if let Ok(address) = address_book::uniswap_v4_nft_position_manager(chain) {
          entries.push((
             (chain, address),
             Arc::from("Uniswap V4 NFT Position Manager"),
          ));
       }
+
       if let Ok(address) = address_book::uniswap_v2_factory(chain) {
          entries.push(((chain, address), Arc::from("Uniswap V2 Factory")));
       }
+
       if let Ok(address) = address_book::uniswap_v2_router(chain) {
          entries.push(((chain, address), Arc::from("Uniswap V2 Router")));
       }
+
       if let Ok(address) = address_book::uniswap_v3_factory(chain) {
          entries.push(((chain, address), Arc::from("Uniswap V3 Factory")));
       }
+
       if let Ok(address) = address_book::pancakeswap_v2_factory(chain) {
          entries.push((
             (chain, address),
             Arc::from("PancakeSwap V2 Factory"),
          ));
       }
+
       if let Ok(address) = address_book::pancakeswap_v2_router(chain) {
          entries.push((
             (chain, address),
             Arc::from("PancakeSwap V2 Router"),
          ));
       }
+
       if let Ok(address) = address_book::pancakeswap_v3_factory(chain) {
          entries.push((
             (chain, address),
             Arc::from("PancakeSwap V3 Factory"),
          ));
       }
+
       if let Ok(address) = address_book::pancakeswap_v3_router(chain) {
          entries.push((
             (chain, address),
             Arc::from("PancakeSwap V3 Router"),
          ));
       }
+
       if let Ok(address) = address_book::across_spoke_pool_v2(chain) {
          entries.push((
             (chain, address),

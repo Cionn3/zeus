@@ -1788,6 +1788,11 @@ async fn wallet_send_calls(
    let transact_to = if calls.len() == 1 { calls[0].to } else { from };
    let source_is_zeus = false;
 
+   SHARED_GUI.write(|gui| {
+      gui.loading_window.open("Wait while magic happens");
+      gui.bring_to_front();
+   });
+
    let (receipt, tx_rich) = match send_wallet_calls(
       ctx.clone(),
       source_is_zeus,

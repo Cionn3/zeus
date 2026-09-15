@@ -86,13 +86,13 @@ impl DecodedEvent {
       let token = Currency::from(ERC20Token::weth());
       let spender = Address::ZERO;
 
-      let wei = U256::MAX - U256::from(1);
+      let wei = U256::MAX;
       let amount = NumericValue::format_wei(wei, 18);
       let amount_usd = Some(NumericValue::value(amount.f64(), 1600.0));
       let expiration = TimeStamp::now_as_secs().unwrap().saturating_add_secs(600);
 
       let params = PermitParams {
-         event_name: "Permit".to_string(),
+         event_name: "Token Permit".to_string(),
          chain,
          owner,
          token,
@@ -701,6 +701,10 @@ impl DecodedEvent {
 
    pub fn is_other(&self) -> bool {
       matches!(self, Self::Other)
+   }
+
+   pub fn is_other_or_eoa_delegate(&self) -> bool {
+      matches!(self, Self::Other | Self::EOADelegate(_))
    }
 
    pub fn is_known(&self) -> bool {

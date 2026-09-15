@@ -24,7 +24,7 @@ pub struct PermitParams {
 
 impl PermitParams {
    pub fn is_unlimited(&self) -> bool {
-      self.amount.wei() == U256::MAX
+      self.amount.is_abbreviated_unlimited()
    }
 
    pub fn title(&self) -> String {
