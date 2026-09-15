@@ -24,13 +24,14 @@ use crate::gui::{
       dapps::railgun::private_transfer,
    },
 };
-use crate::utils::simulate::{AccountPrefetch, fetch_accounts_info};
+use crate::utils::simulate::{
+   AccountPrefetch, fetch_accounts_info, native_balance_at, pinned_head,
+};
 use egui_elements::{Button, SecureTextEdit, Theme};
 use egui_lucide::Lucide;
 
 use zeus_eth::{
    alloy_primitives::{Address, Bytes, U256},
-   alloy_provider::Provider,
    alloy_rpc_types::BlockId,
    currency::{Currency, ERC20Token, NativeCurrency},
    revm_utils::{ForkFactory, Host, new_evm, simulate as revm_simulate},
@@ -799,20 +800,9 @@ async fn send_eth(
 
    let client = ctx.get_zeus_client();
 
-   let block_opt = client
-      .request(chain.id(), |client| async move {
-         client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
-
-   let Some(block) = block_opt else {
-      return Err(anyhow!(
-         "No block found, this is usally a provider issue"
-      ));
-   };
+   let (block, block_id) = pinned_head(ctx.clone(), chain, BlockId::latest()).await?;
 
    let accounts = vec![from, recipient];
-   let block_id = BlockId::number(block.number());
 
    let eth_balance_before = client
       .request(chain.id(), |client| {
@@ -987,31 +977,9 @@ async fn send_token(
 
    let client = ctx.get_zeus_client();
 
-   let block = client
-      .request(chain.id(), |client| async move {
-         client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
+   let (block, block_id) = pinned_head(ctx.clone(), chain, BlockId::latest()).await?;
 
-   let block = if let Some(block) = block {
-      block
-   } else {
-      return Err(anyhow!(
-         "No block found, this is usally a provider issue"
-      ));
-   };
-
-   let block_id = BlockId::number(block.number());
-
-   let eth_balance_before = client
-      .request(chain.id(), |client| async move {
-         client
-            .get_balance(from)
-            .block_id(block_id)
-            .await
-            .map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
+   let eth_balance_before = native_balance_at(ctx.clone(), chain, from, block_id).await?;
 
    let recipient_token_balance_before = client
       .request(chain.id(), |client| {

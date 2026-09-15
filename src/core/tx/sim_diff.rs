@@ -10,7 +10,8 @@ use super::approval_diff::{
 use super::balance_diff::{BalanceDiff, collect_token_candidates, native_change, token_change};
 use crate::core::ZeusCtx;
 use crate::utils::simulate::{
-   AccountPrefetch, eip7702_implementation, fetch_accounts_info, simulate_transaction,
+   AccountPrefetch, ForkPrefetch, ForkSim, ForkSimRequest, StoragePrefetch, eip7702_implementation,
+   pinned_head, simulate_on_fork_with,
 };
 use alloy_eips::eip7702::SignedAuthorization;
 use anyhow::anyhow;
@@ -21,7 +22,7 @@ use zeus_eth::{
    alloy_primitives::{Address, Bytes, Log, U256},
    alloy_rpc_types::BlockId,
    revm_utils::{
-      Database, Evm2, ForkFactory, Host, new_evm,
+      Database, Evm2,
       simulate::{erc20_allowance, erc20_balance, permit2_allowance},
    },
    types::ChainId,
@@ -569,14 +570,7 @@ pub async fn simulate_and_diff(
 ) -> Result<SimulatedTx, anyhow::Error> {
    let client = ctx.get_zeus_client();
 
-   let block = client
-      .request(chain.id(), |client| async move {
-         client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
-
-   let block = block.ok_or_else(|| anyhow!("No block found, this is usally a provider issue"))?;
-   let block_id = BlockId::number(block.header.number);
+   let (block, block_id) = pinned_head(ctx.clone(), chain, BlockId::latest()).await?;
 
    let portfolio = ctx.get_portfolio(chain.id(), from);
    let (known_erc20, known_permit2) = known_approvals(&ctx, chain.id(), from);
@@ -649,101 +643,86 @@ pub async fn simulate_and_diff(
       accounts.push(AccountPrefetch::contract(token.address));
    }
 
-   let accounts_info = fetch_accounts_info(ctx.clone(), chain.id(), block_id, accounts).await;
-   let fork_client = ctx.get_client(chain.id()).await?;
-   let mut factory =
-      ForkFactory::new_sandbox_factory(fork_client, chain.id(), None, Some(block_id));
+   let (sim, (tokens, candidates, after_tokens, after_approvals, extras_handle)) =
+      simulate_on_fork_with(
+         ctx.clone(),
+         chain,
+         ForkPrefetch {
+            block,
+            accounts,
+            storage: StoragePrefetch::None,
+         },
+         ForkSimRequest {
+            from,
+            interact_to,
+            call_data: call_data.clone(),
+            value,
+            gas_limit: None,
+            authorization_list,
+         },
+         |evm, sim| {
+            let tokens = collect_token_candidates(
+               portfolio.tokens().iter().map(|t| t.address),
+               interact_to,
+               sim.logs.iter().map(|log| log.address),
+            );
 
-   for info in accounts_info {
-      factory.insert_account_info(info.address, info.info);
-   }
+            let candidates = collect_approval_candidates(
+               from,
+               interact_to,
+               &call_data,
+               &sim.logs,
+               known_erc20,
+               known_permit2,
+            );
 
-   let fork_db = factory.new_sandbox_fork();
+            let (erc20_pairs, permit2_pairs) = split_approval_pairs(&candidates);
 
-   let (
+            let extra_tokens = not_in(&tokens, &tokens_pre);
+            let extra_erc20 = not_in(&erc20_pairs, &erc20_pre);
+            let extra_permit2 = not_in(&permit2_pairs, &permit2_pre);
+
+            let extras_handle =
+               if BeforeState::is_empty_request(&extra_tokens, &extra_erc20, &extra_permit2) {
+                  None
+               } else {
+                  Some(tokio::spawn(fetch_before_state(
+                     ctx.clone(),
+                     chain.id(),
+                     from,
+                     block_id,
+                     extra_tokens,
+                     extra_erc20,
+                     extra_permit2,
+                  )))
+               };
+
+            let time = Instant::now();
+            let after_tokens = measure_token_after(from, &tokens, evm);
+            let after_approvals = measure_approval_after(from, &candidates, permit2, evm);
+
+            tracing::info!(
+               "measure_after_diffs took {} ms",
+               time.elapsed().as_millis()
+            );
+
+            (
+               tokens,
+               candidates,
+               after_tokens,
+               after_approvals,
+               extras_handle,
+            )
+         },
+      )
+      .await?;
+
+   let ForkSim {
       sim_res,
+      logs,
       balance_before,
       balance_after,
-      logs,
-      tokens,
-      candidates,
-      after_tokens,
-      after_approvals,
-      extras_handle,
-   ) = {
-      let mut evm = new_evm(chain, Some(&block), fork_db);
-
-      let balance_before = evm.balance(from).map(|state| state.data).unwrap_or(U256::ZERO);
-
-      let sim_res = simulate_transaction(
-         &mut evm,
-         from,
-         interact_to,
-         call_data.clone(),
-         value,
-         authorization_list,
-      )?;
-
-      let balance_after = evm.balance(from).map(|state| state.data).unwrap_or(U256::ZERO);
-      let logs = sim_res.clone().into_logs();
-
-      let tokens = collect_token_candidates(
-         portfolio.tokens().iter().map(|t| t.address),
-         interact_to,
-         logs.iter().map(|log| log.address),
-      );
-
-      let candidates = collect_approval_candidates(
-         from,
-         interact_to,
-         &call_data,
-         &logs,
-         known_erc20,
-         known_permit2,
-      );
-
-      let (erc20_pairs, permit2_pairs) = split_approval_pairs(&candidates);
-
-      let extra_tokens = not_in(&tokens, &tokens_pre);
-      let extra_erc20 = not_in(&erc20_pairs, &erc20_pre);
-      let extra_permit2 = not_in(&permit2_pairs, &permit2_pre);
-
-      let extras_handle =
-         if BeforeState::is_empty_request(&extra_tokens, &extra_erc20, &extra_permit2) {
-            None
-         } else {
-            Some(tokio::spawn(fetch_before_state(
-               ctx.clone(),
-               chain.id(),
-               from,
-               block_id,
-               extra_tokens,
-               extra_erc20,
-               extra_permit2,
-            )))
-         };
-
-      let time = Instant::now();
-      let after_tokens = measure_token_after(from, &tokens, &mut evm);
-      let after_approvals = measure_approval_after(from, &candidates, permit2, &mut evm);
-
-      tracing::info!(
-         "measure_after_diffs took {} ms",
-         time.elapsed().as_millis()
-      );
-
-      (
-         sim_res,
-         balance_before,
-         balance_after,
-         logs,
-         tokens,
-         candidates,
-         after_tokens,
-         after_approvals,
-         extras_handle,
-      )
-   };
+   } = sim;
 
    let mut before = BeforeState::empty();
    if let Some(handle) = before_handle {

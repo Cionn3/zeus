@@ -15,18 +15,18 @@ use zeus_eth::alloy_rpc_types::Block;
 use zeus_eth::revm::context::ContextTr;
 
 use crate::core::{
-   DecodedEvent, SwapParams, TokenApproveParams, TransactionAnalysis, UnwrapWETHParams,
-   WrapETHParams, ZeusCtx, send_transaction, sign_message, signature::Permit2Info, types::Dapp,
+   ApproveSimulation, DecodedEvent, SwapParams, TransactionAnalysis, UnwrapWETHParams,
+   WrapETHParams, ZeusCtx, send_token_approve, send_transaction, sign_message,
+   signature::Permit2Info, types::Dapp,
 };
 use crate::utils::{RT, simulate::*, swap_quoter::*, universal_router_v2::encode_swap};
 
 use zeus_eth::{
    alloy_primitives::{Address, U256, address},
-   alloy_provider::Provider,
    alloy_rpc_types::BlockId,
    amm::uniswap::{AnyUniswapPool, UniswapPool},
    currency::{Currency, erc20::ERC20Token, native::NativeCurrency},
-   revm_utils::{ForkDB, ForkFactory, Host, new_evm, simulate},
+   revm_utils::{ForkDB, Host, new_evm, simulate},
    types::ChainId,
    utils::{NumericValue, address_book},
 };
@@ -1356,31 +1356,9 @@ pub async fn wrap_eth(
 ) -> Result<(), anyhow::Error> {
    let client = ctx.get_zeus_client();
 
-   let block = client
-      .request(chain.id(), |client| async move {
-         client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
+   let (block, block_id) = pinned_head(ctx.clone(), chain, BlockId::latest()).await?;
 
-   let block = if let Some(block) = block {
-      block
-   } else {
-      return Err(anyhow!(
-         "No block found, this is usally a provider issue"
-      ));
-   };
-
-   let block_id = BlockId::number(block.header.number);
-
-   let eth_balance_before = client
-      .request(chain.id(), |client| async move {
-         client
-            .get_balance(from)
-            .block_id(block_id)
-            .await
-            .map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
+   let eth_balance_before = native_balance_at(ctx.clone(), chain, from, block_id).await?;
 
    let weth = ERC20Token::wrapped_native_token(chain.id());
 
@@ -1409,43 +1387,34 @@ pub async fn wrap_eth(
       block.header.beneficiary,
    ));
 
-   let accounts_info = fetch_accounts_info(ctx.clone(), chain.id(), block_id, accounts).await;
-
-   let fork_client = ctx.get_client(chain.id()).await?;
-   let mut factory =
-      ForkFactory::new_sandbox_factory(fork_client, chain.id(), None, Some(block_id));
-
-   for info in accounts_info {
-      factory.insert_account_info(info.address, info.info);
-   }
-
-   let fork_db = factory.new_sandbox_fork();
-
-   let eth_balance_after;
-   let sim_res;
-   let weth_balance_after;
-   {
-      let mut evm = new_evm(chain, Some(&block), fork_db.clone());
-
-      sim_res = simulate_transaction(
-         &mut evm,
+   let (sim, weth_balance_after) = simulate_on_fork_with(
+      ctx.clone(),
+      chain,
+      ForkPrefetch {
+         block,
+         accounts,
+         storage: StoragePrefetch::None,
+      },
+      ForkSimRequest {
          from,
          interact_to,
-         call_data.clone(),
+         call_data: call_data.clone(),
          value,
-         vec![],
-      )?;
+         gas_limit: None,
+         authorization_list: vec![],
+      },
+      |evm, _| simulate::erc20_balance(evm, weth.address, from),
+   )
+   .await?;
 
-      let state = evm.balance(from);
-      eth_balance_after = if let Some(state) = state {
-         state.data
-      } else {
-         U256::ZERO
-      };
+   let ForkSim {
+      sim_res,
+      logs,
+      balance_after: eth_balance_after,
+      ..
+   } = sim;
 
-      let received = simulate::erc20_balance(&mut evm, weth.address, from)?;
-      weth_balance_after = NumericValue::format_wei(received, weth.decimals);
-   }
+   let weth_balance_after = NumericValue::format_wei(weth_balance_after?, weth.decimals);
 
    let weth_received = if weth_balance_after.wei() > weth_balance_before.wei() {
       weth_balance_after.wei() - weth_balance_before.wei()
@@ -1462,8 +1431,6 @@ pub async fn wrap_eth(
          weth_received.abbreviated()
       ));
    }
-
-   let logs = sim_res.clone().into_logs();
 
    let weth_usd = ctx.get_currency_value_for_amount(amount.f64(), &weth.clone().into());
 
@@ -1542,33 +1509,9 @@ pub async fn unwrap_weth(
    chain: ChainId,
    amount: NumericValue,
 ) -> Result<(), anyhow::Error> {
-   let client = ctx.get_zeus_client();
+   let (block, block_id) = pinned_head(ctx.clone(), chain, BlockId::latest()).await?;
 
-   let block = client
-      .request(chain.id(), |client| async move {
-         client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
-
-   let block = if let Some(block) = block {
-      block
-   } else {
-      return Err(anyhow!(
-         "No block found, this is usally a provider issue"
-      ));
-   };
-
-   let block_id = BlockId::number(block.header.number);
-
-   let eth_balance_before = client
-      .request(chain.id(), |client| async move {
-         client
-            .get_balance(from)
-            .block_id(block_id)
-            .await
-            .map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
+   let eth_balance_before = native_balance_at(ctx.clone(), chain, from, block_id).await?;
 
    let weth = ERC20Token::wrapped_native_token(chain.id());
 
@@ -1583,39 +1526,31 @@ pub async fn unwrap_weth(
       block.header.beneficiary,
    ));
 
-   let accounts_info = fetch_accounts_info(ctx.clone(), chain.id(), block_id, accounts).await;
-
-   let fork_client = ctx.get_client(chain.id()).await?;
-   let mut factory =
-      ForkFactory::new_sandbox_factory(fork_client, chain.id(), None, Some(block_id));
-
-   for info in accounts_info {
-      factory.insert_account_info(info.address, info.info);
-   }
-
-   let fork_db = factory.new_sandbox_fork();
-
-   let eth_balance_after;
-   let sim_res;
-   {
-      let mut evm = new_evm(chain, Some(&block), fork_db.clone());
-
-      sim_res = simulate_transaction(
-         &mut evm,
+   let sim = simulate_on_fork(
+      ctx.clone(),
+      chain,
+      ForkPrefetch {
+         block,
+         accounts,
+         storage: StoragePrefetch::None,
+      },
+      ForkSimRequest {
          from,
          interact_to,
-         call_data.clone(),
+         call_data: call_data.clone(),
          value,
-         vec![],
-      )?;
+         gas_limit: None,
+         authorization_list: vec![],
+      },
+   )
+   .await?;
 
-      let state = evm.balance(from);
-      eth_balance_after = if let Some(state) = state {
-         state.data
-      } else {
-         U256::ZERO
-      };
-   }
+   let ForkSim {
+      sim_res,
+      logs,
+      balance_after: eth_balance_after,
+      ..
+   } = sim;
 
    let eth_received = if eth_balance_after > eth_balance_before {
       NumericValue::format_wei(
@@ -1633,8 +1568,6 @@ pub async fn unwrap_weth(
          eth_received.abbreviated()
       ));
    }
-
-   let logs = sim_res.clone().into_logs();
 
    let eth_received_usd = ctx.get_token_value_for_amount(eth_received.f64(), &weth);
 
@@ -1758,54 +1691,21 @@ async fn handle_approve(
          new_fork_db = evm.db().clone();
       }
 
-      let call_data = token.encode_approve(permit2, U256::MAX);
-      let dapp = "".to_string();
-      let interact_to = token.address;
-      let value = U256::ZERO;
-      let amount = NumericValue::format_wei(U256::MAX, token.decimals);
-      let auth_list = Vec::new();
-      let contract_interact = Some(true);
-      let source_is_zeus = true;
-
-      let params = TokenApproveParams {
-         token: token.clone(),
-         amount: amount,
-         amount_usd: None,
-         owner: signer_address,
-         spender: permit2,
-      };
-
-      let mut analysis = TransactionAnalysis::new(
+      let receipt = send_token_approve(
          ctx.clone(),
-         chain.id(),
-         signer_address,
-         interact_to,
-         contract_interact,
-         call_data.clone(),
-         value,
-         approval_logs,
-         approval_gas_used,
-         eth_balance_before,
-         eth_balance_after,
-         auth_list.clone(),
-      )
-      .await?;
-
-      let main_event = DecodedEvent::TokenApprove(params.clone());
-      analysis.set_main_event(main_event);
-
-      let (receipt, _) = send_transaction(
-         ctx.clone(),
-         source_is_zeus,
-         dapp,
-         Some(analysis),
          chain,
-         false, // mev protect not needed for approval
          signer_address,
-         interact_to,
-         call_data,
-         value,
-         auth_list,
+         token,
+         permit2,
+         U256::MAX,
+         Some(ApproveSimulation {
+            logs: approval_logs,
+            gas_used: approval_gas_used,
+            eth_balance_before,
+            eth_balance_after,
+         }),
+         "",
+         false, // mev protect not needed for approval
       )
       .await?;
 
@@ -1817,56 +1717,18 @@ async fn handle_approve(
    Ok(new_fork_db)
 }
 
-/// Execute a swap through the Universal Router
-async fn swap_via_ur(
-   ctx: ZeusCtx,
+/// Accounts a Universal Router swap touches: the signer, the router stack, the
+/// traded tokens, the burn address Base/Optimism require, and every hop pool.
+fn swap_prefetch_accounts<P: UniswapPool>(
    chain: ChainId,
-   slippage: f64,
-   mev_protect: bool,
-   deadline: u64,
    signer_address: Address,
-   amount_in: NumericValue,
-   currency_in: Currency,
-   currency_out: Currency,
-   swap_steps: Vec<SwapStep<impl UniswapPool + Clone>>,
-) -> Result<(), anyhow::Error> {
-   let client = ctx.get_zeus_client();
-
-   let block = client
-      .request(chain.id(), |client| async move {
-         client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
-
-   let block = if let Some(block) = block.as_ref() {
-      block
-   } else {
-      return Err(anyhow!(
-         "No block found, this is usally a provider issue"
-      ));
-   };
-
-   let block_id = BlockId::number(block.header.number);
-
-   let eth_balance_before = client
-      .request(chain.id(), |client| async move {
-         client
-            .get_balance(signer_address)
-            .block_id(block_id)
-            .await
-            .map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
-
-   let token_out = currency_out.to_erc20().into_owned();
-   let token_out_balance_fut = client.request(chain.id(), |client| {
-      let token = token_out.clone();
-      async move { token.balance_of(client.clone(), signer_address, Some(block_id)).await }
-   });
-
-   // Prefetch account and storage info
-   let router_addr = address_book::universal_router_v2(chain.id())?;
-   let permit2_addr = address_book::permit2_contract(chain.id())?;
+   router_addr: Address,
+   permit2_addr: Address,
+   beneficiary: Address,
+   currency_in: &Currency,
+   currency_out: &Currency,
+   swap_steps: &[SwapStep<P>],
+) -> Vec<AccountPrefetch> {
    let first_pool = &swap_steps.first().unwrap().pool;
    let last_pool = &swap_steps.last().unwrap().pool;
    let burn_addr = address!("0x0000000000000000000000000000000000000001");
@@ -1875,7 +1737,7 @@ async fn swap_via_ur(
    accounts.push(AccountPrefetch::eoa(signer_address));
    accounts.push(AccountPrefetch::contract(router_addr));
    accounts.push(AccountPrefetch::contract(permit2_addr));
-   accounts.push(AccountPrefetch::eoa(block.header.beneficiary));
+   accounts.push(AccountPrefetch::eoa(beneficiary));
 
    if currency_in.is_erc20() {
       accounts.push(AccountPrefetch::contract(currency_in.address()));
@@ -1908,40 +1770,59 @@ async fn swap_via_ur(
       }
    }
 
-   let block_id = BlockId::number(block.number());
+   accounts
+}
 
-   let accounts_info_fut = fetch_accounts_info(
-      ctx.clone(),
-      chain.id(),
-      block_id,
-      accounts.clone(),
+/// Execute a swap through the Universal Router
+async fn swap_via_ur(
+   ctx: ZeusCtx,
+   chain: ChainId,
+   slippage: f64,
+   mev_protect: bool,
+   deadline: u64,
+   signer_address: Address,
+   amount_in: NumericValue,
+   currency_in: Currency,
+   currency_out: Currency,
+   swap_steps: Vec<SwapStep<AnyUniswapPool>>,
+) -> Result<(), anyhow::Error> {
+   let client = ctx.get_zeus_client();
+
+   let (block, block_id) = pinned_head(ctx.clone(), chain, BlockId::latest()).await?;
+
+   let eth_balance_before = native_balance_at(ctx.clone(), chain, signer_address, block_id).await?;
+
+   let token_out = currency_out.to_erc20().into_owned();
+   let token_out_balance_fut = client.request(chain.id(), |client| {
+      let token = token_out.clone();
+      async move { token.balance_of(client.clone(), signer_address, Some(block_id)).await }
+   });
+
+   // Prefetch account and storage info
+   let router_addr = address_book::universal_router_v2(chain.id())?;
+   let permit2_addr = address_book::permit2_contract(chain.id())?;
+
+   let accounts = swap_prefetch_accounts(
+      chain,
+      signer_address,
+      router_addr,
+      permit2_addr,
+      block.header.beneficiary,
+      &currency_in,
+      &currency_out,
+      &swap_steps,
    );
 
    let pools = swap_steps.iter().map(|s| s.pool.clone()).collect::<Vec<_>>();
-   let storage_fut = fetch_storage_for_pools(ctx.clone(), chain.id(), block_id, pools);
 
-   let time = Instant::now();
-
-   let accounts_info = accounts_info_fut.await;
-   let storage_info = storage_fut.await;
-
-   tracing::info!(
-      "Fetched accounts & storage info in {} ms",
-      time.elapsed().as_millis()
-   );
-
-   let fork_client = ctx.get_client(chain.id()).await?;
-
-   let mut factory =
-      ForkFactory::new_sandbox_factory(fork_client, chain.id(), None, Some(block_id));
-
-   for info in accounts_info {
-      factory.insert_account_info(info.address, info.info);
-   }
-
-   for storage in storage_info {
-      let _r = factory.insert_account_storage(storage.address, storage.slot, storage.value);
-   }
+   let factory = prepare_fork(
+      ctx.clone(),
+      chain,
+      &block,
+      accounts,
+      StoragePrefetch::Pools(pools),
+   )
+   .await?;
 
    // Handle the token approval if needed
 
@@ -2006,36 +1887,37 @@ async fn swap_via_ur(
 
    let fork_db = new_fork_db.unwrap_or(factory.new_sandbox_fork());
 
-   let token_out_balance_after;
-   let eth_balance_after;
-   let sim_res;
+   // Simulate on the fork the approval was committed into, if there was one, so
+   // the swap sees the allowance.
+   let (sim, token_out_balance_after) = simulate_on_fork_db(
+      chain,
+      &block,
+      fork_db,
+      ForkSimRequest {
+         from: signer_address,
+         interact_to: router_addr,
+         call_data: params.call_data.clone(),
+         value: params.value,
+         gas_limit: None,
+         authorization_list: vec![],
+      },
+      |evm, sim| {
+         if currency_out.is_native() {
+            Ok(sim.balance_after)
+         } else {
+            simulate::erc20_balance(evm, currency_out.address(), signer_address)
+         }
+      },
+   )?;
 
-   {
-      let mut evm = new_evm(chain, Some(&block), fork_db);
+   let ForkSim {
+      sim_res,
+      logs,
+      balance_after: eth_balance_after,
+      ..
+   } = sim;
 
-      sim_res = simulate_transaction(
-         &mut evm,
-         signer_address,
-         router_addr,
-         params.call_data.clone(),
-         params.value,
-         vec![],
-      )?;
-
-      let state = evm.balance(signer_address);
-      eth_balance_after = if let Some(state) = state {
-         state.data
-      } else {
-         U256::ZERO
-      };
-
-      token_out_balance_after = if currency_out.is_native() {
-         eth_balance_after
-      } else {
-         let b = simulate::erc20_balance(&mut evm, currency_out.address(), signer_address)?;
-         b
-      };
-   }
+   let token_out_balance_after = token_out_balance_after?;
 
    let token_out_balance_before = if currency_out.is_erc20() {
       token_out_balance_fut.await?
@@ -2114,7 +1996,6 @@ async fn swap_via_ur(
    };
 
    let contract_interact = Some(true);
-   let logs = sim_res.logs().to_vec();
    let gas_used = sim_res.tx_gas_used();
    let auth_list = Vec::new();
 

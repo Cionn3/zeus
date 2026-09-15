@@ -9,21 +9,16 @@ use std::{
    time::{Duration, Instant},
 };
 
-use crate::{
-   core::{
-      DecodedEvent, ShieldParams, TransactionAnalysis, TransactionRich, TxParams, WalletStateKey,
-      ZeusContext, ZeusCtx, bundler_url_dir, send_transaction, send_tx,
-   },
-   utils::{TimeStamp, simulate::simulate_transaction, wait_tx_confirm},
+use crate::core::{
+   DecodedEvent, SendTxOptions, ShieldParams, TransactionAnalysis, WalletStateKey, ZeusContext,
+   ZeusCtx, bundler_url_dir, ensure_allowance, send_transaction_with,
 };
 use crate::{
-   gui::ui::{NotificationType, common::show_with_fade},
-   utils::{
-      RT, estimate_tx_cost, simulate::railgun_common_accounts, state::get_base_fee,
-      write_private_atomic,
-   },
+   gui::ui::common::show_with_fade,
+   utils::{RT, write_private_atomic},
 };
 
+use super::{expect_single_event, railgun_ready, settle_railgun_op};
 use crate::assets::icons::Icons;
 use crate::gui::{
    SHARED_GUI,
@@ -32,17 +27,18 @@ use crate::gui::{
       common::{AmountField, AmountFieldParams},
    },
 };
-use crate::utils::simulate::{AccountPrefetch, fetch_accounts_info, fetch_storage_for_railgun};
+use crate::utils::simulate::{
+   AccountPrefetch, ForkPrefetch, ForkSim, ForkSimRequest, StoragePrefetch, native_balance_at,
+   pinned_head, railgun_common_accounts, simulate_on_fork,
+};
 use egui_elements::{Button, Modal, SecureTextEdit, Theme};
 use egui_lucide::Lucide;
 use elegance::{Badge, BadgeTone};
 
 use zeus_eth::{
-   alloy_primitives::{Address, U256},
-   alloy_provider::Provider,
-   alloy_rpc_types::{BlockId, Log},
+   alloy_primitives::Address,
+   alloy_rpc_types::BlockId,
    currency::{Currency, ERC20Token, NativeCurrency},
-   revm_utils::{ForkFactory, Host, new_evm},
    types::ChainId,
    utils::NumericValue,
 };
@@ -1020,20 +1016,7 @@ async fn shield(
    from: Address,
    recipient: String,
 ) -> Result<(), anyhow::Error> {
-   let is_supported = ctx.railgun_is_supported(chain);
-
-   if !is_supported {
-      return Err(anyhow!(
-         "Railgun is not supported for the {} network",
-         chain.name()
-      ));
-   }
-
-   if !ctx.is_railgun_enabled(chain.id()) {
-      return Err(anyhow!(
-         "Railgun is disabled. Enable it in Settings → Railgun."
-      ));
-   }
+   let railgun_provider = railgun_ready(ctx.clone(), chain).await?;
 
    let recipient = match RailgunAddress::from_zk_address(&recipient) {
       Ok(address) => address,
@@ -1041,28 +1024,6 @@ async fn shield(
          return Err(anyhow!("Invalid Railgun Address {}", e));
       }
    };
-
-   let railgun_provider = ctx.get_railgun_provider(chain.id(), false).await?;
-
-   if railgun_provider.chain_id() != chain.id() {
-      return Err(anyhow!(
-         "Railgun provider chain id {} does not match the current chain id {}",
-         railgun_provider.chain_id(),
-         chain.id()
-      ));
-   }
-
-   let is_syncing = railgun_provider.is_syncing().await;
-   if is_syncing {
-      return Err(anyhow!("Railgun is syncing, try again later"));
-   }
-
-   // If railgun cannot sync error out so we dont allow shields
-   if let Err(e) = ctx.sync_railgun(chain.id(), false).await {
-      return Err(anyhow!("Railgun is not synced: {:?}", e));
-   }
-
-   let z_client = ctx.get_zeus_client();
 
    let token = currency.to_erc20().into_owned();
    let railgun_address = railgun_provider.railgun_address();
@@ -1072,32 +1033,17 @@ async fn shield(
    // ERC-20 still needs an on-chain approval of RailgunSmartWallet before shield.
    // Native ETH uses RelayAdapt wrap+shield in one self-broadcast tx (no approval).
    if !is_native {
-      let client = ctx.get_client(chain.id()).await?;
-      let allowance = token.allowance(client, from, railgun_address).await?;
-      let source_is_zeus = true;
-
-      if allowance < amount.wei() {
-         SHARED_GUI.write(|gui| {
-            gui.loading_window.open("Token approval required to shield");
-            gui.request_repaint();
-         });
-
-         let calldata = token.encode_approve(railgun_address, amount.wei());
-         let (_, _) = send_transaction(
-            ctx.clone(),
-            source_is_zeus,
-            "Railgun".to_string(),
-            None,
-            chain,
-            false,
-            from,
-            token.address,
-            calldata,
-            U256::ZERO,
-            vec![],
-         )
-         .await?;
-      }
+      ensure_allowance(
+         ctx.clone(),
+         chain,
+         from,
+         &token,
+         railgun_address,
+         amount.wei(),
+         "Railgun",
+         "Token approval required to shield",
+      )
+      .await?;
    }
 
    SHARED_GUI.write(|gui| {
@@ -1121,38 +1067,19 @@ async fn shield(
       };
       builder.build(&mut rng)?
    };
+
    let shield_tx = shield_tx
       .into_iter()
       .next()
       .ok_or_else(|| anyhow!("Shield builder returned no transaction"))?;
+
    let calldata = shield_tx.data.clone();
    let interact_to = shield_tx.to;
    let value = shield_tx.value;
-   let auth_list = Vec::new();
 
-   let block = z_client
-      .request(chain.id(), |client| async move {
-         client.get_block(BlockId::latest()).await.map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
+   let (block, block_id) = pinned_head(ctx.clone(), chain, BlockId::latest()).await?;
 
-   let block = if let Some(block) = block {
-      block
-   } else {
-      return Err(anyhow!(
-         "No block found, this is usally a provider issue"
-      ));
-   };
-
-   let block_id = BlockId::number(block.header.number);
-
-   let eth_balance_before_fut = z_client.request(chain.id(), |client| async move {
-      client
-         .get_balance(from)
-         .block_id(block_id)
-         .await
-         .map_err(|e| anyhow!("{:?}", e))
-   });
+   let eth_balance_before_fut = native_balance_at(ctx.clone(), chain, from, block_id);
 
    // Prefetch accounts and storage for the sim
    let mut accounts = Vec::new();
@@ -1166,53 +1093,31 @@ async fn shield(
    let common_accounts = railgun_common_accounts(chain.id());
    accounts.extend(common_accounts.into_iter().map(AccountPrefetch::contract));
 
-   let accounts_info_fut = fetch_accounts_info(ctx.clone(), chain.id(), block_id, accounts);
-   let storage_info_fut =
-      fetch_storage_for_railgun(ctx.clone(), chain.id(), block_id, railgun_address);
-
-   let accounts_info = accounts_info_fut.await;
-   let storage_info = storage_info_fut.await;
-
-   let fork_client = ctx.get_client(chain.id()).await?;
-   let mut factory =
-      ForkFactory::new_sandbox_factory(fork_client, chain.id(), None, Some(block_id));
-
-   for info in accounts_info {
-      factory.insert_account_info(info.address, info.info);
-   }
-
-   for info in storage_info {
-      match factory.insert_account_storage(info.address, info.slot, info.value) {
-         Ok(_) => {}
-         Err(e) => tracing::error!("Failed to insert account storage: {:?}", e),
-      }
-   }
-
-   let fork_db = factory.new_sandbox_fork();
-
-   let eth_balance_after;
-   let sim_res;
-   {
-      let mut evm = new_evm(chain, Some(&block), fork_db.clone());
-
-      sim_res = simulate_transaction(
-         &mut evm,
+   let sim = simulate_on_fork(
+      ctx.clone(),
+      chain,
+      ForkPrefetch {
+         block,
+         accounts,
+         storage: StoragePrefetch::Railgun(railgun_address),
+      },
+      ForkSimRequest {
          from,
          interact_to,
-         calldata.clone(),
+         call_data: calldata.clone(),
          value,
-         vec![],
-      )?;
+         gas_limit: None,
+         authorization_list: vec![],
+      },
+   )
+   .await?;
 
-      let state = evm.balance(from);
-      eth_balance_after = if let Some(state) = state {
-         state.data
-      } else {
-         U256::ZERO
-      };
-   }
-
-   let logs = sim_res.clone().into_logs();
+   let ForkSim {
+      sim_res,
+      logs,
+      balance_after: eth_balance_after,
+      ..
+   } = sim;
 
    let mut shield_events = Vec::new();
 
@@ -1222,19 +1127,14 @@ async fn shield(
       }
    }
 
-   // Should not happen
-   if shield_events.len() > 1 {
-      return Err(anyhow!("More than one shield event found"));
-   }
-
-   if shield_events.is_empty() {
-      return Err(anyhow!("No shield event found"));
-   }
-
-   let mut shield_params = shield_events[0].clone();
+   let mut shield_params = expect_single_event(
+      shield_events,
+      "More than one shield event found",
+      || "No shield event found".to_string(),
+   )?;
+   
    shield_params.recipient = Some(recipient.address.clone());
 
-   let contract_interact = Some(true);
    let eth_balance_before = eth_balance_before_fut.await?;
 
    let mut tx_analysis = TransactionAnalysis::new(
@@ -1242,237 +1142,44 @@ async fn shield(
       chain.id(),
       from,
       interact_to,
-      contract_interact,
+      Some(true),
       calldata.clone(),
       value,
       logs,
       sim_res.tx_gas_used(),
       eth_balance_before,
       eth_balance_after,
-      auth_list.clone(),
+      vec![],
    )
    .await?;
 
-   let main_event = DecodedEvent::Shield(shield_params.clone());
-   tx_analysis.set_main_event(main_event.clone());
+   // Transact logs are not public ERC-20 transfers, so record the intent.
+   tx_analysis.set_main_event(DecodedEvent::Shield(shield_params));
 
-   let priority_fee = ctx.get_priority_fee(chain.id()).unwrap_or_default();
-   let sponsored = false;
-   let dapp = "Railgun".to_string();
-   let mev_protect = false;
-   let source_is_zeus = true;
-
-   SHARED_GUI.write(|gui| {
-      gui.tx_confirmation_window.open(
-         ctx.clone(),
-         source_is_zeus,
-         dapp,
-         chain,
-         tx_analysis.clone(),
-         priority_fee.f64().to_string(),
-         mev_protect,
-         sponsored,
-      );
-      gui.loading_window.reset();
-      gui.request_repaint();
-   });
-
-   if !wait_tx_confirm().await {
-      return Err(anyhow!("Transaction rejected"));
-   }
-
-   SHARED_GUI.write(|gui| {
-      gui.loading_window.open("Wait while magic happens");
-      gui.request_repaint();
-   });
-
-   let signer = ctx.get_wallet(from).ok_or(anyhow!("Wallet not found"))?.key;
-   let gas_used = tx_analysis.gas_used;
-
-   let fee = SHARED_GUI.read(|gui| gui.tx_confirmation_window.get_priority_fee());
-   let gas_limit = SHARED_GUI.read(|gui| gui.tx_confirmation_window.get_gas_limit());
-
-   let priority_fee = if fee.is_zero() {
-      ctx.get_priority_fee(chain.id()).unwrap_or_default()
-   } else {
-      fee
-   };
-
-   let base_fee = get_base_fee(ctx.clone(), chain.id()).await?;
-   let nonce = z_client
-      .request(chain.id(), |client| async move {
-         client.get_transaction_count(from).await.map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
-
-   let tx_params = TxParams::new(
-      signer,
-      interact_to,
-      nonce,
-      value,
-      chain,
-      priority_fee.wei(),
-      base_fee.next,
-      calldata.clone(),
-      gas_used,
-      gas_limit,
-      vec![],
-   );
-
-   let event_name = main_event.name();
-   let nofitification = NotificationType::from_main_event(main_event);
-
-   SHARED_GUI.write(|gui| {
-      gui.notification.open_with_spinner(event_name, nofitification);
-      gui.loading_window.reset();
-      gui.request_repaint();
-   });
-
-   let client = ctx.get_client(chain.id()).await?;
-   let receipt = send_tx(client, tx_params).await?;
-   let receipt_block = receipt.block_number.unwrap_or_default();
-   let block_id = if receipt_block > 0 {
-      BlockId::number(receipt_block)
-   } else {
-      BlockId::latest()
-   };
-
-   let logs: Vec<Log> = receipt.logs().to_vec();
-   let logs = logs.iter().map(|l| l.clone().into_inner()).collect::<Vec<_>>();
-
-   let eth_balance_after = z_client
-      .request(chain.id(), |client| async move {
-         client
-            .get_balance(from)
-            .block_id(block_id)
-            .await
-            .map_err(|e| anyhow!("{:?}", e))
-      })
-      .await?;
-
-   let new_tx_analysis = TransactionAnalysis::new(
+   let (_, _) = send_transaction_with(
       ctx.clone(),
-      chain.id(),
+      true,
+      SendTxOptions {
+         dapp: "Railgun".to_string(),
+         keep_intent_event: true,
+         ..Default::default()
+      },
+      Some(tx_analysis),
+      chain,
       from,
       interact_to,
-      contract_interact,
-      calldata.clone(),
+      calldata,
       value,
-      logs,
-      receipt.gas_used,
-      eth_balance_before,
-      eth_balance_after,
       vec![],
    )
    .await?;
 
-   let main_event = new_tx_analysis.infer_main_event(ctx.clone(), chain.id());
-
-   let new_main_event = if main_event.is_shield() {
-      let mut params = main_event.shield_params().clone();
-      params.recipient = Some(recipient.address.clone());
-      DecodedEvent::Shield(params)
-   } else {
-      main_event
-   };
-
-   let main_event_name = if new_main_event.is_known() {
-      new_main_event.name()
-   } else {
-      "Transaction successful".to_string()
-   };
-
-   let nofitification = NotificationType::from_main_event(new_main_event.clone());
-
-   let (tx_cost, tx_cost_usd) = ctx.write(|ctx| {
-      estimate_tx_cost(
-         ctx,
-         chain.id(),
-         receipt.gas_used,
-         priority_fee.wei(),
-      )
-   });
-
-   let eth_received_usd = ctx.write(|ctx| new_tx_analysis.eth_received_usd(ctx));
-   let timestamp = TimeStamp::now_as_secs()?;
-
-   let tx_rich = TransactionRich {
-      tx_type: receipt.transaction_type(),
-      success: receipt.status(),
-      chain: chain.id(),
-      block: receipt.block_number.unwrap_or_default(),
-      timestamp,
-      value_sent: new_tx_analysis.value_sent(),
-      value_sent_usd: new_tx_analysis.value_sent_usd(ctx.clone()),
-      eth_received: new_tx_analysis.eth_received(),
-      eth_received_usd,
-      tx_cost,
-      tx_cost_usd,
-      hash: receipt.transaction_hash,
-      contract_interact: new_tx_analysis.contract_interact,
-      analysis: new_tx_analysis,
-      main_event: new_main_event,
-      clear_display: None,
-   };
-
-   let ctx_clone = ctx.clone();
-   let tx = tx_rich.clone();
-   RT.spawn_blocking(move || {
-      ctx_clone.add_transaction(chain.id(), from, tx);
-   });
-
-   RT.spawn(async move {
-      ctx.write(|ctx| {
-         ctx.railgun_status.set_op_in_progress(chain.id(), true);
-      });
-
-      let manager = ctx.balance_manager();
-      if !is_native {
-         match manager
-            .update_tokens_balance(ctx.clone(), chain.id(), from, vec![token], true)
-            .await
-         {
-            Ok(_) => {}
-            Err(e) => error!("Error updating weth balance: {:?}", e),
-         }
-      }
-
-      match manager.update_eth_balance(ctx.clone(), chain.id(), vec![from], true).await {
-         Ok(_) => {}
-         Err(e) => error!("Error updating eth balance: {:?}", e),
-      }
-
-      ctx.update_public_data(chain.id(), from);
-      match ctx.sync_railgun(chain.id(), false).await {
-         Ok(_) => {}
-         Err(e) => error!("Error syncing Railgun: {:?}", e),
-      }
-
-      ctx.update_private_data(chain.id(), from).await;
-
-      ctx.write(|ctx| {
-         ctx.railgun_status.set_op_in_progress(chain.id(), false);
-      });
-   });
-
-   if !receipt.status() {
-      return Err(anyhow!("Transaction Failed"));
-   }
-
-   let now = TimeStamp::now_as_millis()?.timestamp();
-   let finish = now + 6000;
-
-   SHARED_GUI.write(|gui| {
-      gui.notification.open_with_progress_bar(
-         now,
-         finish,
-         main_event_name,
-         nofitification,
-         Some(tx_rich.clone()),
-      );
-      gui.loading_window.reset();
-      gui.request_repaint();
-   });
+   RT.spawn(settle_railgun_op(
+      ctx,
+      chain,
+      from,
+      (!is_native).then_some(token),
+   ));
 
    Ok(())
 }

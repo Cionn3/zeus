@@ -1,4 +1,3 @@
-use crate::core::clear_signing;
 use crate::core::{
    TransactionAnalysis, TransactionRich, ZeusCtx, client::CLIENT_TIMEOUT_FOR_SENDING_TX,
 };
@@ -7,9 +6,10 @@ use alloy_eips::eip7702::{Authorization, SignedAuthorization};
 use anyhow::anyhow;
 use std::time::Duration;
 
+use super::finalize::{MainEvent, MinedTx, RecordPolicy, build_tx_outcome, record_and_notify};
+use crate::core::clear_signing::ClearDisplay;
 use crate::core::tx::{diffs_from_receipt, simulate_and_diff};
 use crate::gui::{SHARED_GUI, ui::NotificationType};
-use crate::utils::{RT, TimeStamp, estimate_tx_cost};
 use zeus_eth::{
    alloy_contract::private::Provider,
    alloy_network::{
@@ -19,6 +19,7 @@ use zeus_eth::{
    alloy_rpc_types::{BlockId, TransactionReceipt, TransactionRequest},
    alloy_signer::SignerSync,
    types::ChainId,
+   utils::NumericValue,
 };
 use zeus_wallet::SecureKey;
 
@@ -88,6 +89,65 @@ impl TxParams {
    }
 }
 
+/// Options for [`send_transaction_with`].
+#[derive(Default, Clone)]
+pub struct SendTxOptions {
+   pub mev_protect: bool,
+   /// Present the transaction as sponsored in the confirm window.
+   pub sponsored: bool,
+   pub dapp: String,
+   /// Record the analysis' own main event instead of inferring one from the
+   /// receipt logs — Railgun Transact logs are not public ERC-20 transfers.
+   pub keep_intent_event: bool,
+}
+
+/// What the user left in the transaction confirmation window.
+pub struct ConfirmedTx {
+   pub priority_fee: NumericValue,
+   pub gas_limit: u64,
+   pub clear_display: Option<ClearDisplay>,
+}
+
+/// Open the transaction confirmation window, wait for the user, and hand back
+/// their edits.
+///
+/// Flows that do not broadcast with `send_tx` — the sponsored unshield submits to
+/// a bundler instead — use this directly.
+pub async fn confirm_tx(
+   ctx: ZeusCtx,
+   source_is_zeus: bool,
+   chain: ChainId,
+   analysis: &TransactionAnalysis,
+   opts: &SendTxOptions,
+) -> Result<ConfirmedTx, anyhow::Error> {
+   let priority_fee = ctx.get_priority_fee(chain.id()).unwrap_or_default();
+
+   SHARED_GUI.write(|gui| {
+      gui.tx_confirmation_window.open(
+         ctx.clone(),
+         source_is_zeus,
+         opts.dapp.clone(),
+         chain,
+         analysis.clone(),
+         priority_fee.f64().to_string(),
+         opts.mev_protect,
+         opts.sponsored,
+      );
+      gui.loading_window.reset();
+      gui.bring_to_front();
+   });
+
+   if !wait_tx_confirm().await {
+      return Err(anyhow!("Transaction rejected"));
+   }
+
+   Ok(SHARED_GUI.read(|gui| ConfirmedTx {
+      priority_fee: gui.tx_confirmation_window.get_priority_fee(),
+      gas_limit: gui.tx_confirmation_window.get_gas_limit(),
+      clear_display: gui.tx_confirmation_window.get_clear_display(),
+   }))
+}
+
 pub async fn send_transaction(
    ctx: ZeusCtx,
    source_is_zeus: bool,
@@ -95,6 +155,37 @@ pub async fn send_transaction(
    tx_analysis: Option<TransactionAnalysis>,
    chain: ChainId,
    mev_protect: bool,
+   from: Address,
+   interact_to: Address,
+   call_data: Bytes,
+   value: U256,
+   authorization_list: Vec<SignedAuthorization>,
+) -> Result<(TransactionReceipt, TransactionRich), anyhow::Error> {
+   send_transaction_with(
+      ctx,
+      source_is_zeus,
+      SendTxOptions {
+         mev_protect,
+         dapp,
+         ..Default::default()
+      },
+      tx_analysis,
+      chain,
+      from,
+      interact_to,
+      call_data,
+      value,
+      authorization_list,
+   )
+   .await
+}
+
+pub async fn send_transaction_with(
+   ctx: ZeusCtx,
+   source_is_zeus: bool,
+   opts: SendTxOptions,
+   tx_analysis: Option<TransactionAnalysis>,
+   chain: ChainId,
    from: Address,
    interact_to: Address,
    call_data: Bytes,
@@ -171,27 +262,14 @@ pub async fn send_transaction(
 
    tx_analysis.refresh_usd(&ctx);
 
-   let priority_fee = ctx.get_priority_fee(chain.id()).unwrap_or_default();
-   let sponsored = false;
-
-   SHARED_GUI.write(|gui| {
-      gui.tx_confirmation_window.open(
-         ctx.clone(),
-         source_is_zeus,
-         dapp,
-         chain,
-         tx_analysis.clone(),
-         priority_fee.f64().to_string(),
-         mev_protect,
-         sponsored,
-      );
-      gui.loading_window.reset();
-      gui.bring_to_front();
-   });
-
-   if !wait_tx_confirm().await {
-      return Err(anyhow!("Transaction rejected"));
-   }
+   let confirmed = confirm_tx(
+      ctx.clone(),
+      source_is_zeus,
+      chain,
+      &tx_analysis,
+      &opts,
+   )
+   .await?;
 
    let main_event = tx_analysis.infer_main_event(ctx.clone(), chain.id());
    let main_event_name = if main_event.is_known() {
@@ -207,18 +285,10 @@ pub async fn send_transaction(
       gui.request_repaint();
    });
 
-   let (fee, gas_limit, confirm_clear) = SHARED_GUI.read(|gui| {
-      (
-         gui.tx_confirmation_window.get_priority_fee(),
-         gui.tx_confirmation_window.get_gas_limit(),
-         gui.tx_confirmation_window.get_clear_display(),
-      )
-   });
-
-   let priority_fee = if fee.is_zero() {
+   let priority_fee = if confirmed.priority_fee.is_zero() {
       ctx.get_priority_fee(chain.id()).unwrap_or_default()
    } else {
-      fee
+      confirmed.priority_fee
    };
 
    let base_fee = base_fee_fut.await?;
@@ -236,7 +306,7 @@ pub async fn send_transaction(
       base_fee.next,
       call_data.clone(),
       gas_used,
-      gas_limit,
+      confirmed.gas_limit,
       authorization_list.clone(),
    );
 
@@ -244,7 +314,7 @@ pub async fn send_transaction(
    let tx_client = client.connect_with_timeout(&rpc, CLIENT_TIMEOUT_FOR_SENDING_TX).await?;
 
    // If needed use MEV protect client, if not found prompt the user to continue
-   let send_client = if mev_protect {
+   let send_client = if opts.mev_protect {
       match ctx.get_mev_protect_client(chain.id()).await {
          Ok(mev_client) => mev_client,
          Err(_) => {
@@ -279,7 +349,6 @@ pub async fn send_transaction(
    };
 
    let logs: Vec<_> = receipt.logs().iter().cloned().map(|l| l.into_inner()).collect();
-   let timestamp = TimeStamp::now_as_secs()?;
 
    let balance_after = client
       .request(chain.id(), |client| async move {
@@ -291,25 +360,9 @@ pub async fn send_transaction(
       })
       .await?;
 
-   let contract_interact = Some(tx_analysis.contract_interact);
-
-   let mut new_tx_analysis = TransactionAnalysis::new(
-      ctx.clone(),
-      chain.id(),
-      from,
-      interact_to,
-      contract_interact,
-      tx_analysis.call_data.clone(),
-      tx_analysis.value,
-      logs.clone(),
-      receipt.gas_used,
-      tx_analysis.eth_balance_before,
-      balance_after,
-      authorization_list,
-   )
-   .await?;
-
-   match diffs_from_receipt(
+   // Prefer the diffs the receipt proves; fall back to the pre-send simulation
+   // when the receipt read comes back empty.
+   let diffs = match diffs_from_receipt(
       ctx.clone(),
       chain.id(),
       from,
@@ -322,118 +375,60 @@ pub async fn send_transaction(
    .await
    {
       Ok((balance, approval)) if !balance.is_empty() || !approval.is_empty() => {
-         new_tx_analysis.set_diffs(balance, approval);
+         Some((balance, approval))
       }
       other => {
          if let Err(e) = other {
             tracing::warn!("receipt diffs failed: {:?}", e);
          }
-         new_tx_analysis.set_diffs(
+         Some((
             tx_analysis.balance_diff.clone(),
             tx_analysis.approval_diff.clone(),
-         );
+         ))
       }
-   }
+   };
 
-   // Zeus-originated swaps already have a SwapToken main-event override.
-   // Connector / inferred swaps do not — those keep the log heuristic.
-   if tx_analysis.main_event_opt().is_some_and(|e| e.is_swap()) {
-      if let Err(e) = new_tx_analysis.apply_onchain_swap_received(ctx.clone(), tx_block).await {
-         tracing::warn!("Failed to apply on-chain swap received: {:?}", e);
-      }
-   }
-
-   let main_event = new_tx_analysis.infer_main_event(ctx.clone(), chain.id());
-
-   let clear_display = if main_event.is_other() {
-      if confirm_clear.is_some() {
-         confirm_clear
-      } else if new_tx_analysis.contract_interact && new_tx_analysis.call_data.len() >= 4 {
-         clear_signing::try_clear_sign_calldata(
-            ctx.clone(),
-            chain.id(),
-            from,
-            interact_to,
-            new_tx_analysis.value,
-            &new_tx_analysis.call_data,
-         )
-         .await
+   let outcome = build_tx_outcome(
+      ctx.clone(),
+      chain,
+      MinedTx {
+         from,
+         interact_to,
+         call_data: tx_analysis.call_data.clone(),
+         value: tx_analysis.value,
+         logs,
+         eth_balance_before: tx_analysis.eth_balance_before,
+         eth_balance_after: balance_after,
+         contract_interact: Some(tx_analysis.contract_interact),
+         authorization_list,
+         tx_type: receipt.transaction_type(),
+         block: tx_block,
+         gas_used: receipt.gas_used,
+         hash: receipt.transaction_hash,
+         success: receipt.status(),
+      },
+      // Flows that know what they asked for record that instead of a guess.
+      if opts.keep_intent_event {
+         MainEvent::intent_or_inferred(tx_analysis.main_event_opt().cloned())
       } else {
-         None
-      }
-   } else {
-      None
-   };
+         MainEvent::Inferred
+      },
+      RecordPolicy {
+         diffs,
+         confirm_clear: confirmed.clear_display,
+         clear_signing: true,
+         // Zeus-originated swaps already have a SwapToken main-event override.
+         // Connector / inferred swaps do not — those keep the log heuristic.
+         onchain_swap_received: tx_analysis.main_event_opt().is_some_and(|e| e.is_swap()),
+         priority_fee,
+         ..Default::default()
+      },
+   )
+   .await?;
 
-   let main_event_name = if main_event.is_known() {
-      main_event.name()
-   } else if let Some(display) = &clear_display {
-      display.heading.clone()
-   } else {
-      "Transaction successful".to_string()
-   };
+   record_and_notify(ctx.clone(), chain, from, &outcome)?;
 
-   let nofitification = NotificationType::from_main_event(main_event.clone());
-
-   let (tx_cost, tx_cost_usd) = ctx.write(|ctx| {
-      estimate_tx_cost(
-         ctx,
-         chain.id(),
-         receipt.gas_used,
-         priority_fee.wei(),
-      )
-   });
-
-   // Remove the redunant main event
-   new_tx_analysis.remove_main_event();
-
-   let eth_received_usd = ctx.write(|ctx| new_tx_analysis.eth_received_usd(ctx));
-
-   let tx_rich = TransactionRich {
-      tx_type: receipt.transaction_type(),
-      success: receipt.status(),
-      chain: chain.id(),
-      block: receipt.block_number.unwrap_or_default(),
-      timestamp,
-      value_sent: new_tx_analysis.value_sent(),
-      value_sent_usd: new_tx_analysis.value_sent_usd(ctx.clone()),
-      eth_received: new_tx_analysis.eth_received(),
-      eth_received_usd,
-      tx_cost,
-      tx_cost_usd,
-      hash: receipt.transaction_hash,
-      contract_interact: new_tx_analysis.contract_interact,
-      analysis: new_tx_analysis,
-      main_event,
-      clear_display,
-   };
-
-   let ctx_clone = ctx.clone();
-   let tx = tx_rich.clone();
-   RT.spawn_blocking(move || {
-      ctx_clone.add_transaction(chain.id(), from, tx);
-   });
-
-   if !receipt.status() {
-      return Err(anyhow!("Transaction Failed"));
-   }
-
-   let now = TimeStamp::now_as_millis()?.timestamp();
-   let finish = now + 6000;
-
-   SHARED_GUI.write(|gui| {
-      gui.notification.open_with_progress_bar(
-         now,
-         finish,
-         main_event_name,
-         nofitification,
-         Some(tx_rich.clone()),
-      );
-      gui.loading_window.reset();
-      gui.request_repaint();
-   });
-
-   Ok((receipt, tx_rich))
+   Ok((receipt, outcome.tx_rich))
 }
 
 pub async fn delegate_to(
@@ -554,5 +549,21 @@ fn make_tx_request(params: &TxParams) -> TransactionRequest {
          .with_input(params.call_data.clone())
          .with_gas_limit(params.gas_limit)
          .with_gas_price(params.base_fee.into())
+   }
+}
+
+#[cfg(test)]
+mod tests {
+   use super::*;
+
+   /// `send_transaction` fills in nothing but the dapp and the MEV flag, so its
+   /// callers keep the plain behavior: no sponsorship, no intent override.
+   #[test]
+   fn default_send_options_are_plain() {
+      let opts = SendTxOptions::default();
+      assert!(!opts.mev_protect);
+      assert!(!opts.sponsored);
+      assert!(!opts.keep_intent_event);
+      assert!(opts.dapp.is_empty());
    }
 }
